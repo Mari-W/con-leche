@@ -397,6 +397,12 @@ theorem consBlockRecsBare_tables (q : BlockShape) :
   | _, [], _ => rfl
   | m, _ :: rest, _ => consBlockRecsBare_tables q (m + 1) rest _
 
+theorem consBlockRecsBare_rules (q : BlockShape) :
+    ∀ (m : Nat) (rs : List (ConstantVal × Nat)) (env : Env),
+      (consBlockRecsBare q m rs env).rules = env.rules
+  | _, [], _ => rfl
+  | m, _ :: rest, _ => consBlockRecsBare_rules q (m + 1) rest _
+
 /-- The member cons' rules function: `sumRules` at the block's
 parameter count. -/
 @[expose] def sumRulesR :

@@ -26,6 +26,7 @@ import ConLeche.Verify.Extend.Inversions
 import ConLeche.Verify.Inductives.NestedRead
 import ConLeche.Verify.Shift
 import ConLeche.Model.RuleStep
+import ConLeche.Model.RuleLaw
 public section
 
 /-!
@@ -371,12 +372,16 @@ theorem declStep_preserves
         -- the uniform install, at any number of members, nested blocks included
         exact declBlock mp hdf (unreserved_of_basisNamesOk hnames hk) hrun' hcov hS hN
   | rewriteDecl thm head prio =>
-    -- the rules alone change, and nothing the model reads looks at them
-    obtain ⟨-, rfl⟩ := hrun
-    exact ⟨(stepRules_cover mp _).covered hcov hS (freshExt_stepRules env _), ⟨hN.trio⟩⟩
+    -- the rules alone change; the new rule's law is its registration's runs'
+    obtain ⟨-, hlaw, rfl⟩ := hrun
+    obtain ⟨cv, hf, hsome, hl⟩ := ruleLaw_of_run mp hlaw
+    exact ⟨(stepRules_cover mp _ fun t _ _ hd => by
+        cases hd; exact ⟨cv, hf, hsome, hl⟩).covered hcov hS (freshExt_stepRules env _),
+      ⟨hN.trio⟩⟩
   | useRules S =>
     subst hrun
-    exact ⟨(stepRules_cover mp _).covered hcov hS (freshExt_stepRules env _), ⟨hN.trio⟩⟩
+    exact ⟨(stepRules_cover mp (.useRules S) fun _ _ _ hd => nomatch hd).covered hcov hS
+      (freshExt_stepRules env _), ⟨hN.trio⟩⟩
 
 /-- **The P fold**: the declaration fold's recursion at the P invariant. -/
 theorem foldPM {F : Nat} :

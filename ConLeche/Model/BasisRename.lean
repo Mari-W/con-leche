@@ -708,6 +708,36 @@ theorem natOpTyPinned_ren (h : RenEnv env env') {c : Name} {ty : Expr}
   natOpTyPinned_of_find (fun ci hf =>
     ⟨ci, by rw [h.find_nonres (n := ConLeche.boolName) (by decide)]; exact hf, rfl⟩) hp
 
+/-- Is a record a theorem's. -/
+def isThmB : ConstantInfo → Bool
+  | .thmInfo _ => true
+  | _ => false
+
+/-- A theorem is no pin's copy: no pin is a theorem. -/
+theorem thm_not_pinCopy {cv : ConstantVal} {n : Name} (h : PinCopy (.thmInfo cv) (pinnedInfo n)) :
+    False := by
+  obtain ⟨h1, -, -⟩ := h
+  have h2 := congrArg isThmB h1
+  have hat : ∀ (c : ConstantInfo) (ps : List Name), isThmB (c.atLps ps) = isThmB c := by
+    intro c ps; cases c <;> rfl
+  have hpin : isThmB (pinnedInfo n) = false := by
+    unfold pinnedInfo
+    simp only [apply_ite isThmB, show isThmB eqI = false from rfl, show isThmB eqReflA = false from rfl, show isThmB eqRecA = false from rfl, show isThmB natI = false from rfl, show isThmB natZeroA = false from rfl, show isThmB natSuccA = false from rfl, show isThmB natRecA = false from rfl, show isThmB emptyI = false from rfl, show isThmB emptyRecA = false from rfl, show isThmB falseI = false from rfl, show isThmB falseRecA = false from rfl, show isThmB quotA = false from rfl, show isThmB quotMkA = false from rfl, show isThmB quotLiftA = false from rfl, show isThmB quotIndA = false from rfl, show isThmB quotSoundA = false from rfl,
+      show ∀ cv, isThmB (.axiomInfo cv) = false from fun _ => rfl, ite_self]
+  rw [hat, hpin] at h2
+  exact nomatch h2
+
+/-- A stored theorem keeps its record across a renaming of the pins. -/
+theorem renEnv_find_thm (h : RenEnv env env') {n : Name} {cv : ConstantVal}
+    (hf : env.find? n = some (.thmInfo cv)) : env'.find? n = some (.thmInfo cv) := by
+  rcases h.find n with ⟨h1, -⟩ | ⟨c, c', h1, h2, hr⟩
+  · rw [hf] at h1; exact nomatch h1
+  · rw [hf] at h1
+    obtain rfl := Option.some.inj h1
+    rcases hr with rfl | ⟨-, hp, -⟩
+    · exact h2
+    · exact (thm_not_pinCopy hp).elim
+
 /-- **The transport**: an invariant of `env` is one of `env'`, at the renamed
 valuation, given what the renaming leaves stable and the recorded blocks'
 clauses at the new side. -/
@@ -913,7 +943,14 @@ theorem EnvModelM.renameCore (mp : EnvModelM V env) (h : RenEnv env env') (hwf :
             reduce_ops := ?_
             tower_ok := ?_
             lfpBlocks := blocks
-            lfp_ok := hlfp }, rfl, rfl⟩
+            lfp_ok := hlfp
+            rule_law := fun t ht => by
+              have ht' : RuleNamed env t := by unfold RuleNamed at ht ⊢; rw [h.rules] at ht; exact ht
+              obtain ⟨cv, hf, hsome, hlaw⟩ := mp.rule_law t ht'
+              have hres : cv.type.constsResolve env = true :=
+                (mp.base2.wf.consts _ (ConLeche.Env.find?_mem hf)).2.2.1
+              exact ⟨cv, renEnv_find_thm h hf, hsome,
+                hlaw.transport hres fun ψ d e ta _ hta => (hde' ψ d e).trans hta⟩ }, rfl, rfl⟩
   · -- `type_reads`
     intro c' hc' ψ
     obtain ⟨c, hc, tr, h1, -⟩ := hT c' hc'

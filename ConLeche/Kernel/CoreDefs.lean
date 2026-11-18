@@ -811,6 +811,15 @@ def eqSpine? : Expr → Option (Name × Level × Expr × Expr × Expr)
   | .app (.app (.app (.const eqn [u]) A) l) rhs => some (eqn, u, A, l, rhs)
   | _ => none
 
+/-- **A rule's sides as closed terms** (`checkRuleLaw`): for a statement `∀ xs, @Eq.{u} A l r`,
+over the statement's own binder domains, the type `∀ xs, A`, the two functions `fun xs => l` and
+`fun xs => r`, the function `fun xs => A` and its type `∀ xs, Sort u`. -/
+def ruleSides : Expr → Option (Expr × Expr × Expr × Expr × Expr)
+  | .forallE dom body =>
+    (ruleSides body).map fun (P, L, R, LA, PU) =>
+      (.forallE dom P, .lam dom L, .lam dom R, .lam dom LA, .forallE dom PU)
+  | e => (eqSpine? e).map fun (_, u, A, l, r) => (A, l, r, A, .sort u)
+
 /-- **The syntactic gate of a rule's firing**: the spine's head is `Eq`, the levels are the
 theorem's, the left side is the term, the term's head is a constant, every argument is a subterm
 of the term's application tree, and every free-variable leaf of the right side is one of the

@@ -9,6 +9,7 @@ public import ConLeche.Model.Env.BlockLfp
 public import ConLeche.Semantics.Inductives.FieldsEqOn
 import ConLeche.Verify.Denote
 import ConLeche.Verify.Denote.VClosed
+import ConLeche.Verify.InferLemmas
 
 public section
 
@@ -239,6 +240,30 @@ theorem isTy_of_wd_mkPisAV {B : Term} :
 
 end
 
+/-- **A rewrite rule's law** (plan A4): at its statement `T = ∀ xs, @Eq.{u} A l r`, with its
+sides as closed terms (`ruleSides`), both sides' functions inhabit `∀ xs, A` and `fun xs => A`
+inhabits `∀ xs, Sort u`, at every level assignment and depth.  What a rule's registration
+checks once (`checkRuleLaw`), and what a firing reads in place of typing its sides
+(`Red.rewrite_sound`). -/
+@[expose] def RuleLaw {env : Env} (m : EnvModel V env) (T : Expr) : Prop :=
+  ∀ P L R LA PU, ConLeche.ruleSides T = some (P, L, R, LA, PU) → ∀ (ψ : Name → Nat) (d : Nat),
+    ∃ pa la ra laa pua : Term,
+      denote m.acval env ψ d P = some pa ∧ denote m.acval env ψ d L = some la ∧
+      denote m.acval env ψ d R = some ra ∧ denote m.acval env ψ d LA = some laa ∧
+      denote m.acval env ψ d PU = some pua ∧
+      ∀ ρ : Nat → V, interp V ρ la ∈ˢ interp V ρ pa ∧ interp V ρ ra ∈ˢ interp V ρ pa ∧
+        interp V ρ laa ∈ˢ interp V ρ pua
+
+/-- A theorem the rules name: a registered rule's, or an entry of the active table. -/
+@[expose] def RuleNamed (env : Env) (h : Name) : Prop :=
+  (∃ r ∈ env.rules.registered, r.thm = h) ∨ ∃ e ∈ env.rules.active, e.2 = h
+
+/-- **The rules' laws**: every theorem the rules name is a stored theorem whose statement has
+its law. -/
+@[expose] def RuleLaws {env : Env} (m : EnvModel V env) : Prop :=
+  ∀ h, RuleNamed env h → ∃ cv, env.find? h = some (.thmInfo cv) ∧
+    (ConLeche.ruleSides cv.type).isSome = true ∧ RuleLaw V m cv.type
+
 /-- **The P-tier environment invariant, at one mode** (see the module
 docstring). -/
 structure EnvModelM (env : Env) where
@@ -315,6 +340,10 @@ structure EnvModelM (env : Env) where
   transport the clause: an extension never re-reads a stored name) -/
   lfp_ok : ∀ D ∈ lfpBlocks, LfpClause base2.acval D ∧ LfpStored env D ∧
     LfpReads base2.acval env D ∧ LfpCtorReads base2.acval env D ∧ LfpCaps env D
+  /-- **the rules' laws** (an *environment law*: a rule's sides are typed by its registration
+  and by nothing else, so the supplier is the registration step, `stepRules_model`).
+  Consumed by a firing's soundness (`Red.rewrite_sound`, through `RulesInputs.rule_law`) -/
+  rule_law : RuleLaws V base2
 
 namespace EnvModelM
 
@@ -437,6 +466,48 @@ field is vacuous — no constants, guards false. -/
         exact nomatch hf }
   lfpBlocks := []
   lfp_ok := fun _ hD => nomatch hD
+  rule_law := fun _ h => by
+    rcases h with ⟨_, hr, _⟩ | ⟨_, he, _⟩
+    · exact absurd hr List.not_mem_nil
+    · exact absurd he List.not_mem_nil
+
+/-! ## The rules' laws across an extension -/
+
+section
+variable {V : Type w} [SetTheory V]
+
+/-- **A rule's law crosses an extension** that keeps the readings of the terms over the old
+constants. -/
+theorem RuleLaw.transport {env env' : Env} {m : EnvModel V env} {m' : EnvModel V env'} {T : Expr}
+    (hT : T.constsResolve env = true)
+    (hread : ∀ (ψ : Name → Nat) (d : Nat) (e : Expr) (ta : Term), ConstsBound env e →
+      denote m.acval env ψ d e = some ta → denote m'.acval env' ψ d e = some ta)
+    (h : RuleLaw V m T) : RuleLaw V m' T := by
+  intro P L R LA PU hs ψ d
+  obtain ⟨hP, hL, hR, hLA, hPU⟩ := ConLeche.ruleSides_constsResolve hs hT
+  obtain ⟨pa, la, ra, laa, pua, hpa, hla, hra, hlaa, hpua, hlaw⟩ := h P L R LA PU hs ψ d
+  exact ⟨pa, la, ra, laa, pua, hread ψ d P pa (constsBound_of_constsResolve P hP) hpa,
+    hread ψ d L la (constsBound_of_constsResolve L hL) hla,
+    hread ψ d R ra (constsBound_of_constsResolve R hR) hra,
+    hread ψ d LA laa (constsBound_of_constsResolve LA hLA) hlaa,
+    hread ψ d PU pua (constsBound_of_constsResolve PU hPU) hpua, hlaw⟩
+
+/-- **The rules' laws cross an extension** under the same rules that keeps every stored constant
+and the readings over the old constants. -/
+theorem RuleLaws.transport {env env' : Env} {m : EnvModel V env} {m' : EnvModel V env'}
+    (hrules : env'.rules = env.rules)
+    (hfind : ∀ n ci, env.find? n = some ci → env'.find? n = some ci)
+    (hread : ∀ (ψ : Name → Nat) (d : Nat) (e : Expr) (ta : Term), ConstsBound env e →
+      denote m.acval env ψ d e = some ta → denote m'.acval env' ψ d e = some ta)
+    (h : RuleLaws V m) : RuleLaws V m' := by
+  intro t ht
+  have ht' : RuleNamed env t := by unfold RuleNamed at ht ⊢; rw [hrules] at ht; exact ht
+  obtain ⟨cv, hf, hsome, hlaw⟩ := h t ht'
+  have hres : cv.type.constsResolve env = true :=
+    (m.wf.consts _ (ConLeche.Env.find?_mem hf)).2.2.1
+  exact ⟨cv, hfind _ _ hf, hsome, hlaw.transport hres hread⟩
+
+end
 
 /-! ## The recorded lfp clauses -/
 

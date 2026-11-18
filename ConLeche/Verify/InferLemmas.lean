@@ -93,6 +93,211 @@ theorem eqSpine?_eq_some {R A l rhs : Expr} {eqn : Name} {u : Level} :
   · rintro rfl
     rfl
 
+/-- **A rule's sides keep a property that binders and applications split** (`ruleSides`): a
+property `Q k` of the statement that holds of a binder exactly where it holds of its domain at
+`k` and of its body at `s k`, of an application exactly where it holds of both parts, and of
+every sort, holds of the five sides. -/
+theorem ruleSides_keep (Q : Nat → Expr → Prop) (s : Nat → Nat)
+    (hpi : ∀ k ty b, Q k (.forallE ty b) ↔ Q k ty ∧ Q (s k) b)
+    (hlam : ∀ k ty b, Q k (.lam ty b) ↔ Q k ty ∧ Q (s k) b)
+    (happ : ∀ k f a, Q k (.app f a) ↔ Q k f ∧ Q k a) (hsort : ∀ k u, Q k (.sort u)) :
+    ∀ (T : Expr) (k : Nat) {P L R LA PU : Expr}, ruleSides T = some (P, L, R, LA, PU) → Q k T →
+      Q k P ∧ Q k L ∧ Q k R ∧ Q k LA ∧ Q k PU := by
+  intro T
+  induction T with
+  | forallE ty b _ ihb =>
+    intro k P L R LA PU h hQ
+    simp only [ruleSides, Option.map_eq_some_iff] at h
+    obtain ⟨⟨P', L', R', LA', PU'⟩, hb, he⟩ := h
+    obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ : Expr.forallE ty P' = P ∧ Expr.lam ty L' = L ∧
+        Expr.lam ty R' = R ∧ Expr.lam ty LA' = LA ∧ Expr.forallE ty PU' = PU := by
+      simpa using he
+    obtain ⟨hty, hbQ⟩ := (hpi k ty b).mp hQ
+    obtain ⟨h1, h2, h3, h4, h5⟩ := ihb (s k) hb hbQ
+    exact ⟨(hpi k ty P').mpr ⟨hty, h1⟩, (hlam k ty L').mpr ⟨hty, h2⟩, (hlam k ty R').mpr ⟨hty, h3⟩,
+      (hlam k ty LA').mpr ⟨hty, h4⟩, (hpi k ty PU').mpr ⟨hty, h5⟩⟩
+  | _ =>
+    intro k P L R LA PU h hQ
+    simp only [ruleSides, Option.map_eq_some_iff] at h
+    obtain ⟨⟨eqn, u, A, l, r⟩, hsp, he⟩ := h
+    obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ : A = P ∧ l = L ∧ r = R ∧ A = LA ∧ Expr.sort u = PU := by
+      simpa using he
+    rw [eqSpine?_eq_some] at hsp
+    rw [hsp] at hQ
+    obtain ⟨h1, hr⟩ := (happ _ _ _).mp hQ
+    obtain ⟨h2, hl⟩ := (happ _ _ _).mp h1
+    have hA := ((happ _ _ _).mp h2).2
+    exact ⟨hA, hl, hr, hA, hsort k u⟩
+
+theorem ruleSides_WScoped {T P L R LA PU : Expr} {d : Nat}
+    (h : ruleSides T = some (P, L, R, LA, PU)) (hw : Expr.WScoped d T) :
+    Expr.WScoped d P ∧ Expr.WScoped d L ∧ Expr.WScoped d R ∧ Expr.WScoped d LA ∧
+      Expr.WScoped d PU :=
+  ruleSides_keep (fun k e => Expr.WScoped k e) id (fun _ _ _ => by simp [Expr.WScoped])
+    (fun _ _ _ => by simp [Expr.WScoped]) (fun _ _ _ => by simp [Expr.WScoped])
+    (fun _ _ => by simp [Expr.WScoped]) T d h hw
+
+theorem ruleSides_looseBVarsBounded {T P L R LA PU : Expr} {k : Nat}
+    (h : ruleSides T = some (P, L, R, LA, PU)) (hb : T.looseBVarsBounded k = true) :
+    P.looseBVarsBounded k = true ∧ L.looseBVarsBounded k = true ∧
+      R.looseBVarsBounded k = true ∧ LA.looseBVarsBounded k = true ∧
+      PU.looseBVarsBounded k = true :=
+  ruleSides_keep (fun k e => e.looseBVarsBounded k = true) (· + 1)
+    (fun _ _ _ => by simp [Expr.looseBVarsBounded]) (fun _ _ _ => by simp [Expr.looseBVarsBounded])
+    (fun _ _ _ => by simp [Expr.looseBVarsBounded]) (fun _ _ => by simp [Expr.looseBVarsBounded])
+    T k h hb
+
+theorem ruleSides_hasFvar {T P L R LA PU : Expr} (h : ruleSides T = some (P, L, R, LA, PU))
+    (hf : T.hasFvar = false) :
+    P.hasFvar = false ∧ L.hasFvar = false ∧ R.hasFvar = false ∧ LA.hasFvar = false ∧
+      PU.hasFvar = false :=
+  ruleSides_keep (fun _ e => e.hasFvar = false) id (fun _ _ _ => by simp [Expr.hasFvar])
+    (fun _ _ _ => by simp [Expr.hasFvar]) (fun _ _ _ => by simp [Expr.hasFvar])
+    (fun _ _ => by simp [Expr.hasFvar]) T 0 h hf
+
+theorem ruleSides_constsResolve {T P L R LA PU : Expr} {env : Env}
+    (h : ruleSides T = some (P, L, R, LA, PU)) (hr : T.constsResolve env = true) :
+    P.constsResolve env = true ∧ L.constsResolve env = true ∧ R.constsResolve env = true ∧
+      LA.constsResolve env = true ∧ PU.constsResolve env = true :=
+  ruleSides_keep (fun _ e => e.constsResolve env = true) id
+    (fun _ _ _ => by simp [Expr.constsResolve]) (fun _ _ _ => by simp [Expr.constsResolve])
+    (fun _ _ _ => by simp [Expr.constsResolve]) (fun _ _ => by simp [Expr.constsResolve]) T 0 h hr
+
+/-- The universe of a rule statement's `Eq` spine, under its binders. -/
+@[expose] def ruleLevel : Expr → Option Level
+  | .forallE _ b => ruleLevel b
+  | e => (eqSpine? e).map fun (_, u, _, _, _) => u
+
+/-- A rule's sides commute with instantiating its universe parameters. -/
+theorem ruleSides_instantiateLevelParams (ks : List Name) (us : List Level) :
+    ∀ (T : Expr) {P L R LA PU : Expr}, ruleSides T = some (P, L, R, LA, PU) →
+      ruleSides (T.instantiateLevelParams ks us) = some (P.instantiateLevelParams ks us,
+        L.instantiateLevelParams ks us, R.instantiateLevelParams ks us,
+        LA.instantiateLevelParams ks us, PU.instantiateLevelParams ks us) := by
+  intro T
+  induction T with
+  | forallE ty b _ ihb =>
+    intro P L R LA PU h
+    simp only [ruleSides, Option.map_eq_some_iff] at h
+    obtain ⟨⟨P', L', R', LA', PU'⟩, hb, he⟩ := h
+    obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ : Expr.forallE ty P' = P ∧ Expr.lam ty L' = L ∧
+        Expr.lam ty R' = R ∧ Expr.lam ty LA' = LA ∧ Expr.forallE ty PU' = PU := by
+      simpa using he
+    simp only [Expr.instantiateLevelParams, ruleSides, ihb hb, Option.map_some]
+  | _ =>
+    intro P L R LA PU h
+    simp only [ruleSides, Option.map_eq_some_iff] at h
+    obtain ⟨⟨eqn, u, A, l, r⟩, hsp, he⟩ := h
+    obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ : A = P ∧ l = L ∧ r = R ∧ A = LA ∧ Expr.sort u = PU := by
+      simpa using he
+    rw [eqSpine?_eq_some] at hsp
+    rw [hsp]
+    simp [Expr.instantiateLevelParams, ruleSides, eqSpine?]
+
+/-- A rule statement's universe commutes with instantiating its universe parameters. -/
+theorem ruleLevel_instantiateLevelParams (ks : List Name) (us : List Level) :
+    ∀ (T : Expr) {v : Level}, ruleLevel T = some v →
+      ruleLevel (T.instantiateLevelParams ks us) = some (Level.subst ks us v) := by
+  intro T
+  induction T with
+  | forallE ty b _ ihb => intro v h; exact ihb h
+  | app f a _ _ =>
+    intro v h
+    simp only [ruleLevel, Option.map_eq_some_iff] at h
+    obtain ⟨⟨eqn, u, A, l, r⟩, hsp, rfl⟩ := h
+    rw [eqSpine?_eq_some] at hsp
+    rw [hsp]
+    simp [Expr.instantiateLevelParams, ruleLevel, eqSpine?]
+  | _ => intro v h; simp [ruleLevel, eqSpine?] at h
+
+/-- A statement with sides has a universe. -/
+theorem ruleLevel_of_ruleSides :
+    ∀ (T : Expr) {P L R LA PU : Expr}, ruleSides T = some (P, L, R, LA, PU) →
+      ∃ v, ruleLevel T = some v := by
+  intro T
+  induction T with
+  | forallE ty b _ ihb =>
+    intro P L R LA PU h
+    simp only [ruleSides, Option.map_eq_some_iff] at h
+    obtain ⟨⟨P', L', R', LA', PU'⟩, hb, -⟩ := h
+    exact ihb hb
+  | _ =>
+    intro P L R LA PU h
+    simp only [ruleSides, Option.map_eq_some_iff] at h
+    obtain ⟨⟨eqn, u, A, l, r⟩, hsp, -⟩ := h
+    exact ⟨u, by simp [ruleLevel, hsp]⟩
+
+/-- A rule's sides commute with instantiating a bound variable. -/
+theorem ruleSides_instantiate1 (v : Expr) :
+    ∀ (T : Expr) (k : Nat) {P L R LA PU : Expr}, ruleSides T = some (P, L, R, LA, PU) →
+      ruleSides (T.instantiate1 v k) = some (P.instantiate1 v k, L.instantiate1 v k,
+        R.instantiate1 v k, LA.instantiate1 v k, PU.instantiate1 v k) ∧
+      (ruleTele (T.instantiate1 v k)).1 = (ruleTele T).1 := by
+  intro T
+  induction T with
+  | forallE ty b _ ihb =>
+    intro k P L R LA PU h
+    simp only [ruleSides, Option.map_eq_some_iff] at h
+    obtain ⟨⟨P', L', R', LA', PU'⟩, hb, he⟩ := h
+    obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ : Expr.forallE ty P' = P ∧ Expr.lam ty L' = L ∧
+        Expr.lam ty R' = R ∧ Expr.lam ty LA' = LA ∧ Expr.forallE ty PU' = PU := by
+      simpa using he
+    obtain ⟨h1, h2⟩ := ihb (k + 1) hb
+    refine ⟨?_, ?_⟩
+    · simp only [Expr.instantiate1, ruleSides, h1, Option.map_some]
+    · simp only [Expr.instantiate1, ruleTele, h2]
+  | _ =>
+    intro k P L R LA PU h
+    simp only [ruleSides, Option.map_eq_some_iff] at h
+    obtain ⟨⟨eqn, u, A, l, r⟩, hsp, he⟩ := h
+    obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ : A = P ∧ l = L ∧ r = R ∧ A = LA ∧ Expr.sort u = PU := by
+      simpa using he
+    rw [eqSpine?_eq_some] at hsp
+    rw [hsp]
+    exact ⟨by simp [Expr.instantiate1, ruleSides, eqSpine?], by simp [Expr.instantiate1, ruleTele]⟩
+
+/-- A rule statement's universe survives instantiating a bound variable. -/
+theorem ruleLevel_instantiate1 (v : Expr) :
+    ∀ (T : Expr) (k : Nat) {P L R LA PU : Expr}, ruleSides T = some (P, L, R, LA, PU) →
+      ruleLevel (T.instantiate1 v k) = ruleLevel T := by
+  intro T
+  induction T with
+  | forallE ty b _ ihb =>
+    intro k P L R LA PU h
+    simp only [ruleSides, Option.map_eq_some_iff] at h
+    obtain ⟨⟨P', L', R', LA', PU'⟩, hb, -⟩ := h
+    simp only [Expr.instantiate1, ruleLevel]
+    exact ihb (k + 1) hb
+  | _ =>
+    intro k P L R LA PU h
+    simp only [ruleSides, Option.map_eq_some_iff] at h
+    obtain ⟨⟨eqn, u, A, l, r⟩, hsp, -⟩ := h
+    rw [eqSpine?_eq_some] at hsp
+    rw [hsp]
+    simp [Expr.instantiate1, ruleLevel, eqSpine?]
+
+/-- **The residual's universe is the statement's**: a statement with sides, peeled along its
+arguments down to an `Eq` spine, reads that spine at its own universe. -/
+theorem piResidual_ruleLevel :
+    ∀ (args : List Expr) (T : Expr) {P L R LA PU : Expr} {v u : Level} {A l r : Expr} {en : Name},
+      ruleSides T = some (P, L, R, LA, PU) → ruleLevel T = some v →
+      piResidual T args = some (.app (.app (.app (.const en [u]) A) l) r) → u = v := by
+  intro args
+  induction args with
+  | nil =>
+    intro T P L R LA PU v u A l r en _ hv hr
+    obtain rfl := Option.some.inj hr
+    simpa [ruleLevel, eqSpine?] using hv
+  | cons a as ih =>
+    intro T P L R LA PU v u A l r en hs hv hr
+    cases T with
+    | forallE ty b =>
+      simp only [ruleSides, Option.map_eq_some_iff] at hs
+      obtain ⟨⟨P', L', R', LA', PU'⟩, hb, -⟩ := hs
+      obtain ⟨hbi, -⟩ := ruleSides_instantiate1 a b 0 hb
+      exact ih (b.instantiate1 a) hbi (by rw [ruleLevel_instantiate1 a b 0 hb]; exact hv) hr
+    | _ => all_goals simp [piResidual] at hr
+
 theorem bind_eqSpine?_eq_some {o : Option Expr} {A l rhs : Expr} {eqn : Name} {u : Level} :
     o.bind eqSpine? = some (eqn, u, A, l, rhs) ↔
       o = some (.app (.app (.app (.const eqn [u]) A) l) rhs) := by
@@ -110,8 +315,7 @@ theorem rewriteAttempt_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {e e₂ : 
         = some (.app (.app (.app (.const eqName [u]) A) e) e₂) ∧
       e.getAppFn = .const c ls ∧ us.length = cv.levelParams.length ∧
       (∀ x ∈ args, x ∈ appSubterms e) ∧ (∀ x ∈ e₂.fvarLeaves, x ∈ e.fvarLeaves) ∧
-      iotaCertsFull r env d (cv.type.instantiateLevelParams cv.levelParams us) args = .ok true ∧
-      r.infer d A = .ok (.sort u) ∧ r.infer d e = .ok A ∧ r.infer d e₂ = .ok A := by
+      iotaCertsFull r env d (cv.type.instantiateLevelParams cv.levelParams us) args = .ok true := by
   unfold rewriteAttempt at h
   split at h
   · rename_i cv hfind
@@ -133,27 +337,9 @@ theorem rewriteAttempt_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {e e₂ : 
           rename_i b hcert
           split at h
           · rename_i hb
-            split at h
-            · exact nomatch h
-            rename_i tA hA
-            split at h
-            · rename_i hAe
-              split at h
-              · exact nomatch h
-              rename_i tl hl
-              split at h
-              · rename_i hle
-                split at h
-                · exact nomatch h
-                rename_i tr hr
-                split at h
-                · rename_i hre
-                  obtain rfl : rhs = e₂ := by simpa [pure, Except.pure] using h
-                  exact ⟨cv, args, us, u, A, c, ls, hfind, hres, hhead, hlen, hsub, hleaf,
-                    by rw [hcert, hb], by rw [hA, hAe], by rw [hl, hle], by rw [hr, hre]⟩
-                · simp [pure, Except.pure] at h
-              · simp [pure, Except.pure] at h
-            · simp [pure, Except.pure] at h
+            obtain rfl : rhs = e₂ := by simpa [pure, Except.pure] using h
+            exact ⟨cv, args, us, u, A, c, ls, hfind, hres, hhead, hlen, hsub, hleaf,
+              by rw [hcert, hb]⟩
           · simp [pure, Except.pure] at h
         · simp [pure, Except.pure] at h
       · simp [pure, Except.pure] at h
@@ -186,6 +372,16 @@ theorem rewriteStep_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {e e₂ : Exp
   unfold rewriteStep at h
   split at h
   · exact (rewriteRules_inv h).2
+  · simp [pure, Except.pure] at h
+
+/-- A firing rule is one in force at the term's head constant. -/
+theorem rewriteStep_mem {r : CoreFns CheckM} {env : Env} {d : Nat} {e e₂ : Expr} {t : Name}
+    (h : rewriteStep r env d e = .ok (some (t, e₂))) :
+    ∃ c ls, e.getAppFn = .const c ls ∧ t ∈ env.rulesFor c := by
+  unfold rewriteStep at h
+  split at h
+  · rename_i c ls hc
+    exact ⟨c, ls, hc, (rewriteRules_inv h).1⟩
   · simp [pure, Except.pure] at h
 
 /-- Inversion for ι-then-rules: the ι step fired, or it did not and a rule did. -/

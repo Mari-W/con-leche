@@ -506,8 +506,11 @@ theorem envModelM_consBlockRecsR
   obtain ⟨hctors₃, hbp₃, hproj₃⟩ :=
     recSwapFacts3 mpB.base2.rec_ctors mpB.base2.basis_pinned mpB.base2.proj_ok
       hswR htabR hnresS hnew
+  have hrulR : (consBlockRecsR R q 0 rs envC).rules
+      = (consBlockRecsBare q 0 (bareOf rs) envC).rules := by
+    rw [ConLeche.consBlockRecsR_rules, ConLeche.consBlockRecsBare_rules]
   obtain ⟨mp₃, hac₃, -⟩ :=
-    EnvModelM.swapP mpB hswR htabR hwf₃ hctors₃ hbp₃ hproj₃
+    EnvModelM.swapP mpB hswR htabR hrulR hwf₃ hctors₃ hbp₃ hproj₃
       (fun m₃ hac φ => hrecP m₃ (by rw [hac, hacB]) φ)
   exact ⟨mp₃, by rw [hac₃, hacB]⟩
 

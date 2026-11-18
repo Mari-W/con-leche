@@ -64,7 +64,7 @@ theorem constsRen_refl : ∀ cs : List ConstantInfo, ConstsRen cs cs
   | _ :: cs => .cons (.inl rfl) (constsRen_refl cs)
 
 theorem RenRel.refl (κ : Prop) (L₀ : List ConstantInfo) (E : Env) : RenRel κ L₀ E E E where
-  ren := ⟨constsRen_refl _, rfl⟩
+  ren := ⟨constsRen_refl _, rfl, rfl⟩
   mem := fun c' hc' => ⟨c', hc', .inl ⟨rfl, rfl⟩⟩
   stE := fun _ _ => ⟨rfl, rfl⟩
   keep := fun _ n ci ci' h h' _ => by
@@ -99,7 +99,7 @@ theorem RenRel.cons {κ : Prop} {L₀ : List ConstantInfo} {E env env' : Env} (R
   have hne2 : ∀ {n}, p.name ≠ n →
       (⟨p' :: env'.consts, env'.tables, env'.rules⟩ : Env).find? n = env'.find? n := fun hne => by
     rw [Env.find?_cons, hnm, ite_eq_right hne]
-  refine ⟨⟨.cons (.inr ⟨hres, hc, hc'⟩) R.ren.consts, R.ren.tables⟩, fun c' hm => ?_, fun n hn => ?_,
+  refine ⟨⟨.cons (.inr ⟨hres, hc, hc'⟩) R.ren.consts, R.ren.tables, R.ren.rules⟩, fun c' hm => ?_, fun n hn => ?_,
     fun hκ n ci ci' h1 h2 hnr => ?_, fun n ci h1 hn => ?_⟩
   · rcases List.mem_cons.mp hm with rfl | hm'
     · exact ⟨p, List.mem_cons_self, .inr ⟨hp1, hp2, hres, hc, hc'⟩⟩

@@ -1030,9 +1030,9 @@ def reduceProjCore (r : CoreFns m) (env : Env) (depth : Nat) (sn : Name)
 firing.  The first-order match (`ruleArgs`) proposes the arguments and the levels; the firing
 then checks the level count, the residual `Eq` spine whose left side is the term, the term's head
 a constant, every argument a subterm of the term's application tree, every free-variable leaf of
-the right side one of the term's, the theorem's telescope certified at the full grade
-(`iotaCertsFull`), and the three full-grade inferences `A : Sort u`, `l : A` and `r : A`,
-compared syntactically.  Any failed check is no firing. -/
+the right side one of the term's, and the theorem's telescope certified at the full grade
+(`iotaCertsFull`).  The sides' typing is the registration's (`checkRuleLaw`), checked once.
+Any failed check is no firing. -/
 def rewriteAttempt (r : CoreFns m) (env : Env) (depth : Nat) (e : Expr) (thm : Name) :
     m (Option Expr) := do
   match env.find? thm with
@@ -1040,15 +1040,10 @@ def rewriteAttempt (r : CoreFns m) (env : Env) (depth : Nat) (e : Expr) (thm : N
     match ruleArgs cv e with
     | some (args, us) =>
       match (piResidual (cv.type.instantiateLevelParams cv.levelParams us) args).bind eqSpine? with
-      | some (eqn, u, A, l, rhs) =>
+      | some (eqn, _, _, l, rhs) =>
         if RuleGate cv us args e eqn l rhs then
           if ← iotaCertsFull r env depth (cv.type.instantiateLevelParams cv.levelParams us)
-              args then
-            if (← r.infer depth A) = .sort u then
-              if (← r.infer depth e) = A then
-                if (← r.infer depth rhs) = A then pure (some rhs) else pure none
-              else pure none
-            else pure none
+              args then pure (some rhs)
           else pure none
         else pure none
       | none => pure none

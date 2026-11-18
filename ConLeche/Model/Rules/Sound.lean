@@ -93,9 +93,8 @@ theorem red_sound (hin : RulesInputs V m φ) :
     Red.natSucc_sound hin (ConLeche.natLitSupported_of_stored m.wf m.basis_pinned.natKinds hsup) (red_sound hin hw) hn
   | _, _, _, .natOp hc hwa hn₁ hwb hn₂ hr =>
     Red.natOp_sound hin hc (red_sound hin hwa) hn₁ (red_sound hin hwb) hn₂ hr
-  | _, _, _, .rewrite hthm hus hcerts hres hhead hsub hleaves hA hl hr =>
-    Red.rewrite_sound hin hthm hus (certsF_sound hin hcerts) hres hhead hsub hleaves
-      (infer_sound hin hA) (infer_sound hin hl) (infer_sound hin hr)
+  | _, _, _, .rewrite hthm hus hcerts hres hhead hsub hleaves hmem =>
+    Red.rewrite_sound hin hthm hus (certsF_sound hin hcerts) hres hhead hsub hleaves hmem
   -- ι and the K/`And` rescues (task #342 L10): one lemma each, from the
   -- conditional claims of their premises
   | _, _, _, .iota hhead hrec hlen hus hmajor hmhead hctor hrule hmlen hcase hlv

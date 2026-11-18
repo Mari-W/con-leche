@@ -51,8 +51,8 @@ of constants
 #src("whitepaper/Fragment/Rules.lean", 749, 753)[has its declared type] at the
 levels it is used at, and two constants of the same name
 #src("whitepaper/Fragment/Rules.lean", 563, 566)[are compared] through the level oracle
-(in con-leche: #src("ConLeche/Rules/Rel.lean", 625, 631)[inference]
-and #src("ConLeche/Rules/Rel.lean", 397, 402)[equality]).
+(in con-leche: #src("ConLeche/Rules/Rel.lean", 624, 630)[inference]
+and #src("ConLeche/Rules/Rel.lean", 396, 401)[equality]).
 
 #rules(
   rule(name: "const",
@@ -144,7 +144,7 @@ the declared level parameters.
 
 #real[
   The real proof's model carries the same two laws among others
-  (#src("ConLeche/Model/Env/EnvModelM.lean", 244, 267)[the carrier's invariant]).
+  (#src("ConLeche/Model/Env/EnvModelM.lean", 269, 292)[the carrier's invariant]).
 ]
 
 The empty environment #src("whitepaper/Fragment/EnvModel.lean", 359, 368)[has a model

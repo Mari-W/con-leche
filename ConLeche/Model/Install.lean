@@ -505,6 +505,8 @@ theorem declStep_preserves_of_cons (mp : EnvModelM V env)
         rw [h, hfresh] at hf; exact nomatch hf)
       (fun ψ d _ _ hb hta => denote_cons_mono hfresh ψ d hb hta)
       (fun _ => ConstsBound.of_isSome fun _ h => by
-        rw [ConLeche.Env.find?_cons]; split <;> simp_all) }, rfl⟩
+        rw [ConLeche.Env.find?_cons]; split <;> simp_all)
+    rule_law := RuleLaws.transport (m := mp.base2) rfl (fun _ _ hf => findPreserved_cons hfresh hf)
+      (fun ψ d _ _ hb hta => denote_cons_mono hfresh ψ d hb hta) mp.rule_law }, rfl⟩
 
 end ConLeche.Model

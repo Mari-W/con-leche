@@ -349,15 +349,17 @@ theorem reduceProjCore_bridge (hw : WhnfBridge .verified eager env fuel)
       (peelPis_isSome_instantiateLevelParams _ _ _ harity))
 
 /-- A firing rewrite rule is `Red.rewrite`: `rewriteAttempt_inv` hands every premise, the
-certificates and the three typings through the bridges. -/
+certificates through the bridges, and `rewriteStep_mem` the rule's place in the table. -/
 theorem rewriteStep_bridge (hd : DefEqBridge μ eager env fuel) (hi : InferBridge μ eager env fuel)
     {d : Nat} {e e₂ : Expr} {t : Name}
     (h : rewriteStep (pureFns μ eager env fuel) env d e = .ok (some (t, e₂))) :
     Red env d e e₂ := by
-  obtain ⟨cv, args, us, u, A, c, ls, hf, hres, hfn, hlen, hsub, hleaf, hcert, hA, he, hr⟩ :=
+  obtain ⟨cv, args, us, u, A, c, ls, hf, hres, hfn, hlen, hsub, hleaf, hcert⟩ :=
     rewriteAttempt_inv (rewriteStep_inv h)
-  exact .rewrite hf hlen (iotaCertsFull_bridge hd hi hcert) hres hfn hsub hleaf
-    (hi hA) (hi he) (hi hr)
+  obtain ⟨c', ls', hfn', hmem⟩ := rewriteStep_mem h
+  rw [hfn] at hfn'
+  obtain ⟨rfl, rfl⟩ : c = c' ∧ ls = ls' := by simpa using hfn'
+  exact .rewrite hf hlen (iotaCertsFull_bridge hd hi hcert) hres hfn hsub hleaf hmem
 
 /-- ι-then-rules ⇒ `Red.iota` or `Red.rewrite`. -/
 theorem iotaThenRule_bridge (hw : WhnfBridge .verified eager env fuel)

@@ -6,6 +6,8 @@ import ConLeche.Model.CtxOkKit
 import ConLeche.Model.WellDenotedTransport
 import ConLeche.Verify.Denote.Inst
 import ConLeche.Verify.Leaves
+import ConLeche.Model.Rules.RuleLawKit
+import ConLeche.Model.Reading.Levels
 
 public section
 
@@ -16,7 +18,8 @@ public section
 found in the left side's application tree.  The theorem's leaf inhabits
 its type's reading (`const_ty`), the certificate fits the arguments to
 its telescope, so the residual `Eq` spine's reading is inhabited.  The
-use-site inferences put `A` in its universe and both sides in `A`, so
+rule's law, installed at its registration (`RuleLaw`) and read along the
+fit (`sidesT_fit`), puts `A` in its universe and both sides in `A`, so
 `eq_law` reads the spine as `eqv ⟦l⟧ ⟦r⟧`, and an inhabitant of it
 equates the sides (`eq_of_mem_eqv`).
 -/
@@ -160,8 +163,19 @@ theorem teleFitPA_inhabited {ρ : Nat → V} :
 
 /-! ## The rule -/
 
-/-- **A user rewrite rule**, at the conditional motive (it needs neither
-the point condition nor the left side's head). -/
+/-- A rule in force at a head is one the rules name. -/
+theorem ruleNamed_of_rulesFor {h c : Name} (hmem : h ∈ env.rulesFor c) : RuleNamed env h := by
+  unfold Env.rulesFor at hmem
+  obtain ⟨e, he, hsome⟩ := List.mem_filterMap.mp hmem
+  refine .inr ⟨e, he, ?_⟩
+  split at hsome
+  · exact Option.some.inj hsome
+  · exact nomatch hsome
+
+/-- **A user rewrite rule**, at the conditional motive (it needs neither the point condition
+nor the left side's head).  The rule's law (`RuleLaw`), read along the certificate's fit
+(`sidesT_fit`), puts both sides in `A` and `A` in the equation's universe, so `eq_law` reads the
+residual spine as `eqv ⟦l⟧ ⟦r⟧`, whose inhabitant equates the sides. -/
 theorem Red.rewrite_sound (hin : RulesInputs V m φ) {d : Nat} {h : Name}
     {cv : ConstantVal} {us : List Level} {args : List Expr} {u : Level}
     {A l r : Expr} {c : Name} {ls : List Level}
@@ -173,8 +187,7 @@ theorem Red.rewrite_sound (hin : RulesInputs V m φ) {d : Nat} {h : Name}
     (_hhead : l.getAppFn = .const c ls)
     (hsub : ∀ x ∈ args, x ∈ ConLeche.appSubterms l)
     (hleaves : ∀ x ∈ r.fvarLeaves, x ∈ l.fvarLeaves)
-    (hA : InferSemFull m φ d A (.sort u)) (hl : InferSemFull m φ d l A)
-    (hr : InferSemFull m φ d r A) :
+    (hmem : h ∈ env.rulesFor c) :
     RedSem m φ d l r := by
   intro hfl Δa ea hCl hea
   -- the theorem's stored type: closed, read, graded, inhabited
@@ -199,11 +212,7 @@ theorem Red.rewrite_sound (hin : RulesInputs V m φ) {d : Nat} {h : Name}
   have hrR : r ∈ ConLeche.appSubterms (.app (.app (.app (.const eqName [u]) A) l) r) := by
     simp only [ConLeche.appSubterms, List.mem_cons, List.mem_append]
     exact Or.inr (Or.inr (self_mem_appSubterms r))
-  have hAR : A ∈ ConLeche.appSubterms (.app (.app (.app (.const eqName [u]) A) l) r) := by
-    simp only [ConLeche.appSubterms, List.mem_cons, List.mem_append]
-    exact Or.inr (Or.inl (Or.inr (Or.inl (Or.inr (Or.inr (self_mem_appSubterms A))))))
-  obtain ⟨hfr, hCr⟩ := appSubterms_frame hrR hfR hCR
-  obtain ⟨hfA, hCA⟩ := appSubterms_frame hAR hfR hCR
+  obtain ⟨hfr, -⟩ := appSubterms_frame hrR hfR hCR
   -- the stored `Eq` and its level
   obtain ⟨ci, hfE, hlenE, rfl⟩ : ∃ ci, env.find? eqName = some ci ∧
       [u].length = ci.toConstantVal.levelParams.length ∧
@@ -223,37 +232,49 @@ theorem Red.rewrite_sound (hin : RulesInputs V m φ) {d : Nat} {h : Name}
   have hψp : Level.substFn φ [p] [u] p = u.eval φ := by
     simp [Level.substFn]
   have hlaw := (hin.eq_law ci p hfE hp (Level.substFn φ [p] [u])).1
-  -- the use-site typings
-  obtain ⟨-, -, tA, htA, hAsem⟩ := hA hfA hCA hAa
-  rw [denote_sort] at htA
-  obtain rfl := (Option.some.inj htA).symm
-  obtain ⟨-, -, tl, htl, hlsem⟩ := hl hfl hCl hea
-  obtain rfl : tl = Aa := Option.some.inj (htl.symm.trans hAa)
-  obtain ⟨-, -, tr, htr, hrsem⟩ := hr hfr hCr hra
-  obtain rfl : tr = tl := Option.some.inj (htr.symm.trans hAa)
+  -- the rule's law, at the levels and the depth of the firing
+  obtain ⟨cv', hf', hsome, hlawR⟩ := hin.rule_law h (ruleNamed_of_rulesFor hmem)
+  rw [hthm] at hf'
+  obtain rfl : cv = cv' := by simpa using hf'
+  obtain ⟨⟨P, L, R, LA, PU⟩, hsides⟩ := Option.isSome_iff_exists.mp hsome
+  obtain ⟨v, hv⟩ := ConLeche.ruleLevel_of_ruleSides _ hsides
+  obtain ⟨pa, la', ra', laa, pua, hpa, hla', hra', hlaa, hpua, hlawρ⟩ :=
+    hlawR P L R LA PU hsides (Level.substFn φ cv.levelParams us) d
+  have hsides' := ConLeche.ruleSides_instantiateLevelParams cv.levelParams us _ hsides
+  have hv' := ConLeche.ruleLevel_instantiateLevelParams cv.levelParams us _ hv
+  have hinst : ∀ (X : Expr) (xa : Term),
+      denote m.acval env (Level.substFn φ cv.levelParams us) d X = some xa →
+      denote m.acval env φ d (X.instantiateLevelParams cv.levelParams us) = some xa :=
+    fun X xa hx => (denotePInstLevels m φ cv.levelParams us d X).trans hx
+  have hST := sidesT_of_denote (acval := m.acval) (env := env) (ψ := φ) _ _ rfl hsides' hv'
+    (hTd d) (hinst P pa hpa) (hinst L la' hla') (hinst R ra' hra') (hinst LA laa hlaa)
+    (hinst PU pua hpua)
+  have hu : u = Level.subst cv.levelParams us v :=
+    ConLeche.piResidual_ruleLevel args _ hsides' hv' hres
   refine ⟨hfr, hleaves, ra, hra, fun ρ hρ hLl _ _ => ?_⟩
   have hLargs : ∀ x ∈ args, LeavesGr m φ d x ρ :=
     fun x hx => hLl.of_subset (hlargs x hx)
   have hLT : LeavesGr m φ d (cv.type.instantiateLevelParams cv.levelParams us) ρ :=
     LeavesGr.of_fvarLeaves_nil (ConLeche.Expr.fvarLeaves_eq_nil_of_not_hasFvar hnfT)
-  have hLR := piResidual_leavesGrK hres hLT hLargs
-  have hLA : LeavesGr m φ d A ρ :=
-    hLR.of_subset (appSubterms_pkg (m := m) (φ := φ) (d := d) _ hAR).1
-  have hLr : LeavesGr m φ d r ρ := hLl.of_subset hleaves
-  obtain ⟨-, -, hAmem⟩ := hAsem ρ hρ hLA
-  obtain ⟨-, -, hlmem⟩ := hlsem ρ hρ hLl
-  obtain ⟨hgr, -, hrmem⟩ := hrsem ρ hρ hLr
   -- the certificate's fit, at the residual's reading
   obtain ⟨resta, hcs⟩ := hcerts hfT hCT (hTd d) hfargs hsp
-  obtain ⟨-, hfit, -⟩ := hcs ρ hρ hLT hLargs (hTok ρ)
+  obtain ⟨-, hfit, hwres⟩ := hcs ρ hρ hLT hLargs (hTok ρ)
   have hresta := teleFitPA_residualK m.acval_closed (acval_inst_self m) args hres hfT.1
     (fun x hx => ⟨(hfargs x hx).1.1, (hfargs x hx).1.2.1⟩) (hTd d) hsp hfit
   rw [hRA] at hresta
   obtain rfl := Option.some.inj hresta
+  have hgr : WellDenoted V ρ ra := by
+    rw [WellDenoted_app] at hwres
+    exact hwres.2.1
+  obtain ⟨hlmem, hrmem, hAmem⟩ :=
+    sidesT_fit hfit hST (hlawρ ρ).1 (hlawρ ρ).2.1 (hlawρ ρ).2.2 rfl
   obtain ⟨y, hy⟩ := teleFitPA_inhabited hfit (hTmem ρ)
   simp only [interp_app] at hy
   rw [hp] at hy
-  rw [hlaw ρ _ _ _ (by rw [hψp]; simpa [interp_sort] using hAmem) hlmem hrmem] at hy
+  have hAu : interp V ρ Aa ∈ˢ (univ (Level.substFn φ [p] [u] p) : V) := by
+    rw [hψp, hu]
+    simpa [interp_sort] using hAmem
+  rw [hlaw ρ _ _ _ hAu hlmem hrmem] at hy
   exact ⟨hgr, eq_of_mem_eqv hy⟩
 
 end ConLeche.Model.Rules

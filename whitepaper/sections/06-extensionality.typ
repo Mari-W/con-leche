@@ -138,14 +138,14 @@ not a rule of its relations.
 
 #real[
   The checker has the rule as Lean has it,
-  #src("ConLeche/Rules/Rel.lean", 475, 486)[the constructor's fields compared with the projections of the other side],
+  #src("ConLeche/Rules/Rel.lean", 474, 485)[the constructor's fields compared with the projections of the other side],
   with
   #src("ConLeche/Model/Rules/DefEqSound.lean", 554, 556)[its soundness case].
   It uses the same law when it prepares the major premise of a
   recursor on a structure that is never a proposition at the instance.
   The major is taken as found, before any head normalisation, and the
   constructor is applied to its projections, with no further check
-  (#src("ConLeche/Rules/Rel.lean", 298, 307)[the rule],
+  (#src("ConLeche/Rules/Rel.lean", 297, 306)[the rule],
   #src("ConLeche/Model/Rules/IotaSound.lean", 763, 764)[its soundness case]).
   Only if that does not give a constructor application is the major
   head-normalised, and the same expansion is tried once more on the

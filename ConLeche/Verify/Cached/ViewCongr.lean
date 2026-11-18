@@ -573,6 +573,14 @@ theorem checkThmValCI_congr {fe₁ fe₂ : FEnv} (hfe : fe₁.find? = fe₂.find
   simp only [knotI_congr hfe htb hru, opSIxC_congr hfe htb hru, constsResolveFC_congr hfe,
     FEnv.strLit_congr hfe]
 
+/-- A rule's law check reads its index only through its lookups. -/
+theorem checkRuleLawC_congr {fe₁ fe₂ : FEnv} (hfe : fe₁.find? = fe₂.find?)
+    (htb : fe₁.findTable? = fe₂.findTable?)
+    (hru : fe₁.rulesFor = fe₂.rulesFor) (thm : Name) :
+    checkRuleLawC mode fe₁ thm = checkRuleLawC mode fe₂ thm := by
+  unfold checkRuleLawC checkRuleSidesAtC checkRuleTypeC checkRuleSideC
+  simp only [hfe, knotI_congr hfe htb hru, opSIxC_congr hfe htb hru]
+
 /-- An opaque's value check reads its index only through `find?`. -/
 theorem checkOpaqueValCI_congr {fe₁ fe₂ : FEnv} (hfe : fe₁.find? = fe₂.find?)
     (htb : fe₁.findTable? = fe₂.findTable?)
@@ -1547,7 +1555,10 @@ theorem checkDeclKindC_twin (pins : List NatOpPinSet) {fe₁ fe₂ : FEnv} (ht :
     simp only [hfe]
     cases ruleDeclError? fe₂.find? thm head with
     | some e => exact RelRun.ofThrow
-    | none => exact RelRun.pure trivial
+    | none =>
+      simp only []
+      rw [checkRuleLawC_congr hfe htb hru]
+      exact RelRun.bind_same fun _ => RelRun.pure trivial
   | useRules S => exact RelRun.pure trivial
 
 /-- **Every declaration step at twin indices succeeds alike, or fails alike** (what it pushes is

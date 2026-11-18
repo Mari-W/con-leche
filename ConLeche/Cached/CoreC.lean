@@ -1121,14 +1121,9 @@ def rewriteAttemptI (eager : Bool) (lv : Nat) (depth : Nat) (e : Expr) (thm : Na
     | some (args, us) => do
       let T ← constTyAtM fe thm thm us
       match (← piResidualM T args).bind eqSpine? with
-      | some (eqn, u, A, l, rhs) =>
+      | some (eqn, _, _, l, rhs) =>
         if RuleGate cv us args e eqn l rhs then
-          if ← iotaCertsFullI eager lv depth T args then
-            if (← inferI eager lv false depth A) = .sort u then
-              if (← inferI eager lv false depth e) = A then
-                if (← inferI eager lv false depth rhs) = A then pure (some rhs) else pure none
-              else pure none
-            else pure none
+          if ← iotaCertsFullI eager lv depth T args then pure (some rhs)
           else pure none
         else pure none
       | none => pure none

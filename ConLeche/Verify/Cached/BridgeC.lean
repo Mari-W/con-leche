@@ -197,6 +197,63 @@ theorem checkThmValCI_spec (henv : EnvWF env)
     vcgen [checkThmValCI, inferK_spec henv, opSIxC_spec henv,
       liftFueled_spec (mode := .verified) (eager := false) (env := env), defeqK_spec henv] <;> finish
 
+/-- `checkRuleTypeC` simulates the generic `checkRuleType`. -/
+theorem checkRuleTypeC_spec (henv : EnvWF env) {T : Expr} (hT : Expr.WScoped 0 T)
+    (hs : CSOK .verified false env s₀) :
+    ⦃fun s => s = s₀⦄ checkRuleTypeC .verified (mkFEnv env) T
+    ⦃fun v s' => CSOK .verified false env s' ∧
+      Runs (checkRuleType (fueledOpsM .verified) env T) v; ⊤⦄ := by
+  sym only [conleche_grind, checkRuleType] =>
+    vcgen [checkRuleTypeC, inferK_spec henv, opSIxC_spec henv] <;> finish
+
+/-- `checkRuleSideC` simulates the generic `checkRuleSide`. -/
+theorem checkRuleSideC_spec (henv : EnvWF env) {thm : Name} {msg : String} {v T : Expr}
+    (hv : Expr.WScoped 0 v) (hT : Expr.WScoped 0 T) (hs : CSOK .verified false env s₀) :
+    ⦃fun s => s = s₀⦄ checkRuleSideC .verified (mkFEnv env) thm msg v T
+    ⦃fun u s' => CSOK .verified false env s' ∧
+      Runs (checkRuleSide (fueledOpsM .verified) env thm msg v T) u; ⊤⦄ := by
+  sym only [conleche_grind, checkRuleSide] =>
+    vcgen [checkRuleSideC, inferK_spec henv, defeqK_spec henv] <;> finish
+
+/-- `checkRuleSidesAtC` simulates the generic `checkRuleSidesAt`. -/
+theorem checkRuleSidesAtC_spec (henv : EnvWF env) {thm : Name} {P L R LA PU : Expr}
+    (hP : Expr.WScoped 0 P) (hL : Expr.WScoped 0 L) (hR : Expr.WScoped 0 R)
+    (hLA : Expr.WScoped 0 LA) (hPU : Expr.WScoped 0 PU)
+    (hs : CSOK .verified false env s₀) :
+    ⦃fun s => s = s₀⦄ checkRuleSidesAtC .verified (mkFEnv env) thm P L R LA PU
+    ⦃fun v s' => CSOK .verified false env s' ∧
+      Runs (checkRuleSidesAt (fueledOpsM .verified) env thm P L R LA PU) v; ⊤⦄ := by
+  sym only [conleche_grind, checkRuleSidesAt] =>
+    vcgen [checkRuleSidesAtC, checkRuleTypeC_spec henv, checkRuleSideC_spec henv] <;> finish
+
+/-- `checkRuleLawC` simulates the generic `checkRuleLaw`. -/
+theorem checkRuleLawC_spec (henv : EnvWF env) {thm : Name} (hs : CSOK .verified false env s₀) :
+    ⦃fun s => s = s₀⦄ checkRuleLawC .verified (mkFEnv env) thm
+    ⦃fun v s' => CSOK .verified false env s' ∧
+      Runs (checkRuleLaw (fueledOpsM .verified) env thm) v; ⊤⦄ :=
+  triple_iff_run.mpr fun v s' hr => by
+    unfold checkRuleLawC at hr
+    rw [mkFEnv_find?] at hr
+    unfold checkRuleLaw
+    cases hf : env.find? thm with
+    | none => rw [hf] at hr; exact nomatch hr
+    | some ci =>
+      rw [hf] at hr
+      cases ci
+      case thmInfo cv =>
+        have hT : Expr.WScoped 0 cv.type :=
+          Expr.WScoped.of_not_hasFvar (henv.consts _ (ConLeche.Env.find?_mem hf)).1
+        simp only at hr ⊢
+        unfold checkRuleSides
+        cases hrs : ruleSides cv.type with
+        | none => rw [hrs] at hr; exact nomatch hr
+        | some PLR =>
+          obtain ⟨P, L, R, LA, PU⟩ := PLR
+          rw [hrs] at hr
+          obtain ⟨hP, hL, hR, hLA, hPU⟩ := ruleSides_WScoped hrs hT
+          exact triple_iff_run.mp (checkRuleSidesAtC_spec henv hP hL hR hLA hPU hs) v s' hr
+      all_goals exact nomatch hr
+
 /-- `checkOpaqueValCI` simulates the generic `checkOpaqueVal`: the
 record it returns is the axiom the fueled side conses, the value
 closed. -/
@@ -259,7 +316,7 @@ theorem checkDeclKindC_spec (henv : EnvWF env)
       vcgen [checkDeclKindC] <;> finish
   | rewriteDecl thm head prio =>
     sym only [conleche_grind, checkDeclKind, mkFEnv_env, mkFEnv_find_fun, stepRules_mkFEnv] =>
-      vcgen [checkDeclKindC] <;> finish
+      vcgen [checkDeclKindC, checkRuleLawC_spec henv hs] <;> finish
   | quotDecl k cv =>
     sym only [conleche_grind, checkDeclKind, mkFEnv_env] =>
       vcgen [checkDeclKindC, checkQuotRecordC_spec hs] <;> finish

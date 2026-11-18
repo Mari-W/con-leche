@@ -606,7 +606,7 @@ theorem checkDeclKindC_push (mode : CheckMode) {env : Env} {fe : FEnv}
     simp only []
     split
     · exact Yields.ofThrow
-    · exact Yields.pure (h.stepRules _)
+    · exact Yields.bind fun _ => Yields.pure (h.stepRules _)
   | useRules S => exact Yields.pure (h.stepRules _)
 
 theorem checkDeclC_push (mode : CheckMode) {env : Env} {fe : FEnv}

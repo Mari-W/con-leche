@@ -447,7 +447,7 @@ theorem FEnv.rulesFor_congr (hfe : fe₁.find? = fe₂.find?) (hrl : fe₁.base.
 theorem rewriteAttemptI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv) :
     rewriteAttemptI mode fe₁ eager lv = rewriteAttemptI mode fe₂ eager lv := by
   funext depth e t; rw [rewriteAttemptI.eq_def, rewriteAttemptI.eq_def]
-  simp only [hfe, constTyAtM_congr hfe, iotaCertsFullI_congr hfe h, h]
+  simp only [hfe, constTyAtM_congr hfe, iotaCertsFullI_congr hfe h]
 
 /-- `rewriteRulesI` reads `fe` only through `find?`. -/
 theorem rewriteRulesI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv) :

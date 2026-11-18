@@ -178,13 +178,12 @@ inductive Red (env : Env) : Nat → Expr → Expr → Prop where
   The left side has a constant head, so a ∀ or a sort never rewrites
   (`Red.rigid`), every argument is a subterm of the left side's
   application tree (where a first-order matcher finds it), and the right
-  side has no free-variable leaf the left side lacks.  The full-grade
-  inference types both sides at `A` and `A` at `Sort u`, syntactically:
-  the theorem's type alone does not type its `Eq` spine in the model
-  (over an empty `A` the spine reads as the point and says nothing of
-  the sides), so the use site pays for it.  Any stored theorem qualifies
-  here: which theorems the checker registers as rules is the checker's
-  business. -/
+  side has no free-variable leaf the left side lacks.  The theorem is one of
+  the rules in force at the left side's head (`Env.rulesFor`): the theorem's
+  type alone does not type its `Eq` spine in the model (over an empty `A`
+  the spine reads as the point and says nothing of the sides), and a rule's
+  registration typed its sides once (`checkRuleLaw`, the model's
+  `EnvModelM.rule_law`). -/
   | rewrite {d : Nat} {h : Name} {cv : ConstantVal} {us : List Level}
       {args : List Expr} {u : Level} {A l r : Expr} {c : Name} {ls : List Level} :
       env.find? h = some (.thmInfo cv) →
@@ -195,7 +194,7 @@ inductive Red (env : Env) : Nat → Expr → Expr → Prop where
       l.getAppFn = .const c ls →
       (∀ x ∈ args, x ∈ appSubterms l) →
       (∀ x ∈ r.fvarLeaves, x ∈ l.fvarLeaves) →
-      Infer env .full d A (.sort u) → Infer env .full d l A → Infer env .full d r A →
+      h ∈ env.rulesFor c →
       Red env d l r
   /-- **The structural projection** `proj_i (ctor p⃗ x⃗) ↦ x_i`
   (`whnfCoreBody`'s `.proj` clause, `Kernel/Core.lean`), driven by

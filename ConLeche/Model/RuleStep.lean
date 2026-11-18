@@ -82,8 +82,31 @@ theorem natOps_stepRules (mp : EnvModelM V env) (d : Declaration)
   · rw [hac]
     exact hlaw
 
-/-- **The P carrier after a rule record**: the prefix's leaves and recorded blocks. -/
-theorem stepRules_model (mp : EnvModelM V env) (d : Declaration) :
+/-- A theorem the rules name after a record: one named before, or the rule the record
+registers.  A `useRules` activates registered rules only. -/
+theorem ruleNamed_stepRules {d : Declaration} {t : Name} (h : RuleNamed (env.stepRules d) t) :
+    RuleNamed env t ∨ ∃ head prio, d = .rewriteDecl t head prio := by
+  cases d with
+  | rewriteDecl thm head prio =>
+    rcases h with ⟨r, hr, rfl⟩ | ⟨e, he, rfl⟩
+    · rcases List.mem_cons.mp hr with rfl | hr
+      · exact .inr ⟨head, prio, rfl⟩
+      · exact .inl (.inl ⟨r, hr, rfl⟩)
+    · exact .inl (.inr ⟨e, he, rfl⟩)
+  | useRules S =>
+    rcases h with ⟨r, hr, rfl⟩ | ⟨e, he, rfl⟩
+    · exact .inl (.inl ⟨r, hr, rfl⟩)
+    · simp only [Env.stepRules, ConLeche.RuleTable.step, ConLeche.activeTable, List.mem_map] at he
+      obtain ⟨r, hr, rfl⟩ := he
+      exact .inl (.inl ⟨r, (List.mem_filter.mp ((List.mergeSort_perm _ _).mem_iff.mp hr)).1, rfl⟩)
+  | _ => exact .inl h
+
+/-- **The P carrier after a rule record**: the prefix's leaves and recorded blocks, and a
+registered rule's law (`hnew`, from its registration's runs). -/
+theorem stepRules_model (mp : EnvModelM V env) (d : Declaration)
+    (hnew : ∀ thm head prio, d = .rewriteDecl thm head prio → ∃ cv,
+      env.find? thm = some (.thmInfo cv) ∧ (ConLeche.ruleSides cv.type).isSome = true ∧
+        RuleLaw V mp.base2 cv.type) :
     ∃ mp' : EnvModelM V (env.stepRules d),
       mp'.base2.acval = mp.base2.acval ∧ mp'.lfpBlocks = mp.lfpBlocks := by
   let m₂ : EnvModel V (env.stepRules d) := mp.base2.stepRules d
@@ -120,11 +143,27 @@ theorem stepRules_model (mp : EnvModelM V env) (d : Declaration) :
     lfpBlocks := mp.lfpBlocks
     lfp_ok := mp.lfp_ok_transport (fun _ _ hf _ => hf) (fun _ _ _ _ => rfl)
       (fun ψ k _ _ hb hta => hx.denote hb hta)
-      (fun _ hb => constsBound_stepRules d hb) }, rfl, rfl⟩
+      (fun _ hb => constsBound_stepRules d hb)
+    rule_law := fun t ht => by
+      have hread : ∀ (ψ : Name → Nat) (k : Nat) (e : Expr) (ta : Term), ConstsBound env e →
+          denote mp.base2.acval env ψ k e = some ta →
+          denote m₂.acval (env.stepRules d) ψ k e = some ta :=
+        fun ψ k e ta hb h => (denote_stepRules d _ ψ k hb).trans h
+      obtain ⟨cv, hf, hsome, hlaw⟩ : ∃ cv, env.find? t = some (.thmInfo cv) ∧
+          (ConLeche.ruleSides cv.type).isSome = true ∧ RuleLaw V mp.base2 cv.type := by
+        rcases ruleNamed_stepRules ht with ht | ⟨head, prio, hd⟩
+        · exact mp.rule_law t ht
+        · exact hnew t head prio hd
+      have hres : cv.type.constsResolve env = true :=
+        (mp.base2.wf.consts _ (ConLeche.Env.find?_mem hf)).2.2.1
+      exact ⟨cv, hf, hsome, hlaw.transport hres hread⟩ }, rfl, rfl⟩
 
 /-- **The coverage step at a rule record.** -/
-theorem stepRules_cover (mp : EnvModelM V env) (d : Declaration) : CoverStep mp (env.stepRules d) := by
-  obtain ⟨mp', hac, hlb⟩ := stepRules_model mp d
+theorem stepRules_cover (mp : EnvModelM V env) (d : Declaration)
+    (hnew : ∀ thm head prio, d = .rewriteDecl thm head prio → ∃ cv,
+      env.find? thm = some (.thmInfo cv) ∧ (ConLeche.ruleSides cv.type).isSome = true ∧
+        RuleLaw V mp.base2 cv.type) : CoverStep mp (env.stepRules d) := by
+  obtain ⟨mp', hac, hlb⟩ := stepRules_model mp d hnew
   refine ⟨mp', ⟨fun _ _ h => h, fun n _ => by rw [hac], fun ψ k e ta hb h => by
     rw [hac, denote_stepRules d _ _ _ hb]; exact h, fun D hD => .inl (hlb ▸ hD)⟩, fun hc => ?_⟩
   exact ⟨fun n cv caps h hn hq => hlb ▸ hc.cover n cv caps h hn hq,

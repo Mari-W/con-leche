@@ -571,13 +571,7 @@ theorem rewriteAttempt_rel {e : Expr} (he : Res env₁ e) {t : Name}
             have hA : Res env₁ A := (res_app.mp (res_app.mp (res_app.mp hR).1).1).2
             have hr : Res env₁ rhs := (res_app.mp hR).2
             refine Rel.bind (iotaCertsFull_rel K d _ args hT hargs) fun b _ => ?_
-            refine Rel.iteB b (fun _ => ?_) fun _ => Rel.ok resO_none
-            refine Rel.bind (K.infer d hA) fun tA _ => ?_
-            refine Rel.ite (fun _ => ?_) fun _ => Rel.ok resO_none
-            refine Rel.bind (K.infer d he) fun tl _ => ?_
-            refine Rel.ite (fun _ => ?_) fun _ => Rel.ok resO_none
-            refine Rel.bind (K.infer d hr) fun tr _ => ?_
-            refine Rel.ite (fun _ => Rel.ok fun x hxe => ?_) fun _ => Rel.ok resO_none
+            refine Rel.iteB b (fun _ => Rel.ok fun x hxe => ?_) fun _ => Rel.ok resO_none
             obtain rfl := Option.some.inj hxe
             exact hr
         · exact Rel.ok resO_none

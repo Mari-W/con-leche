@@ -44,7 +44,7 @@ swap (`EnvModelM.swapP`), plus the stored types' three facts (`htyS`). -/
 theorem EnvModelM.swapTyP {env₀ env₃ : Env}
     (mp : EnvModelM V env₀)
     (hsw : ConLeche.SwapTyList env₀.consts env₃.consts)
-    (htab : env₃.tables = env₀.tables)
+    (htab : env₃.tables = env₀.tables) (hrul : env₃.rules = env₀.rules)
     -- the four syntactic environment facts at the swapped
     -- environment: taking them rather than rebuilding them keeps this
     -- file free of the rule facts
@@ -130,7 +130,15 @@ theorem EnvModelM.swapTyP {env₀ env₃ : Env}
               (fun n ci hf hnr => (hsame n ci hnr).mpr hf)
               (fun _ _ _ _ => rfl)
               (fun ψ d _ _ _ hta => by rw [← denote_swap hcg ψ d]; exact hta)
-              (fun _ => ConstsBound.of_isSome fun n h => by rw [← hcg.isSomeEq]; exact h) },
+              (fun _ => ConstsBound.of_isSome fun n h => by rw [← hcg.isSomeEq]; exact h)
+            rule_law := fun t ht => by
+              have ht' : RuleNamed env₀ t := by
+                unfold RuleNamed at ht ⊢; rw [hrul] at ht; exact ht
+              obtain ⟨cv, hf, hsome, hlaw⟩ := mp.rule_law t ht'
+              have hres : cv.type.constsResolve env₀ = true :=
+                (mp.base2.wf.consts _ (ConLeche.Env.find?_mem hf)).2.2.1
+              exact ⟨cv, (hsame t _ (fun _ _ _ _ _ he => ConstantInfo.noConfusion he)).mpr hf, hsome,
+                hlaw.transport hres fun ψ d _ _ _ hta => by rw [← hde]; exact hta⟩ },
           rfl, rfl⟩
   · -- `type_reads`
     intro c hc ψ
@@ -497,7 +505,10 @@ theorem blockRecStagedAt_stored {envC : Env}
       = (ConLeche.consBlockRecsT q 0 out envC).tables := by
     rw [consBlockRecsT_tables 0, consBlockRecsT_tables 0]
   obtain ⟨hctors, hbp, hproj, hrecP, htyS⟩ := storedSwap_sem mpG hlen hnres hresB hS
-  obtain ⟨mpS, hac, -⟩ := EnvModelM.swapTyP mpG hsw htab hwfS hctors hbp hproj hrecP htyS
+  have hrul : (ConLeche.consBlockRecsT q 0 (ConLeche.streamRecs q.recs out) envC).rules
+      = (ConLeche.consBlockRecsT q 0 out envC).rules := by
+    rw [consBlockRecsT_rules 0, consBlockRecsT_rules 0]
+  obtain ⟨mpS, hac, -⟩ := EnvModelM.swapTyP mpG hsw htab hrul hwfS hctors hbp hproj hrecP htyS
   have hcg := ConLeche.SwapTyList.congrEnv hsw htab
   have hnm : ∀ n, (envC.find? n).isSome = true → ∀ t ∈ ConLeche.streamRecs q.recs out,
       t.1.name ≠ n := by

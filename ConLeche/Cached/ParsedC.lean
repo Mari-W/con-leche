@@ -76,6 +76,34 @@ def checkThmValCI (fe : FEnv) (cv : ConstantVal) (value : Expr) : CheckCM Consta
     throw (.invalid s!"type mismatch in theorem {cv.name}")
   pure (.thmInfo cv)
 
+/-- Twin of `checkRuleType`. -/
+def checkRuleTypeC (fe : FEnv) (T : Expr) : CheckCM Unit := do
+  let s ← inferI mode fe false checkFuel false 0 T
+  let _u ← opSIxC mode fe 0 s
+
+/-- Twin of `checkRuleSide`. -/
+def checkRuleSideC (fe : FEnv) (thm : Name) (msg : String) (v T : Expr) : CheckCM Unit := do
+  let t ← inferI mode fe false checkFuel false 0 v
+  unless ← defeqI mode fe false checkFuel 0 t T do
+    throw (.invalid s!"rewrite rule {thm}: {msg}")
+
+/-- Twin of `checkRuleSidesAt`. -/
+def checkRuleSidesAtC (fe : FEnv) (thm : Name) (P L R LA PU : Expr) : CheckCM Unit := do
+  checkRuleTypeC mode fe PU
+  checkRuleTypeC mode fe P
+  checkRuleSideC mode fe thm "its equation's type is not at the equation's universe" LA PU
+  checkRuleSideC mode fe thm "its left side is not of the equation's type" L P
+  checkRuleSideC mode fe thm "its right side is not of the equation's type" R P
+
+/-- Twin of `checkRuleLaw`. -/
+def checkRuleLawC (fe : FEnv) (thm : Name) : CheckCM Unit := do
+  match fe.find? thm with
+  | some (.thmInfo cv) =>
+    match ruleSides cv.type with
+    | none => throw (.invalid s!"rewrite rule {thm}: its statement is not ∀ xs, l = r")
+    | some (P, L, R, LA, PU) => checkRuleSidesAtC mode fe thm P L R LA PU
+  | _ => throw (.internal s!"rewrite rule {thm}: no stored theorem")
+
 /-- Check an opaque's value against its declared type, returning the
 axiom record to install, unpushed (as `checkDefnValCI`). -/
 def checkOpaqueValCI (fe : FEnv) (cv : ConstantVal)
@@ -316,7 +344,9 @@ def checkDeclKindC (pins : List NatOpPinSet) (fe : FEnv) (pd : Declaration) :
   | .rewriteDecl thm head _ =>
     match ruleDeclError? fe.find? thm head with
     | some e => throw e
-    | none => pure (fe.stepRules pd)
+    | none => do
+      checkRuleLawC mode fe thm
+      pure (fe.stepRules pd)
   | .useRules _ => pure (fe.stepRules pd)
 
 /-- **One declaration** (`checkDecl`'s twin): its own checks, then the reserved names'. -/

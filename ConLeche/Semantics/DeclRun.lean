@@ -189,6 +189,23 @@ def DeclAxiomRun (F : Nat) (env : Env)
         cv.name = sorryAxName ∧
         env₂ = env))
 
+/-- A rule registration's law check (`checkRuleLaw`): the stored theorem's statement has sides
+(`ruleSides`), `∀ xs, Sort u` and `∀ xs, A` are types, and the three functions infer to types
+definitionally equal to theirs. -/
+def RuleLawRun (F : Nat) (env : Env) (thm : Name) : Prop :=
+  ∃ cv P L R LA PU, env.find? thm = some (.thmInfo cv) ∧
+    ruleSides cv.type = some (P, L, R, LA, PU) ∧
+    (∃ sPU v, inferTypeCore .verified false env F 0 PU = .ok sPU ∧
+      ensureSortCore .verified false env F 0 sPU = .ok v) ∧
+    (∃ sP u, inferTypeCore .verified false env F 0 P = .ok sP ∧
+      ensureSortCore .verified false env F 0 sP = .ok u) ∧
+    (∃ tA, inferTypeCore .verified false env F 0 LA = .ok tA ∧
+      isDefEqCore .verified false env F 0 tA PU = .ok true) ∧
+    (∃ tL, inferTypeCore .verified false env F 0 L = .ok tL ∧
+      isDefEqCore .verified false env F 0 tL P = .ok true) ∧
+    (∃ tR, inferTypeCore .verified false env F 0 R = .ok tR ∧
+      isDefEqCore .verified false env F 0 tR P = .ok true)
+
 /-! ## The assembly -/
 
 /-- **A declaration's own checks' run relation**: the kind dispatch, with the inductive kind's
@@ -203,7 +220,8 @@ def DeclKindRun (F : Nat)
   | .indDecl block nP, env₂ => Ind block nP env₂
   | .quotDecl k cv, env₂ => DeclQuotRun env k cv env₂
   | .rewriteDecl thm head prio, env₂ =>
-    ruleDeclError? env.find? thm head = none ∧ env₂ = env.stepRules (.rewriteDecl thm head prio)
+    ruleDeclError? env.find? thm head = none ∧ RuleLawRun F env thm ∧
+      env₂ = env.stepRules (.rewriteDecl thm head prio)
   | .useRules S, env₂ => env₂ = env.stepRules (.useRules S)
 
 /-- **The per-declaration run relation**: the declaration's own checks, then the reserved names'

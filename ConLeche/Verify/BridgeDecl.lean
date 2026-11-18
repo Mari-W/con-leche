@@ -1065,6 +1065,38 @@ theorem checkThmVal_datF (env : Env) (cv : ConstantVal) (value : Expr)
   unfold checkThmVal
   datF_tac
 
+theorem checkRuleType_datF (env : Env) (T : Expr) (F : Nat) :
+    (checkRuleType (fueledOpsM mode) env T).val F = checkRuleType (fueledOps mode F) env T := by
+  unfold checkRuleType
+  datF_tac
+
+theorem checkRuleSide_datF (env : Env) (thm : Name) (msg : String) (v T : Expr) (F : Nat) :
+    (checkRuleSide (fueledOpsM mode) env thm msg v T).val F =
+      checkRuleSide (fueledOps mode F) env thm msg v T := by
+  unfold checkRuleSide
+  datF_tac
+
+theorem checkRuleSidesAt_datF (env : Env) (thm : Name) (P L R LA PU : Expr) (F : Nat) :
+    (checkRuleSidesAt (fueledOpsM mode) env thm P L R LA PU).val F =
+      checkRuleSidesAt (fueledOps mode F) env thm P L R LA PU := by
+  unfold checkRuleSidesAt
+  simp only [FueledM.atF_bind, checkRuleType_datF, checkRuleSide_datF]
+
+theorem checkRuleSides_datF (env : Env) (thm : Name) (T : Expr) (F : Nat) :
+    (checkRuleSides (fueledOpsM mode) env thm T).val F =
+      checkRuleSides (fueledOps mode F) env thm T := by
+  unfold checkRuleSides
+  split
+  · rfl
+  · exact checkRuleSidesAt_datF env thm _ _ _ _ _ F
+
+theorem checkRuleLaw_datF (env : Env) (thm : Name) (F : Nat) :
+    (checkRuleLaw (fueledOpsM mode) env thm).val F = checkRuleLaw (fueledOps mode F) env thm := by
+  unfold checkRuleLaw
+  split
+  · exact checkRuleSides_datF env thm _ F
+  · rfl
+
 theorem checkOpaqueVal_datF (env : Env) (cv : ConstantVal) (value : Expr)
     (F : Nat) :
     (checkOpaqueVal (fueledOpsM mode) env cv value).val F =
@@ -1264,7 +1296,8 @@ theorem checkDeclKind_datF (env : Env) (d : Declaration) (F : Nat) :
     dsimp only
     split
     · simp only [FueledM.atF_throw]
-    · simp only [FueledM.atF_pure]
+    · rw [FueledM.atF_bind, checkRuleLaw_datF]
+      rfl
   | useRules S => simp only [FueledM.atF_pure]
 
 theorem checkDecl_datF (env : Env) (d : Declaration) (F : Nat) :

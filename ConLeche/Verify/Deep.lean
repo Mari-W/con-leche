@@ -1907,20 +1907,7 @@ private theorem rewriteAttempt_shift (henv : EnvWF env)
               have hio := iotaCertsFull_shift henv ih hpd hwT hwargs
               rw [shiftFrom_eq_self_of_not_hasFvar hTf] at hio
               refine bind_rel_eq _ hio fun b _ => ?_
-              refine ite_rel _ (fun _ => ?_) fun _ => rfl
-              refine bind_rel (shiftFrom p) _ (ih.infer hpd hR.1.1.2) fun tA _ => ?_
-              by_cases h1 : tA = .sort u
-              · rw [ite_eq_left (shiftFrom_eq_sort_iff.mpr h1), ite_eq_left h1]
-                refine bind_rel (shiftFrom p) _ (ih.infer hpd hw) fun tl _ => ?_
-                by_cases h2 : tl = A
-                · rw [ite_eq_left (congrArg _ h2), ite_eq_left h2]
-                  refine bind_rel (shiftFrom p) _ (ih.infer hpd hR.2) fun tr _ => ?_
-                  by_cases h3 : tr = A
-                  · rw [ite_eq_left (congrArg _ h3), ite_eq_left h3]; rfl
-                  · rw [ite_eq_right (fun h => h3 (shiftFrom_injective h)), ite_eq_right h3]
-                    rfl
-                · rw [ite_eq_right (fun h => h2 (shiftFrom_injective h)), ite_eq_right h2]; rfl
-              · rw [ite_eq_right (mt shiftFrom_eq_sort_iff.mp h1), ite_eq_right h1]; rfl
+              refine ite_rel _ (fun _ => rfl) fun _ => rfl
             · rw [ite_eq_right (mt hiff.mp hc), ite_eq_right hc]; rfl
     all_goals rfl
 

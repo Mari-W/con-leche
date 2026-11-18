@@ -145,6 +145,8 @@ theorem declStep_preserves_of_pushTable (mp : EnvModelM V env) {t : ProjTable}
     lfpBlocks := mp.lfpBlocks
     lfp_ok := mp.lfp_ok_transport (fun _ _ hf _ => hf) (fun _ _ _ _ => rfl)
       (fun ψ d _ _ hb hta => hx.denote hb hta)
-      (fun _ => ConstsBound.of_isSome (env₀ := env) (env₁ := ⟨env.consts, t :: env.tables, env.rules⟩) fun _ h => h) }, rfl⟩
+      (fun _ => ConstsBound.of_isSome (env₀ := env) (env₁ := ⟨env.consts, t :: env.tables, env.rules⟩) fun _ h => h)
+    rule_law := RuleLaws.transport (m := mp.base2) rfl (fun _ _ hf => hf)
+      (fun ψ d _ _ hb hta => hx.denote hb hta) mp.rule_law }, rfl⟩
 
 end ConLeche.Model

@@ -115806,3 +115806,67 @@ allowlist now names them with their reason, and `tests/plain-reach.sh` passes on
 reached, all allowlisted). e2e 622/622 with the new fixture, self-check 55 966 declarations,
 axioms pinned, olean gate 122/122, tutorial 90/92 as before, trusted and `--jobs` sweeps without
 divergence.
+
+## A rule's install-time law (2026-11-18, rewrite-rules, plan A4)
+
+A rule's registration types its sides once, and a firing infers nothing. `ruleSides` reads a
+statement `∀ xs, @Eq.{u} A l r` as five closed terms over its own binder domains: `∀ xs, A`,
+`fun xs => l`, `fun xs => r`, `fun xs => A` and `∀ xs, Sort u`. At `.rewriteDecl`,
+`checkRuleLaw` (cached twin `checkRuleLawC`) checks that `∀ xs, Sort u` and `∀ xs, A` are types,
+that `fun xs => A` infers to a type definitionally equal to `∀ xs, Sort u`, and that both sides'
+functions infer to types definitionally equal to `∀ xs, A`. Every comparison is `isDefEq` after
+inference. The fixture `rewrite_rule_pi` (`rrT_pi : ∀ n, rrT n = (Nat → Nat)`, whose right side
+infers to `Sort (imax 1 1)`) flips from 1 to 0, and the new `rewrite_rule_pi_conv` (the same rule
+in a conversion) accepts.
+
+The check asks a little more than "`∀ xs, A` is a type": it asks that `A` lives in the
+equation's universe `u`. The model's `eq_law` reads the `Eq` spine as `eqv ⟦l⟧ ⟦r⟧` only for
+`⟦A⟧ ∈ univ u`, and a type alone does not give that universe. Any theorem the checker stores
+passes it, because its statement typed `@Eq.{u} A l r` with `A : Sort u`. So no fixture makes the
+law fail. The check runs five inferences, two sort checks and three conversions once per
+registration.
+
+**The model.** `EnvModelM` gained `rule_law : RuleLaws V base2`: every theorem the rules name
+(`RuleNamed`, a registered rule or an active entry) is a stored theorem whose statement has sides
+and its law (`RuleLaw`): at every level assignment and depth, the five sides read, both sides'
+functions inhabit `∀ xs, A`, and `fun xs => A` inhabits `∀ xs, Sort u`. The registration step
+supplies a new rule's law from the recorded runs (`RuleLawRun` in `DeclKindRun`,
+`ruleLaw_of_run` in the new `Model/RuleLaw.lean`, whose `mem_of_runs` is `harvestDefn`'s
+membership argument at a closed term). `stepRules_model` takes it as a hypothesis and a
+`useRules` names registered rules only (`ruleNamed_stepRules`). Every other construction of the
+carrier carries the laws by `RuleLaws.transport` (same rules, every stored constant kept, the old
+readings kept): the generic cons install, the table install, the recursor swaps
+(`EnvModelM.swapP`, `swapTyP`, which take the rules' equality) and the pins' renaming
+(`renameCore`, through the new `RenEnv.rules`; a theorem is no pin's copy, `thm_not_pinCopy`).
+`RulesInputs` gained `rule_law`.
+
+**The firing.** `Red.rewrite` lost the three `Infer` premises and gained `h ∈ env.rulesFor c`,
+the rule in force at the left side's head (`rewriteStep_mem` in the bridge). `rewriteAttempt`
+and `rewriteAttemptI` lost the three inferences. `Red.rewrite_sound` reads the law along the
+certificate's fit (`Model/Rules/RuleLawKit.lean`): the readings of the statement and of its
+sides share their binder domains (`SidesT`, `sidesT_of_denote`, at the statement's universe
+`ruleLevel`), and one binder at a time β in the model (`app_lamV`) carries the memberships to
+the residual spine (`sidesT_fit`). The residual's universe is the statement's
+(`piResidual_ruleLevel`). The residual's grading, from the certificate, grades the right side.
+
+**What item 2 needs.** The law gives both sides and `A` at every fitting argument spine. The
+position-by-position argument of matching up to whnf also needs each pattern position of `l` in
+its domain type. That law is per application node of `l`, and the registration check above does
+not give it: an inference of `fun xs => l` yields the whole side's membership only. Item 2 adds
+it, at the registration, one check per pattern position.
+
+`model_exists`, `no_False_declaration` and `main_oleans_no_False` keep their axioms.
+
+Cost. `perf stat -e instructions:u` against the item-3 build: -0.53% to +0.10% on the rule
+fixtures and -0.02% to +0.01% on `nat_divmod_ok`, `wide_ok`, `stored_rec_outparam` and
+`natop_perturbed_used_later`, which is noise. The fixtures fire few rules, so the saving per
+firing (three inferences) does not show. Results in `_tmp/r5/perf-i1.txt` and
+`_tmp/r5/perf-a4.txt`.
+
+Gates (plan A4). `lake build` and `lake test` warning-free, `tests/shake.sh` passes (667/667
+allowlisted, none demotable), `tests/plain-reach.sh` passes with `ruleSides` allowlisted (665
+reached). `tests/arena.sh` exits 0 (log `_tmp/r5/a4-arena.log`): e2e 623/623 with
+`rewrite_rule_pi` at 0 and the new `rewrite_rule_pi_conv`, self-check 56 114 declarations,
+axioms pinned, olean gate 122/122, tutorial 90/92 as before, trusted and `--jobs` sweeps without
+divergence. Anchors that moved in OVERVIEW, the whitepaper and README (the `sorryAx` link only)
+were repointed and their expectations regenerated.

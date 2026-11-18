@@ -245,6 +245,7 @@ inductive ConstsRen : List ConstantInfo → List ConstantInfo → Prop where
 structure RenEnv (env env' : Env) : Prop where
   consts : ConstsRen env.consts env'.consts
   tables : env'.tables = env.tables
+  rules : env'.rules = env.rules
 
 /-- A copy's name is its pin's. -/
 theorem atLps_name (ci : ConstantInfo) (ps : List Name) : (ci.atLps ps).name = ci.name := by
@@ -305,7 +306,7 @@ theorem ConstsRen.symm {cs cs' : List ConstantInfo} (h : ConstsRen cs cs') : Con
   | cons hc _ ih => exact .cons hc.symm ih
 
 theorem RenEnv.symm {env env' : Env} (h : RenEnv env env') : RenEnv env' env :=
-  ⟨h.consts.symm, h.tables.symm⟩
+  ⟨h.consts.symm, h.tables.symm, h.rules.symm⟩
 
 /-- **The lookups correspond.** -/
 theorem find_ren : ∀ {cs cs' : List ConstantInfo}, ConstsRen cs cs' → ∀ n,

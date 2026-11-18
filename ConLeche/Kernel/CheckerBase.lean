@@ -134,6 +134,45 @@ def checkConstantVal (ops : CheckerOps m) (env : Env) (cv : ConstantVal)
   let stype ← ops.inferType env 0 cv.type
   let _u ← ops.ensureSort env 0 stype
 
+/-- A closed term of a rule's law is a type (`checkRuleSidesAt`). -/
+def checkRuleType (ops : CheckerOps m) (env : Env) (T : Expr) : m Unit := do
+  let s ← ops.inferType env 0 T
+  let _u ← ops.ensureSort env 0 s
+
+/-- A closed term of a rule's law infers to a type definitionally equal to `T`
+(`checkRuleSidesAt`). -/
+def checkRuleSide (ops : CheckerOps m) (env : Env) (thm : Name) (msg : String) (v T : Expr) :
+    m Unit := do
+  let t ← ops.inferType env 0 v
+  unless ← ops.isDefEq env 0 t T do
+    throw (.invalid s!"rewrite rule {thm}: {msg}")
+
+/-- **A rule's install-time law** (plan A4): at a registration, the statement
+`∀ xs, @Eq.{u} A l r` of the stored theorem `thm` types its sides once (`ruleSides`): `∀ xs, A`
+and `∀ xs, Sort u` are types, `fun xs => A` infers to a type definitionally equal to
+`∀ xs, Sort u` (so `∀ xs, A` is a type at the equation's universe), and `fun xs => l` and
+`fun xs => r` infer to types definitionally equal to `∀ xs, A`.  A firing then needs no
+inference: the model installs the law with the rule (`EnvModelM.rule_law`). -/
+def checkRuleSidesAt (ops : CheckerOps m) (env : Env) (thm : Name) (P L R LA PU : Expr) :
+    m Unit := do
+  checkRuleType ops env PU
+  checkRuleType ops env P
+  checkRuleSide ops env thm "its equation's type is not at the equation's universe" LA PU
+  checkRuleSide ops env thm "its left side is not of the equation's type" L P
+  checkRuleSide ops env thm "its right side is not of the equation's type" R P
+
+/-- The law check at a statement: its sides (`ruleSides`), checked. -/
+def checkRuleSides (ops : CheckerOps m) (env : Env) (thm : Name) (T : Expr) : m Unit :=
+  match ruleSides T with
+  | none => throw (.invalid s!"rewrite rule {thm}: its statement is not ∀ xs, l = r")
+  | some (P, L, R, LA, PU) => checkRuleSidesAt ops env thm P L R LA PU
+
+/-- The law check at the stored theorem `thm` (`checkRuleSides`). -/
+def checkRuleLaw (ops : CheckerOps m) (env : Env) (thm : Name) : m Unit := do
+  match env.find? thm with
+  | some (.thmInfo cv) => checkRuleSides ops env thm cv.type
+  | _ => throw (.internal s!"rewrite rule {thm}: no stored theorem")
+
 /-- Unwrap an optional value or fail with the given error (the
 `Option`-shaped checks below stay bind-shaped for the verification
 batteries). -/

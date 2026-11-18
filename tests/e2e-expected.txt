@@ -3502,10 +3502,13 @@
 # malformed registrations: a head that is not the left side's, a name that is no theorem
 1 rewrite_rule_bad_head.ndjson
 1 rewrite_rule_not_thm.ndjson
-# `rrT_pi : ∀ n, rrT n = (Nat → Nat)`: the right side infers to `Sort (imax 1 1)`, not `Type`,
-# so the firing's syntactic type comparison refuses it.  Target verdict 0 (the install-time
-# law, plan A4)
-1 rewrite_rule_pi.ndjson
+# `rrT_pi : ∀ n, rrT n = (Nat → Nat)`: the right side infers to `Sort (imax 1 1)`, not `Type`.
+# The registration types the sides once, up to definitional equality (plan A4), and the firing
+# infers nothing, so the rule fires in function position.  Target 0.
+0 rewrite_rule_pi.ndjson
+# the same rule in a conversion (`rr_use : (n : Nat) → rrT n → Nat → Nat := fun n g => g`).
+# Target 0.
+0 rewrite_rule_pi_conv.ndjson
 # a rule on a definition in a conversion check: `rr_use : (n : Nat) → rrT n → rrFn := fun n g => g`.
 # The rule fires in `whnfCore`, before lazy δ unfolds `rrT` (official `reduce_recursor`); before
 # the rules moved from `whnfStep` into `whnfCore` this was 1

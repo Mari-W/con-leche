@@ -698,7 +698,7 @@ theorem checkDeclKindC_pushes (mode : CheckMode) (fe : FEnv) (pd : Declaration) 
     simp only []
     split
     · exact Yields.ofThrow
-    · exact Yields.pure rfl
+    · exact Yields.bind fun _ => Yields.pure rfl
   | useRules S => exact Yields.pure rfl
 
 /-- **An accepting step pushes what the declaration installs**, at every mode, after its rule

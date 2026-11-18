@@ -6,6 +6,7 @@ import ConLeche.Semantics.Bridge.Decl
 import ConLeche.Verify.BridgeDecl
 import ConLeche.Verify.ReducePinInv
 import ConLeche.Verify.DivModInv
+import ConLeche.Verify.ExceptBind
 
 @[expose] public section
 
@@ -438,6 +439,26 @@ premise — `DeclRun`'s own parameter slot.
 This theorem's proof term reaches no constructor of
 `Red`/`Infer`/`DefEq`: every route into the derivation tier goes
 through `Ind`. -/
+theorem checkRuleType_inv {F : Nat} {env : Env} {T : Expr} {u : Unit}
+    (h : checkRuleType (fueledOps .verified F) env T = .ok u) :
+    ∃ s v, inferTypeCore .verified false env F 0 T = .ok s ∧
+      ensureSortCore .verified false env F 0 s = .ok v := by
+  unfold checkRuleType at h
+  obtain ⟨s, hs, h⟩ := ConLeche.exceptBind_ok h
+  obtain ⟨v, hv, -⟩ := ConLeche.exceptBind_ok h
+  exact ⟨s, v, hs, hv⟩
+
+theorem checkRuleSide_inv {F : Nat} {env : Env} {thm : Name} {msg : String} {v T : Expr}
+    {u : Unit} (h : checkRuleSide (fueledOps .verified F) env thm msg v T = .ok u) :
+    ∃ t, inferTypeCore .verified false env F 0 v = .ok t ∧
+      isDefEqCore .verified false env F 0 t T = .ok true := by
+  unfold checkRuleSide at h
+  obtain ⟨t, ht, h⟩ := ConLeche.exceptBind_ok h
+  obtain ⟨b, hb, h⟩ := ConLeche.exceptBind_ok h
+  cases b
+  · simp [throw, throwThe, MonadExceptOf.throw] at h
+  · exact ⟨t, ht, hb⟩
+
 theorem checkDeclRun_of {F : Nat}
     {Ind : List ConstantInfo → Nat → Env → Prop} {env env₂ : Env}
     (hind : ∀ {block : List ConstantInfo} {nP : Nat},
@@ -464,7 +485,26 @@ theorem checkDeclRun_of {F : Nat}
       exact nomatch h
     | none =>
       rw [he] at h
-      exact ⟨he, (Except.ok.inj h).symm⟩
+      simp only [bind, Except.bind] at h
+      split at h
+      · exact nomatch h
+      rename_i u hlaw
+      refine ⟨he, ?_, (Except.ok.inj h).symm⟩
+      unfold checkRuleLaw at hlaw
+      split at hlaw
+      · rename_i cv hf
+        unfold checkRuleSides at hlaw
+        split at hlaw
+        · exact nomatch hlaw
+        rename_i P L R LA PU hrs
+        unfold checkRuleSidesAt at hlaw
+        obtain ⟨_, h1, hlaw⟩ := ConLeche.exceptBind_ok hlaw
+        obtain ⟨_, h2, hlaw⟩ := ConLeche.exceptBind_ok hlaw
+        obtain ⟨_, h3, hlaw⟩ := ConLeche.exceptBind_ok hlaw
+        obtain ⟨_, h4, h5⟩ := ConLeche.exceptBind_ok hlaw
+        exact ⟨cv, P, L, R, LA, PU, hf, hrs, checkRuleType_inv h1, checkRuleType_inv h2,
+          checkRuleSide_inv h3, checkRuleSide_inv h4, checkRuleSide_inv h5⟩
+      · exact nomatch hlaw
   | useRules S =>
     unfold checkDeclKind at h
     dsimp only at h
