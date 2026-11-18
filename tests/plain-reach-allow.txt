@@ -339,6 +339,27 @@ ConLeche.ruleFireBudget
 ConLeche.ruleMatch
 ConLeche.ruleTele
 
+# User rewrite rules' registration and rule sets (Kernel/CoreDefs, Kernel/Env, Kernel/FEnv), once per
+# `rewrite` or `useRules` record, never per term. The registration check walks the theorem's
+# statement once (its telescope, its left side as a pattern, its right side's variables and
+# universe parameters: `hasLooseBVar` and `allLevelParamsDefined` are those walks, on the
+# rule's two sides). A `useRules` filters and sorts the registered rules (`activeTable`) and
+# builds the rule map once (`mkRlsGo`); the stream index does the same once per `useRules`. The
+# family decline's message is a constant.
+ConLeche.Env.stepRules
+ConLeche.Expr.allLevelParamsDefined
+ConLeche.Expr.hasLooseBVar
+ConLeche.FEnv.stepRules
+ConLeche.Name.cmp
+ConLeche.RewriteRule.before
+ConLeche.RuleTable.step
+ConLeche.activeTable
+ConLeche.mkRlsGo
+ConLeche.ruleDeclError?
+ConLeche.ruleLhsParams
+ConLeche.rulePat
+ConLeche.ruleScopedFamilyMsg
+
 # ConLeche.Kernel.Level — the level algorithms (levels are small trees; the cached tier memoises them by level, the official kernel runs the same walks)
 ConLeche.Expr.instantiateLevelParams
 ConLeche.Level.allParamsDefined

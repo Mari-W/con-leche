@@ -254,6 +254,12 @@ theorem checkDeclKindC_spec (henv : EnvWF env)
       v = mkFEnv v.env; ⊤⦄ := by
   cases pd with
   | indDecl block nP => exact absurd rfl (hnotind _ _)
+  | useRules S =>
+    sym only [conleche_grind, checkDeclKind, mkFEnv_env, stepRules_mkFEnv] =>
+      vcgen [checkDeclKindC] <;> finish
+  | rewriteDecl thm head prio =>
+    sym only [conleche_grind, checkDeclKind, mkFEnv_env, mkFEnv_find_fun, stepRules_mkFEnv] =>
+      vcgen [checkDeclKindC] <;> finish
   | quotDecl k cv =>
     sym only [conleche_grind, checkDeclKind, mkFEnv_env] =>
       vcgen [checkDeclKindC, checkQuotRecordC_spec hs] <;> finish

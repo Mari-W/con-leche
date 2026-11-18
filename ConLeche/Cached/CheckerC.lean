@@ -115,6 +115,7 @@ def declConstantsC : Declaration → List ConstantInfo
     match readBlock nP block with
     | .ok p => blockConstantsC p
     | .error _ => []
+  | .rewriteDecl .. | .useRules _ => []
 
 variable (mode : CheckMode)
 
@@ -228,6 +229,8 @@ def reduceMemberS (fe : FEnv) (ms : MemberShape) (nP : Nat) : CheckCM MemberShap
   if formerDefHeaded ms.cvT then do
     if declinedAtDefinition.contains ms.cvT.name then
       throw (.notImplemented s!"this family stored at a definition ({ms.cvT.name})")
+    else if !fe.base.rls.isEmpty then
+      throw (.notImplemented (ruleScopedFamilyMsg ms.cvT.name))
     else do
       checkConstantValC mode fe ms.cvT
       let cvR ← reducedFormerC mode fe ms.cvT (nP + ms.nIdx)

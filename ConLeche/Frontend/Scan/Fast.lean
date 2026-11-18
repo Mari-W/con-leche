@@ -276,6 +276,9 @@ def keyAt (b : @& ByteArray) (i : USize) (kl : USize) : Key :=
     if kl == 5 then
       if lit4 b j 105 110 116 115 then .kHints  -- "hints"
       else .kUnknown
+    else if kl == 4 then
+      if lit3 b j 101 97 100 then .kHead  -- "head"
+      else .kUnknown
     else .kUnknown
   | 105 =>   -- 'i'
     if kl == 2 then
@@ -381,6 +384,7 @@ def keyAt (b : @& ByteArray) (i : USize) (kl : USize) : Key :=
       else .kUnknown
     else if kl == 4 then
       if lit3 b j 114 111 106 then .kProj  -- "proj"
+      else if lit3 b j 114 105 111 then .kPrio  -- "prio"
       else .kUnknown
     else .kUnknown
   | 113 =>   -- 'q'
@@ -400,6 +404,10 @@ def keyAt (b : @& ByteArray) (i : USize) (kl : USize) : Key :=
       else .kUnknown
     else if kl == 7 then
       if lit6 b j 101 103 117 108 97 114 then .kRegular  -- "regular"
+      else if lit6 b j 101 119 114 105 116 101 then .kRewrite  -- "rewrite"
+      else .kUnknown
+    else if kl == 8 then
+      if lit7 b j 101 119 114 105 116 101 115 then .kRewrites  -- "rewrites"
       else .kUnknown
     else .kUnknown
   | 115 =>   -- 's'
@@ -1889,17 +1897,18 @@ def scanAxiomDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
     (isUns : Bool)
     (lps : List Nat)
     (nm : Nat)
-    (ty : Nat) : ScanRes DeclRec :=
+    (ty : Nat)
+    (rw : List Nat) : ScanRes DeclRec :=
   if h : i < b.usize then
     let c := b.uget i (usizeInBounds b i h)
-    if isWs c then scanAxiomDeclLoop b (i + 1) wantMember seen isUns lps nm ty
+    if isWs c then scanAxiomDeclLoop b (i + 1) wantMember seen isUns lps nm ty rw
     else if c == 125 then
       if wantMember && seen != 0 then .err ⟨i.toNat, .expectedKey⟩
       else if (seen &&& 15) != 15 then .err ⟨i.toNat, .missingKey⟩
-      else .ok (.ax ⟨nm, lps, ty⟩ isUns) (i + 1)
+      else .ok (.withRules rw (.ax ⟨nm, lps, ty⟩ isUns)) (i + 1)
     else if c == 44 then
       if wantMember then .err ⟨i.toNat, .expectedKey⟩
-      else scanAxiomDeclLoop b (i + 1) true seen isUns lps nm ty
+      else scanAxiomDeclLoop b (i + 1) true seen isUns lps nm ty rw
     else if c == 34 then
       if !wantMember then .err ⟨i.toNat, .expectedComma⟩
       else
@@ -1916,7 +1925,7 @@ def scanAxiomDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
             | .err err => .err err
             | .ok x e =>
               if _hj : i < e then
-                scanAxiomDeclLoop b e false (seen ||| 1) x lps nm ty
+                scanAxiomDeclLoop b e false (seen ||| 1) x lps nm ty rw
               else .err ⟨i.toNat, .noProgress⟩
         | .kLevelParams =>
           if (seen &&& 2) != 0 then .err ⟨i.toNat, .duplicateKey⟩
@@ -1925,7 +1934,7 @@ def scanAxiomDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
             | .err err => .err err
             | .ok x e =>
               if _hj : i < e then
-                scanAxiomDeclLoop b e false (seen ||| 2) isUns x nm ty
+                scanAxiomDeclLoop b e false (seen ||| 2) isUns x nm ty rw
               else .err ⟨i.toNat, .noProgress⟩
         | .kName =>
           if (seen &&& 4) != 0 then .err ⟨i.toNat, .duplicateKey⟩
@@ -1933,7 +1942,7 @@ def scanAxiomDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
             let e := numEnd b v
             if e == v then .err ⟨v.toNat, .expectedNat⟩
             else if _hj : i < e then
-              scanAxiomDeclLoop b e false (seen ||| 4) isUns lps (readNatAt b v e) ty
+              scanAxiomDeclLoop b e false (seen ||| 4) isUns lps (readNatAt b v e) ty rw
             else .err ⟨i.toNat, .noProgress⟩
         | .kType =>
           if (seen &&& 8) != 0 then .err ⟨i.toNat, .duplicateKey⟩
@@ -1941,8 +1950,17 @@ def scanAxiomDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
             let e := numEnd b v
             if e == v then .err ⟨v.toNat, .expectedNat⟩
             else if _hj : i < e then
-              scanAxiomDeclLoop b e false (seen ||| 8) isUns lps nm (readNatAt b v e)
+              scanAxiomDeclLoop b e false (seen ||| 8) isUns lps nm (readNatAt b v e) rw
             else .err ⟨i.toNat, .noProgress⟩
+        | .kRewrites =>
+          if (seen &&& 16) != 0 then .err ⟨i.toNat, .duplicateKey⟩
+          else
+            match scanNatList b v with
+            | .err err => .err err
+            | .ok x e =>
+              if _hj : i < e then
+                scanAxiomDeclLoop b e false (seen ||| 16) isUns lps nm ty x
+              else .err ⟨i.toNat, .noProgress⟩
         | _ => .err ⟨i.toNat, .unknownKey⟩
     else .err ⟨i.toNat, .expectedComma⟩
   else .err ⟨i.toNat, .expectedComma⟩
@@ -1956,7 +1974,7 @@ decreasing_by
 /-- An `axiom` record. -/
 def scanAxiomDecl (b : @& ByteArray) (i : USize) : ScanRes DeclRec :=
   if byteAt b i == 123 then
-    scanAxiomDeclLoop b (i + 1) true 0 false [] 0 0
+    scanAxiomDeclLoop b (i + 1) true 0 false [] 0 0 []
   else .err ⟨i.toNat, .expectedObject⟩
 
 def scanDefDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
@@ -1966,17 +1984,18 @@ def scanDefDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
     (nm : Nat)
     (safety : String)
     (ty : Nat)
-    (vl : Nat) : ScanRes DeclRec :=
+    (vl : Nat)
+    (rw : List Nat) : ScanRes DeclRec :=
   if h : i < b.usize then
     let c := b.uget i (usizeInBounds b i h)
-    if isWs c then scanDefDeclLoop b (i + 1) wantMember seen hints lps nm safety ty vl
+    if isWs c then scanDefDeclLoop b (i + 1) wantMember seen hints lps nm safety ty vl rw
     else if c == 125 then
       if wantMember && seen != 0 then .err ⟨i.toNat, .expectedKey⟩
       else if (seen &&& 124) != 124 then .err ⟨i.toNat, .missingKey⟩
-      else .ok (.defn ⟨nm, lps, ty⟩ vl hints safety) (i + 1)
+      else .ok (.withRules rw (.defn ⟨nm, lps, ty⟩ vl hints safety)) (i + 1)
     else if c == 44 then
       if wantMember then .err ⟨i.toNat, .expectedKey⟩
-      else scanDefDeclLoop b (i + 1) true seen hints lps nm safety ty vl
+      else scanDefDeclLoop b (i + 1) true seen hints lps nm safety ty vl rw
     else if c == 34 then
       if !wantMember then .err ⟨i.toNat, .expectedComma⟩
       else
@@ -1993,7 +2012,7 @@ def scanDefDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
             | .err err => .err err
             | .ok _x e =>
               if _hj : i < e then
-                scanDefDeclLoop b e false (seen ||| 1) hints lps nm safety ty vl
+                scanDefDeclLoop b e false (seen ||| 1) hints lps nm safety ty vl rw
               else .err ⟨i.toNat, .noProgress⟩
         | .kHints =>
           if (seen &&& 2) != 0 then .err ⟨i.toNat, .duplicateKey⟩
@@ -2002,7 +2021,7 @@ def scanDefDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
             | .err err => .err err
             | .ok x e =>
               if _hj : i < e then
-                scanDefDeclLoop b e false (seen ||| 2) x lps nm safety ty vl
+                scanDefDeclLoop b e false (seen ||| 2) x lps nm safety ty vl rw
               else .err ⟨i.toNat, .noProgress⟩
         | .kLevelParams =>
           if (seen &&& 4) != 0 then .err ⟨i.toNat, .duplicateKey⟩
@@ -2011,7 +2030,7 @@ def scanDefDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
             | .err err => .err err
             | .ok x e =>
               if _hj : i < e then
-                scanDefDeclLoop b e false (seen ||| 4) hints x nm safety ty vl
+                scanDefDeclLoop b e false (seen ||| 4) hints x nm safety ty vl rw
               else .err ⟨i.toNat, .noProgress⟩
         | .kName =>
           if (seen &&& 8) != 0 then .err ⟨i.toNat, .duplicateKey⟩
@@ -2019,7 +2038,7 @@ def scanDefDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
             let e := numEnd b v
             if e == v then .err ⟨v.toNat, .expectedNat⟩
             else if _hj : i < e then
-              scanDefDeclLoop b e false (seen ||| 8) hints lps (readNatAt b v e) safety ty vl
+              scanDefDeclLoop b e false (seen ||| 8) hints lps (readNatAt b v e) safety ty vl rw
             else .err ⟨i.toNat, .noProgress⟩
         | .kSafety =>
           if (seen &&& 16) != 0 then .err ⟨i.toNat, .duplicateKey⟩
@@ -2028,7 +2047,7 @@ def scanDefDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
             | .err err => .err err
             | .ok x e =>
               if _hj : i < e then
-                scanDefDeclLoop b e false (seen ||| 16) hints lps nm x ty vl
+                scanDefDeclLoop b e false (seen ||| 16) hints lps nm x ty vl rw
               else .err ⟨i.toNat, .noProgress⟩
         | .kType =>
           if (seen &&& 32) != 0 then .err ⟨i.toNat, .duplicateKey⟩
@@ -2036,7 +2055,7 @@ def scanDefDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
             let e := numEnd b v
             if e == v then .err ⟨v.toNat, .expectedNat⟩
             else if _hj : i < e then
-              scanDefDeclLoop b e false (seen ||| 32) hints lps nm safety (readNatAt b v e) vl
+              scanDefDeclLoop b e false (seen ||| 32) hints lps nm safety (readNatAt b v e) vl rw
             else .err ⟨i.toNat, .noProgress⟩
         | .kValue =>
           if (seen &&& 64) != 0 then .err ⟨i.toNat, .duplicateKey⟩
@@ -2044,8 +2063,17 @@ def scanDefDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
             let e := numEnd b v
             if e == v then .err ⟨v.toNat, .expectedNat⟩
             else if _hj : i < e then
-              scanDefDeclLoop b e false (seen ||| 64) hints lps nm safety ty (readNatAt b v e)
+              scanDefDeclLoop b e false (seen ||| 64) hints lps nm safety ty (readNatAt b v e) rw
             else .err ⟨i.toNat, .noProgress⟩
+        | .kRewrites =>
+          if (seen &&& 128) != 0 then .err ⟨i.toNat, .duplicateKey⟩
+          else
+            match scanNatList b v with
+            | .err err => .err err
+            | .ok x e =>
+              if _hj : i < e then
+                scanDefDeclLoop b e false (seen ||| 128) hints lps nm safety ty vl x
+              else .err ⟨i.toNat, .noProgress⟩
         | _ => .err ⟨i.toNat, .unknownKey⟩
     else .err ⟨i.toNat, .expectedComma⟩
   else .err ⟨i.toNat, .expectedComma⟩
@@ -2061,7 +2089,7 @@ steer only the unfolding order of lazy delta, so any default is behaviourally
 safe. -/
 def scanDefDecl (b : @& ByteArray) (i : USize) : ScanRes DeclRec :=
   if byteAt b i == 123 then
-    scanDefDeclLoop b (i + 1) true 0 (.regular 0) [] 0 "" 0 0
+    scanDefDeclLoop b (i + 1) true 0 (.regular 0) [] 0 "" 0 0 []
   else .err ⟨i.toNat, .expectedObject⟩
 
 def scanThmDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
@@ -2069,17 +2097,18 @@ def scanThmDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
     (lps : List Nat)
     (nm : Nat)
     (ty : Nat)
-    (vl : Nat) : ScanRes DeclRec :=
+    (vl : Nat)
+    (rw : List Nat) : ScanRes DeclRec :=
   if h : i < b.usize then
     let c := b.uget i (usizeInBounds b i h)
-    if isWs c then scanThmDeclLoop b (i + 1) wantMember seen lps nm ty vl
+    if isWs c then scanThmDeclLoop b (i + 1) wantMember seen lps nm ty vl rw
     else if c == 125 then
       if wantMember && seen != 0 then .err ⟨i.toNat, .expectedKey⟩
       else if (seen &&& 30) != 30 then .err ⟨i.toNat, .missingKey⟩
-      else .ok (.thm ⟨nm, lps, ty⟩ vl) (i + 1)
+      else .ok (.withRules rw (.thm ⟨nm, lps, ty⟩ vl)) (i + 1)
     else if c == 44 then
       if wantMember then .err ⟨i.toNat, .expectedKey⟩
-      else scanThmDeclLoop b (i + 1) true seen lps nm ty vl
+      else scanThmDeclLoop b (i + 1) true seen lps nm ty vl rw
     else if c == 34 then
       if !wantMember then .err ⟨i.toNat, .expectedComma⟩
       else
@@ -2096,7 +2125,7 @@ def scanThmDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
             | .err err => .err err
             | .ok _x e =>
               if _hj : i < e then
-                scanThmDeclLoop b e false (seen ||| 1) lps nm ty vl
+                scanThmDeclLoop b e false (seen ||| 1) lps nm ty vl rw
               else .err ⟨i.toNat, .noProgress⟩
         | .kLevelParams =>
           if (seen &&& 2) != 0 then .err ⟨i.toNat, .duplicateKey⟩
@@ -2105,7 +2134,7 @@ def scanThmDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
             | .err err => .err err
             | .ok x e =>
               if _hj : i < e then
-                scanThmDeclLoop b e false (seen ||| 2) x nm ty vl
+                scanThmDeclLoop b e false (seen ||| 2) x nm ty vl rw
               else .err ⟨i.toNat, .noProgress⟩
         | .kName =>
           if (seen &&& 4) != 0 then .err ⟨i.toNat, .duplicateKey⟩
@@ -2113,7 +2142,7 @@ def scanThmDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
             let e := numEnd b v
             if e == v then .err ⟨v.toNat, .expectedNat⟩
             else if _hj : i < e then
-              scanThmDeclLoop b e false (seen ||| 4) lps (readNatAt b v e) ty vl
+              scanThmDeclLoop b e false (seen ||| 4) lps (readNatAt b v e) ty vl rw
             else .err ⟨i.toNat, .noProgress⟩
         | .kType =>
           if (seen &&& 8) != 0 then .err ⟨i.toNat, .duplicateKey⟩
@@ -2121,7 +2150,7 @@ def scanThmDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
             let e := numEnd b v
             if e == v then .err ⟨v.toNat, .expectedNat⟩
             else if _hj : i < e then
-              scanThmDeclLoop b e false (seen ||| 8) lps nm (readNatAt b v e) vl
+              scanThmDeclLoop b e false (seen ||| 8) lps nm (readNatAt b v e) vl rw
             else .err ⟨i.toNat, .noProgress⟩
         | .kValue =>
           if (seen &&& 16) != 0 then .err ⟨i.toNat, .duplicateKey⟩
@@ -2129,8 +2158,17 @@ def scanThmDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
             let e := numEnd b v
             if e == v then .err ⟨v.toNat, .expectedNat⟩
             else if _hj : i < e then
-              scanThmDeclLoop b e false (seen ||| 16) lps nm ty (readNatAt b v e)
+              scanThmDeclLoop b e false (seen ||| 16) lps nm ty (readNatAt b v e) rw
             else .err ⟨i.toNat, .noProgress⟩
+        | .kRewrites =>
+          if (seen &&& 32) != 0 then .err ⟨i.toNat, .duplicateKey⟩
+          else
+            match scanNatList b v with
+            | .err err => .err err
+            | .ok x e =>
+              if _hj : i < e then
+                scanThmDeclLoop b e false (seen ||| 32) lps nm ty vl x
+              else .err ⟨i.toNat, .noProgress⟩
         | _ => .err ⟨i.toNat, .unknownKey⟩
     else .err ⟨i.toNat, .expectedComma⟩
   else .err ⟨i.toNat, .expectedComma⟩
@@ -2144,7 +2182,7 @@ decreasing_by
 /-- A `thm` record. -/
 def scanThmDecl (b : @& ByteArray) (i : USize) : ScanRes DeclRec :=
   if byteAt b i == 123 then
-    scanThmDeclLoop b (i + 1) true 0 [] 0 0 0
+    scanThmDeclLoop b (i + 1) true 0 [] 0 0 0 []
   else .err ⟨i.toNat, .expectedObject⟩
 
 def scanOpaqueDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
@@ -2153,17 +2191,18 @@ def scanOpaqueDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
     (lps : List Nat)
     (nm : Nat)
     (ty : Nat)
-    (vl : Nat) : ScanRes DeclRec :=
+    (vl : Nat)
+    (rw : List Nat) : ScanRes DeclRec :=
   if h : i < b.usize then
     let c := b.uget i (usizeInBounds b i h)
-    if isWs c then scanOpaqueDeclLoop b (i + 1) wantMember seen isUns lps nm ty vl
+    if isWs c then scanOpaqueDeclLoop b (i + 1) wantMember seen isUns lps nm ty vl rw
     else if c == 125 then
       if wantMember && seen != 0 then .err ⟨i.toNat, .expectedKey⟩
       else if (seen &&& 62) != 62 then .err ⟨i.toNat, .missingKey⟩
-      else .ok (.opaq ⟨nm, lps, ty⟩ vl isUns) (i + 1)
+      else .ok (.withRules rw (.opaq ⟨nm, lps, ty⟩ vl isUns)) (i + 1)
     else if c == 44 then
       if wantMember then .err ⟨i.toNat, .expectedKey⟩
-      else scanOpaqueDeclLoop b (i + 1) true seen isUns lps nm ty vl
+      else scanOpaqueDeclLoop b (i + 1) true seen isUns lps nm ty vl rw
     else if c == 34 then
       if !wantMember then .err ⟨i.toNat, .expectedComma⟩
       else
@@ -2180,7 +2219,7 @@ def scanOpaqueDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
             | .err err => .err err
             | .ok _x e =>
               if _hj : i < e then
-                scanOpaqueDeclLoop b e false (seen ||| 1) isUns lps nm ty vl
+                scanOpaqueDeclLoop b e false (seen ||| 1) isUns lps nm ty vl rw
               else .err ⟨i.toNat, .noProgress⟩
         | .kIsUnsafe =>
           if (seen &&& 2) != 0 then .err ⟨i.toNat, .duplicateKey⟩
@@ -2189,7 +2228,7 @@ def scanOpaqueDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
             | .err err => .err err
             | .ok x e =>
               if _hj : i < e then
-                scanOpaqueDeclLoop b e false (seen ||| 2) x lps nm ty vl
+                scanOpaqueDeclLoop b e false (seen ||| 2) x lps nm ty vl rw
               else .err ⟨i.toNat, .noProgress⟩
         | .kLevelParams =>
           if (seen &&& 4) != 0 then .err ⟨i.toNat, .duplicateKey⟩
@@ -2198,7 +2237,7 @@ def scanOpaqueDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
             | .err err => .err err
             | .ok x e =>
               if _hj : i < e then
-                scanOpaqueDeclLoop b e false (seen ||| 4) isUns x nm ty vl
+                scanOpaqueDeclLoop b e false (seen ||| 4) isUns x nm ty vl rw
               else .err ⟨i.toNat, .noProgress⟩
         | .kName =>
           if (seen &&& 8) != 0 then .err ⟨i.toNat, .duplicateKey⟩
@@ -2206,7 +2245,7 @@ def scanOpaqueDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
             let e := numEnd b v
             if e == v then .err ⟨v.toNat, .expectedNat⟩
             else if _hj : i < e then
-              scanOpaqueDeclLoop b e false (seen ||| 8) isUns lps (readNatAt b v e) ty vl
+              scanOpaqueDeclLoop b e false (seen ||| 8) isUns lps (readNatAt b v e) ty vl rw
             else .err ⟨i.toNat, .noProgress⟩
         | .kType =>
           if (seen &&& 16) != 0 then .err ⟨i.toNat, .duplicateKey⟩
@@ -2214,7 +2253,7 @@ def scanOpaqueDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
             let e := numEnd b v
             if e == v then .err ⟨v.toNat, .expectedNat⟩
             else if _hj : i < e then
-              scanOpaqueDeclLoop b e false (seen ||| 16) isUns lps nm (readNatAt b v e) vl
+              scanOpaqueDeclLoop b e false (seen ||| 16) isUns lps nm (readNatAt b v e) vl rw
             else .err ⟨i.toNat, .noProgress⟩
         | .kValue =>
           if (seen &&& 32) != 0 then .err ⟨i.toNat, .duplicateKey⟩
@@ -2222,8 +2261,17 @@ def scanOpaqueDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
             let e := numEnd b v
             if e == v then .err ⟨v.toNat, .expectedNat⟩
             else if _hj : i < e then
-              scanOpaqueDeclLoop b e false (seen ||| 32) isUns lps nm ty (readNatAt b v e)
+              scanOpaqueDeclLoop b e false (seen ||| 32) isUns lps nm ty (readNatAt b v e) rw
             else .err ⟨i.toNat, .noProgress⟩
+        | .kRewrites =>
+          if (seen &&& 64) != 0 then .err ⟨i.toNat, .duplicateKey⟩
+          else
+            match scanNatList b v with
+            | .err err => .err err
+            | .ok x e =>
+              if _hj : i < e then
+                scanOpaqueDeclLoop b e false (seen ||| 64) isUns lps nm ty vl x
+              else .err ⟨i.toNat, .noProgress⟩
         | _ => .err ⟨i.toNat, .unknownKey⟩
     else .err ⟨i.toNat, .expectedComma⟩
   else .err ⟨i.toNat, .expectedComma⟩
@@ -2237,7 +2285,7 @@ decreasing_by
 /-- An `opaque` record. -/
 def scanOpaqueDecl (b : @& ByteArray) (i : USize) : ScanRes DeclRec :=
   if byteAt b i == 123 then
-    scanOpaqueDeclLoop b (i + 1) true 0 false [] 0 0 0
+    scanOpaqueDeclLoop b (i + 1) true 0 false [] 0 0 0 []
   else .err ⟨i.toNat, .expectedObject⟩
 
 def scanQuotDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
@@ -2319,17 +2367,18 @@ def scanIndDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
     (seen : UInt32)
     (ctors : List IndCtorRec)
     (recs : List IndRecRec)
-    (types : List IndTypeRec) : ScanRes DeclRec :=
+    (types : List IndTypeRec)
+    (rw : List Nat) : ScanRes DeclRec :=
   if h : i < b.usize then
     let c := b.uget i (usizeInBounds b i h)
-    if isWs c then scanIndDeclLoop b (i + 1) wantMember seen ctors recs types
+    if isWs c then scanIndDeclLoop b (i + 1) wantMember seen ctors recs types rw
     else if c == 125 then
       if wantMember && seen != 0 then .err ⟨i.toNat, .expectedKey⟩
       else if (seen &&& 26) != 26 then .err ⟨i.toNat, .missingKey⟩
-      else .ok (.ind types ctors recs) (i + 1)
+      else .ok (.withRules rw (.ind types ctors recs)) (i + 1)
     else if c == 44 then
       if wantMember then .err ⟨i.toNat, .expectedKey⟩
-      else scanIndDeclLoop b (i + 1) true seen ctors recs types
+      else scanIndDeclLoop b (i + 1) true seen ctors recs types rw
     else if c == 34 then
       if !wantMember then .err ⟨i.toNat, .expectedComma⟩
       else
@@ -2346,7 +2395,7 @@ def scanIndDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
             | .err err => .err err
             | .ok _x e =>
               if _hj : i < e then
-                scanIndDeclLoop b e false (seen ||| 1) ctors recs types
+                scanIndDeclLoop b e false (seen ||| 1) ctors recs types rw
               else .err ⟨i.toNat, .noProgress⟩
         | .kCtors =>
           if (seen &&& 2) != 0 then .err ⟨i.toNat, .duplicateKey⟩
@@ -2355,7 +2404,7 @@ def scanIndDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
             | .err err => .err err
             | .ok x e =>
               if _hj : i < e then
-                scanIndDeclLoop b e false (seen ||| 2) x recs types
+                scanIndDeclLoop b e false (seen ||| 2) x recs types rw
               else .err ⟨i.toNat, .noProgress⟩
         | .kIsUnsafe =>
           if (seen &&& 4) != 0 then .err ⟨i.toNat, .duplicateKey⟩
@@ -2364,7 +2413,7 @@ def scanIndDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
             | .err err => .err err
             | .ok _x e =>
               if _hj : i < e then
-                scanIndDeclLoop b e false (seen ||| 4) ctors recs types
+                scanIndDeclLoop b e false (seen ||| 4) ctors recs types rw
               else .err ⟨i.toNat, .noProgress⟩
         | .kRecs =>
           if (seen &&& 8) != 0 then .err ⟨i.toNat, .duplicateKey⟩
@@ -2373,7 +2422,7 @@ def scanIndDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
             | .err err => .err err
             | .ok x e =>
               if _hj : i < e then
-                scanIndDeclLoop b e false (seen ||| 8) ctors x types
+                scanIndDeclLoop b e false (seen ||| 8) ctors x types rw
               else .err ⟨i.toNat, .noProgress⟩
         | .kTypes =>
           if (seen &&& 16) != 0 then .err ⟨i.toNat, .duplicateKey⟩
@@ -2382,7 +2431,16 @@ def scanIndDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
             | .err err => .err err
             | .ok x e =>
               if _hj : i < e then
-                scanIndDeclLoop b e false (seen ||| 16) ctors recs x
+                scanIndDeclLoop b e false (seen ||| 16) ctors recs x rw
+              else .err ⟨i.toNat, .noProgress⟩
+        | .kRewrites =>
+          if (seen &&& 32) != 0 then .err ⟨i.toNat, .duplicateKey⟩
+          else
+            match scanNatList b v with
+            | .err err => .err err
+            | .ok x e =>
+              if _hj : i < e then
+                scanIndDeclLoop b e false (seen ||| 32) ctors recs types x
               else .err ⟨i.toNat, .noProgress⟩
         | _ => .err ⟨i.toNat, .unknownKey⟩
     else .err ⟨i.toNat, .expectedComma⟩
@@ -2397,9 +2455,73 @@ decreasing_by
 /-- An `inductive` record: three arrays of member records. -/
 def scanIndDecl (b : @& ByteArray) (i : USize) : ScanRes DeclRec :=
   if byteAt b i == 123 then
-    scanIndDeclLoop b (i + 1) true 0 [] [] []
+    scanIndDeclLoop b (i + 1) true 0 [] [] [] []
   else .err ⟨i.toNat, .expectedObject⟩
 
+
+def scanRuleDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
+    (seen : UInt32)
+    (hd : Nat)
+    (nm : Nat)
+    (pr : Nat) : ScanRes DeclRec :=
+  if h : i < b.usize then
+    let c := b.uget i (usizeInBounds b i h)
+    if isWs c then scanRuleDeclLoop b (i + 1) wantMember seen hd nm pr
+    else if c == 125 then
+      if wantMember && seen != 0 then .err ⟨i.toNat, .expectedKey⟩
+      else if (seen &&& 7) != 7 then .err ⟨i.toNat, .missingKey⟩
+      else .ok (.rule nm hd pr) (i + 1)
+    else if c == 44 then
+      if wantMember then .err ⟨i.toNat, .expectedKey⟩
+      else scanRuleDeclLoop b (i + 1) true seen hd nm pr
+    else if c == 34 then
+      if !wantMember then .err ⟨i.toNat, .expectedComma⟩
+      else
+        let ke := keyEnd b (i + 1)
+        let v := valueAt b i ke
+        if ke == 0 then .err ⟨i.toNat, .expectedKey⟩
+        else if v == i then .err ⟨i.toNat, .expectedColon⟩
+        else
+        match keyAt b i (ke - (i + 1)) with
+        | .kHead =>
+          if (seen &&& 1) != 0 then .err ⟨i.toNat, .duplicateKey⟩
+          else
+            let e := numEnd b v
+            if e == v then .err ⟨v.toNat, .expectedNat⟩
+            else if _hj : i < e then
+              scanRuleDeclLoop b e false (seen ||| 1) (readNatAt b v e) nm pr
+            else .err ⟨i.toNat, .noProgress⟩
+        | .kName =>
+          if (seen &&& 2) != 0 then .err ⟨i.toNat, .duplicateKey⟩
+          else
+            let e := numEnd b v
+            if e == v then .err ⟨v.toNat, .expectedNat⟩
+            else if _hj : i < e then
+              scanRuleDeclLoop b e false (seen ||| 2) hd (readNatAt b v e) pr
+            else .err ⟨i.toNat, .noProgress⟩
+        | .kPrio =>
+          if (seen &&& 4) != 0 then .err ⟨i.toNat, .duplicateKey⟩
+          else
+            let e := numEnd b v
+            if e == v then .err ⟨v.toNat, .expectedNat⟩
+            else if _hj : i < e then
+              scanRuleDeclLoop b e false (seen ||| 4) hd nm (readNatAt b v e)
+            else .err ⟨i.toNat, .noProgress⟩
+        | _ => .err ⟨i.toNat, .unknownKey⟩
+    else .err ⟨i.toNat, .expectedComma⟩
+  else .err ⟨i.toNat, .expectedComma⟩
+termination_by b.size - i.toNat
+decreasing_by
+  all_goals
+    first
+      | (have := usizeInBounds b i h; have := usizeStep b i h; omega)
+      | exact Nat.sub_lt_sub_left (usizeInBounds b i h) (USize.lt_iff_toNat_lt.mp _hj)
+
+/-- A `rewrite` record: a rule's registration (lean4export 3.2). -/
+def scanRuleDecl (b : @& ByteArray) (i : USize) : ScanRes DeclRec :=
+  if byteAt b i == 123 then
+    scanRuleDeclLoop b (i + 1) true 0 0 0 0
+  else .err ⟨i.toNat, .expectedObject⟩
 
 /-! ## The line
 
@@ -2539,7 +2661,7 @@ def scanLineLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
                 if _hj : i < e then
                   scanLineLoop b e false idxKind idx (.expr (.strVal str))
                 else .err ⟨i.toNat, .noProgress⟩
-          | .kAxiom | .kDef | .kThm | .kOpaque | .kQuot | .kInductive =>
+          | .kAxiom | .kDef | .kThm | .kOpaque | .kQuot | .kInductive | .kRewrite =>
             if !pl.isAbsent then .err ⟨i.toNat, .duplicateKey⟩
             else
               match (match k with
@@ -2548,6 +2670,7 @@ def scanLineLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
                      | .kThm => scanThmDecl b v
                      | .kOpaque => scanOpaqueDecl b v
                      | .kQuot => scanQuotDecl b v
+                     | .kRewrite => scanRuleDecl b v
                      | _ => scanIndDecl b v) with
               | .err err => .err err
               | .ok d e =>

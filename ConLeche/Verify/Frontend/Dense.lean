@@ -88,14 +88,14 @@ declaration line's builder yields a record. -/
       ∃ v, T.l i = some v ∧ levelOf (cutLk T c) r = .ok v
   | .expr i r => c.e ≤ i ∧ (∀ j, c.e ≤ j → j < i → T.e j = none) ∧
       ∃ v, T.e i = some v ∧ exprOf (cutLk T c) r = .ok v
-  | .decl d => ∃ x, declOf (cutLk T c) d = .ok (.inl x)
+  | .decl d => ∃ xs, declsOf (cutLk T c) d = .ok (.inl xs)
   | .header => True
   | .blank => True
 
 /-- The record a declaration line yields at its counters. -/
-@[expose] def lineDecl (T : Tabs) (c : Ctr) : LineRec → Option Declaration
-  | .decl d => match declOf (cutLk T c) d with
-    | .ok (.inl x) => some x
+@[expose] def lineDecl (T : Tabs) (c : Ctr) : LineRec → Option (List Declaration)
+  | .decl d => match declsOf (cutLk T c) d with
+    | .ok (.inl xs) => some xs
     | _ => none
   | _ => none
 
@@ -105,7 +105,7 @@ with the line's record pushed. -/
 theorem applyRecord_of_lineOK {T : Tabs} {c : Ctr} {r : LineRec} {st : StateD}
     (hok : LineOK T c r) (hst : Holds st T c) :
     ∃ st', applyRecord st r = .ok (.inl st') ∧ Holds st' T (c.step r) ∧
-      st'.decls = (match lineDecl T c r with | some x => st.decls.push x | none => st.decls) := by
+      st'.decls = (match lineDecl T c r with | some x => st.decls ++ x.toArray | none => st.decls) := by
   cases r with
   | name i x =>
     obtain ⟨hki, hgap, v, hv, hx⟩ := hok
@@ -130,10 +130,10 @@ theorem applyRecord_of_lineOK {T : Tabs} {c : Ctr} {r : LineRec} {st : StateD}
     · exact ⟨hst.n, hst.l, get?_insert_cut hst.e hki hgap hv⟩
   | decl d =>
     obtain ⟨x, hx⟩ := hok
-    refine ⟨pushDecl st x, ?_, ⟨hst.n, hst.l, hst.e⟩, ?_⟩
+    refine ⟨pushDecls st x, ?_, ⟨hst.n, hst.l, hst.e⟩, ?_⟩
     · simp only [applyRecord, applyDeclD, processLineCoreD, hst.lk, hx, bind, Except.bind, pure,
         Except.pure]
-    · simp only [lineDecl, hx, pushDecl]
+    · simp only [lineDecl, hx, pushDecls]
   | header => exact ⟨st, rfl, hst, rfl⟩
   | blank => exact ⟨st, rfl, hst, rfl⟩
 
@@ -150,7 +150,7 @@ where it may, `n` lines before the list (`LineRec.placed`). -/
   | _, [], acc => acc
   | c, r :: rs, acc => declsAlong T (c.step r) rs
       (match lineDecl T c r with
-       | some x => acc.push x
+       | some x => acc ++ x.toArray
        | none => acc)
 
 /-- **The characterisation**: every line right at the final tables makes

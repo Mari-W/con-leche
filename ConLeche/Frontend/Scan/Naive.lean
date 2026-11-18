@@ -192,7 +192,7 @@ def keyTable : List (String × Key) :=
   [("all", .kAll), ("app", .kApp), ("arg", .kArg), ("axiom", .kAxiom),
    ("binderInfo", .kBinderInfo), ("body", .kBody), ("bvar", .kBvar),
    ("cidx", .kCidx), ("const", .kConst), ("ctor", .kCtor), ("ctors", .kCtors),
-   ("def", .kDef), ("fn", .kFn), ("forallE", .kForallE), ("hints", .kHints),
+   ("def", .kDef), ("fn", .kFn), ("forallE", .kForallE), ("head", .kHead), ("hints", .kHints),
    ("i", .kI), ("idx", .kIdx), ("ie", .kIe), ("il", .kIl), ("imax", .kImax),
    ("in", .kIn), ("induct", .kInduct), ("inductive", .kInductive),
    ("isRec", .kIsRec), ("isReflexive", .kIsReflexive), ("isUnsafe", .kIsUnsafe),
@@ -203,8 +203,9 @@ def keyTable : List (String × Key) :=
    ("numIndices", .kNumIndices), ("numMinors", .kNumMinors),
    ("numMotives", .kNumMotives), ("numNested", .kNumNested),
    ("numParams", .kNumParams), ("opaque", .kOpaque), ("param", .kParam),
-   ("pre", .kPre), ("proj", .kProj), ("quot", .kQuot),
-   ("recs", .kRecs), ("regular", .kRegular), ("rhs", .kRhs), ("rules", .kRules),
+   ("pre", .kPre), ("prio", .kPrio), ("proj", .kProj), ("quot", .kQuot),
+   ("recs", .kRecs), ("regular", .kRegular), ("rewrite", .kRewrite), ("rewrites", .kRewrites),
+   ("rhs", .kRhs), ("rules", .kRules),
    ("safety", .kSafety), ("sort", .kSort), ("str", .kStr), ("strVal", .kStrVal),
    ("struct", .kStruct), ("succ", .kSucc), ("thm", .kThm), ("type", .kType),
    ("typeName", .kTypeName), ("types", .kTypes), ("us", .kUs), ("value", .kValue)]
@@ -548,6 +549,7 @@ structure DeclFields where
   hints : HintsRec := .regular 0
   safety : String := ""
   kind : String := ""
+  rewrites : List Nat := []
 
 /-- The `all` list of a declaration is validated and dropped. -/
 def cvSlots (maskAll maskLps maskName maskType : UInt32) : Key → Option (Slot DeclFields)
@@ -557,44 +559,49 @@ def cvSlots (maskAll maskLps maskName maskType : UInt32) : Key → Option (Slot 
   | .kType => some (.of maskType naiveNat fun t d => { d with cv.type := t })
   | _ => none
 
-/-- `axiom`: `isUnsafe`, `levelParams`, `name`, `type`. -/
+/-- `axiom`: `isUnsafe`, `levelParams`, `name`, `type`, and the optional `rewrites`. -/
 def axiomFields : Key → Option (Slot DeclFields)
   | .kIsUnsafe => some (.of 1 naiveBool fun b d => { d with isUnsafe := b })
   | .kLevelParams => some (.of 2 naiveNatList fun ls d => { d with cv.levelParams := ls })
   | .kName => some (.of 4 naiveNat fun n d => { d with cv.name := n })
   | .kType => some (.of 8 naiveNat fun t d => { d with cv.type := t })
+  | .kRewrites => some (.of 16 naiveNatList fun rw d => { d with rewrites := rw })
   | _ => none
 
 def naiveAxiomDecl : List UInt8 → NRes DeclRec :=
-  naiveObject axiomFields 15 {} fun d => .ax d.cv d.isUnsafe
+  naiveObject axiomFields 15 {} fun d => .withRules d.rewrites (.ax d.cv d.isUnsafe)
 
 /-- `def`: `all`, `hints`, `levelParams`, `name`, `safety`, `type`,
-`value`; a missing `hints` is `regular 0`. -/
+`value`, and the optional `rewrites`; a missing `hints` is `regular 0`. -/
 def defFields : Key → Option (Slot DeclFields)
   | .kHints => some (.of 2 naiveHints fun h d => { d with hints := h })
   | .kSafety => some (.of 16 naiveStr fun s d => { d with safety := s })
   | .kValue => some (.of 64 naiveNat fun v d => { d with value := v })
+  | .kRewrites => some (.of 128 naiveNatList fun rw d => { d with rewrites := rw })
   | k => cvSlots 1 4 8 32 k
 
 def naiveDefDecl : List UInt8 → NRes DeclRec :=
-  naiveObject defFields 124 {} fun d => .defn d.cv d.value d.hints d.safety
+  naiveObject defFields 124 {} fun d => .withRules d.rewrites (.defn d.cv d.value d.hints d.safety)
 
-/-- `thm`: `all`, `levelParams`, `name`, `type`, `value`. -/
+/-- `thm`: `all`, `levelParams`, `name`, `type`, `value`, and the optional `rewrites`. -/
 def thmFields : Key → Option (Slot DeclFields)
   | .kValue => some (.of 16 naiveNat fun v d => { d with value := v })
+  | .kRewrites => some (.of 32 naiveNatList fun rw d => { d with rewrites := rw })
   | k => cvSlots 1 2 4 8 k
 
 def naiveThmDecl : List UInt8 → NRes DeclRec :=
-  naiveObject thmFields 30 {} fun d => .thm d.cv d.value
+  naiveObject thmFields 30 {} fun d => .withRules d.rewrites (.thm d.cv d.value)
 
-/-- `opaque`: `all`, `isUnsafe`, `levelParams`, `name`, `type`, `value`. -/
+/-- `opaque`: `all`, `isUnsafe`, `levelParams`, `name`, `type`, `value`, and the optional
+`rewrites`. -/
 def opaqueFields : Key → Option (Slot DeclFields)
   | .kIsUnsafe => some (.of 2 naiveBool fun b d => { d with isUnsafe := b })
   | .kValue => some (.of 32 naiveNat fun v d => { d with value := v })
+  | .kRewrites => some (.of 64 naiveNatList fun rw d => { d with rewrites := rw })
   | k => cvSlots 1 4 8 16 k
 
 def naiveOpaqueDecl : List UInt8 → NRes DeclRec :=
-  naiveObject opaqueFields 62 {} fun d => .opaq d.cv d.value d.isUnsafe
+  naiveObject opaqueFields 62 {} fun d => .withRules d.rewrites (.opaq d.cv d.value d.isUnsafe)
 
 /-- `quot`: `kind`, `levelParams`, `name`, `type`. -/
 def quotFields : Key → Option (Slot DeclFields)
@@ -607,18 +614,30 @@ def quotFields : Key → Option (Slot DeclFields)
 def naiveQuotDecl : List UInt8 → NRes DeclRec :=
   naiveObject quotFields 15 {} fun d => .quot d.cv d.kind
 
-/-- `inductive`: `all` and `isUnsafe` validated and dropped — state
-`(ctors, recs, types)`. -/
-def indFields : Key → Option (Slot (List IndCtorRec × List IndRecRec × List IndTypeRec))
+/-- `inductive`: `all` and `isUnsafe` validated and dropped, and the optional `rewrites` — state
+`(ctors, recs, types, rewrites)`. -/
+def indFields : Key →
+    Option (Slot (List IndCtorRec × List IndRecRec × List IndTypeRec × List Nat))
   | .kAll => some (.drop 1 naiveNatList)
-  | .kCtors => some (.of 2 naiveIndCtors fun cs (_, rs, ts) => (cs, rs, ts))
+  | .kCtors => some (.of 2 naiveIndCtors fun cs (_, rs, ts, rw) => (cs, rs, ts, rw))
   | .kIsUnsafe => some (.drop 4 naiveBool)
-  | .kRecs => some (.of 8 naiveIndRecs fun rs (cs, _, ts) => (cs, rs, ts))
-  | .kTypes => some (.of 16 naiveIndTypes fun ts (cs, rs, _) => (cs, rs, ts))
+  | .kRecs => some (.of 8 naiveIndRecs fun rs (cs, _, ts, rw) => (cs, rs, ts, rw))
+  | .kTypes => some (.of 16 naiveIndTypes fun ts (cs, rs, _, rw) => (cs, rs, ts, rw))
+  | .kRewrites => some (.of 32 naiveNatList fun rw (cs, rs, ts, _) => (cs, rs, ts, rw))
   | _ => none
 
 def naiveIndDecl : List UInt8 → NRes DeclRec :=
-  naiveObject indFields 26 ([], [], []) fun (cs, rs, ts) => .ind ts cs rs
+  naiveObject indFields 26 ([], [], [], []) fun (cs, rs, ts, rw) => .withRules rw (.ind ts cs rs)
+
+/-- `rewrite`: `head`, `name`, `prio`, all required — state `(head, name, prio)`. -/
+def rewriteFields : Key → Option (Slot (Nat × Nat × Nat))
+  | .kHead => some (.of 1 naiveNat fun h (_, n, p) => (h, n, p))
+  | .kName => some (.of 2 naiveNat fun n (h, _, p) => (h, n, p))
+  | .kPrio => some (.of 4 naiveNat fun p (h, n, _) => (h, n, p))
+  | _ => none
+
+def naiveRuleDecl : List UInt8 → NRes DeclRec :=
+  naiveObject rewriteFields 7 (0, 0, 0) fun (h, n, p) => .rule n h p
 
 /-! ## The line
 
@@ -744,7 +763,7 @@ def naiveLineLoop : List UInt8 → Bool → Option (IdxKey × Nat) → LinePaylo
                   if _h : rest.length < l.length then
                     naiveLineLoop rest false idx (.expr (.strVal s))
                   else .err .noProgress l
-            | .kAxiom | .kDef | .kThm | .kOpaque | .kQuot | .kInductive =>
+            | .kAxiom | .kDef | .kThm | .kOpaque | .kQuot | .kInductive | .kRewrite =>
               if !pl.isAbsent then .err .duplicateKey l
               else
                 match (match k with
@@ -753,6 +772,7 @@ def naiveLineLoop : List UInt8 → Bool → Option (IdxKey × Nat) → LinePaylo
                        | .kThm => naiveThmDecl lv
                        | .kOpaque => naiveOpaqueDecl lv
                        | .kQuot => naiveQuotDecl lv
+                       | .kRewrite => naiveRuleDecl lv
                        | _ => naiveIndDecl lv) with
                 | .err t r => .err t r
                 | .ok d rest =>

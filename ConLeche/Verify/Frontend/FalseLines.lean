@@ -294,6 +294,7 @@ theorem naiveThmDecl_ofDec {dk dj dv : List UInt8} {k j v : Nat} (hk : IsDec dk 
   obj_step
   obj_step
   obj_step
+  rfl
 
 theorem naiveLine_thm (k j v : Nat) (x : List UInt8) :
     naiveLine (lit s!"\{\"thm\":\{\"all\":[{k}],\"levelParams\":[],\"name\":{k},\"type\":{j},\"value\":{v}}}"

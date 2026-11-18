@@ -125,7 +125,7 @@ theorem envWF_consBlockInds {p₁ : BlockShape} {isRec : Bool} :
 /-- A member under check meets `MemberDeclaredWF`. -/
 theorem MemberAt.declaredWF {F : Nat} {env : Env} {nP : Nat} {m : MemberShape}
     (h : MemberAt F env nP m) : MemberDeclaredWF env m := by
-  rcases h.how with ⟨-, he⟩ | ⟨-, -, hc, -⟩
+  rcases h.how with ⟨-, he⟩ | ⟨-, -, -, hc, -⟩
   · exact .inl he.symm
   · obtain ⟨g1, g2, g3, g4⟩ := checkConstantVal_typeWF hc
     exact .inr ⟨g1, g2, g3, g4, checkConstantVal_litShapeAt hc⟩

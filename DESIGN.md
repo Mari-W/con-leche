@@ -115578,3 +115578,89 @@ Tests (`tests/ConLecheTests/RewriteTests.lean`, pure and cached checker each). A
 `g a : T` with `g : code` checks under the rule `code = Fn` (`Fn := T → T`) and fails without
 it. The ill-typed `g T` stays rejected under the rule. A rule whose right side is no type never
 fires. The rule `code = code` is rejected by the budget, naming `code_refl`.
+
+## User rewrite rules, input format and rule sets (2026-11-18, rewrite-rules, plan A3)
+
+Rules now reach the checker from the input, scoped per declaration as `notes/format.md` fixes
+it. `Declaration` gained `.rewriteDecl thm head prio` and `.useRules S`. The third field of
+`Env` is now a `RuleTable` with the registered rules (`registered`, newest first) and the active
+table (`active`, `(head, theorem)` entries in firing order). `Env.rulesFor` reads `active` and
+is otherwise unchanged. Registration activates nothing. A `useRules S` rebuilds the active table
+from the registered rules whose theorem is in `S` (`activeTable`), sorted by priority descending
+and then by the theorem's name under Lean's `Name.cmp` (`RewriteRule.before`). The order is
+search control and no proof reads it. The set `S` is trusted as given, so con-leche computes no
+closure, and an unregistered name in it activates nothing.
+
+`.rewriteDecl` runs the registration check `ruleDeclError?` (`Kernel/CoreDefs.lean`), aligned
+with the C++ kernel's `addRewriteRule`. The theorem is stored, its statement is
+`∀ xs, @Eq A l r`, `l` is the declared head applied to a linear first-order pattern (variables,
+and constants applied to patterns, no literal), every binder of `xs` occurs in `l`, every
+variable of `r` occurs in `l`, every universe parameter of `r` stands as a `.param` level of a
+constant in `l`, and the head is not in `reservedBasisNames`. A failure rejects (exit 1) with a
+message naming the rule. `reservedBasisNames` also holds `Empty` and `Empty.rec`, which the Lean
+side does not exclude, so con-leche is stricter there.
+
+A record's effect on the environment is now its rule effect (`Env.stepRules`, `FEnv.stepRules`)
+followed by its pushes. `checkDeclStepC_pushes` and `streamEnv` say so, `PushChain` and the
+canonical index carry across a rule record (`stepRules_mkFEnv`), and the twin lemma for jobs
+only relates success and failure (`checkDeclStepC_twin` at `fun _ _ => True`), because the
+fold's index and a job's view differ in the registered rules. The stream index records the rule
+map each record is checked under (`StreamIndex.rlsAt`), rebuilt once at each `useRules`, and a
+job's view reads it (`FrozenIndex.view`, `IndexSpec.rlsAt`, `view_rls`).
+
+**The cut below a block has no rules.** `Env.cutAt` and the views `FEnv.dropTop` and
+`FEnv.below` drop the rules. Before, the cut kept the rules whose theorem it holds. That set
+changes when a later record registers a rule over an older theorem or a `useRules` changes the
+active table, and the model's `FamilyRan` needs the family's telescope to read the same at every
+later environment. `FreshExt` lost its `rules` field with it. In exchange the block check must
+reduce a definition-headed family without rules too, so `reduceMember` declines (exit 2) such a
+family while any rule is active (`ruleScopedFamilyMsg`). `MemberAt.how` records the empty
+active table, and `envExt_cutAt_self` takes it.
+
+The model needed one new step. `Model/RuleStep.lean` builds the carrier after a rule record from
+the prefix's (`stepRules_model`). Readings, lookups, recorded blocks and coverage carry over
+because no field of `EnvModelM`, `LfpCover`, `FamilyRan` or `NatFacts` reads the rules
+(`denote_stepRules` through `denote_envExtend`). `EnvWF.stepRules`, the run records
+(`DeclKindRun`) and the cached simulation (`checkDeclKindC_spec`, by `sym`/`vcgen`) have the two
+new arms. `model_exists`, `no_False_declaration` and `main_oleans_no_False` keep their axioms
+(`tests/ConLecheTests/Axioms.lean` unchanged).
+
+**NDJSON.** The scanner knows the keys `rewrite`, `rewrites`, `head` and `prio`. A
+`{"rewrite":{"name","head","prio"}}` line is the record `DeclRec.rule`, and a declaration record
+with a non-empty `rewrites` field is `DeclRec.underRules` around the record (axiom, def, thm,
+opaque and inductive records carry the slot, as lean4export 3.2.0 writes it). The naive
+recogniser, the fast one and their equivalence proofs (`Scan/Equiv/{Keys,Objects}.lean`,
+`Scan/Equiv.lean`, `Verify/Frontend/Local.lean`) have the new keys and slots. The parser reads
+every line on its own, because the rounds parse reads the lines of a window in parallel. So a
+record with a rule set becomes three records, `useRules R(D)`, the record and `useRules []`
+(`scopeRules`, `declsOf`), and records without one need no `useRules`. This is not the format's
+"only where the set changes". Consecutive records under one set rebuild the table twice per
+record. The per-line record list replaced the single record in the rounds proofs (`lineDecl`,
+`declsAlong`, `chunkDeclsGo`).
+
+**.olean.** `ModuleData` with a sixth object field is read when that `ModuleRewrite` holds no
+rule and no rule set (`Region.moduleDataOk`, `Region.noRewrites`, with their prefix lemmas). A
+module that registers a rule or stores a rule set is malformed input to the reader for now
+(exit 3). Emitting `rewriteDecl` and `useRules` from the merged modules needs the emitter's walk
+to visit a declaration's rule theorems first and its "nothing is added" theorem to admit the two
+records. Not done.
+
+Tests. `RewriteTests.lean` runs registration, rule sets, priority and malformed registrations
+through both checkers. The e2e fixtures `rewrite_rule_*` come from the export of
+`scripts/rewrite-fixtures/RrBase.lean` with the 3.2.0 records written in by
+`scripts/rewrite-fixtures/mk.py`. `rr_use := fun n g => g 0` with `g : rrT n` types only under
+`rrT_eq : ∀ n, rrT n = rrFn`. A rule on a definition fires only where `whnf` meets the term,
+because the lazy delta step of `isDefEq` unfolds the head before any rule sees it, which is why
+the fixture needs a function position and not a conversion. Performance was not measured
+(`perf` is unavailable on this machine).
+
+Gates (plan A3). `lake build` and `lake test` warning-free. `tests/shake.sh` passes (667/667
+allowlisted, no demotable public import). `tests/arena.sh` (log `_tmp/a3/arena.log`) passed
+every gate except three, two of which are fixed since. `tests/plain-reach.sh` needed the
+registration entries above (661 reached, all allowlisted). The whitepaper links and OVERVIEW's
+anchors moved and were repointed (`whitepaper/links-expected.txt` and OVERVIEW's half of
+`tests/overview-links-expected.txt` regenerated). `tests/overview-links.sh` still fails on two
+README anchors, `ConLeche/Cached/ParsedC.lean#L320-L321` (now L325-L326) and
+`ConLeche/Model/StreamConsts.lean#L220-L225` (now L224-L229), left for the maintainer. Arena
+tutorial 90/92, e2e 619/619 with the nine new fixtures, olean gate 122/122, self-check 55 841
+declarations, axioms pinned, trusted and `--jobs` sweeps without divergence.

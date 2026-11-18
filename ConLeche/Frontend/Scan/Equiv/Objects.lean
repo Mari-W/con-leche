@@ -1439,24 +1439,25 @@ theorem naiveAxiomDecl_rest_suffix (l : List UInt8) : (naiveAxiomDecl l).rest <:
   exact naiveObject_rest_suffix _ _ axiomFields_read_suffix _ _ l
 
 theorem scanAxiomDeclLoop_eq (b : ByteArray) (i : USize) (wantMember : Bool) (seen : UInt32)
-    (isUns : Bool) (lps : List Nat) (nm ty : Nat) :
-    scanAxiomDeclLoop b i wantMember seen isUns lps nm ty =
-      liftRes b i ((naiveObjLoop axiomFields 15 (tailAt b i) wantMember seen { cv := ⟨nm, lps, ty⟩, isUnsafe := isUns }).map
-        (fun d => DeclRec.ax d.cv d.isUnsafe)) := by
-  fun_induction scanAxiomDeclLoop b i wantMember seen isUns lps nm ty
+    (isUns : Bool) (lps : List Nat) (nm ty : Nat) (rw : List Nat) :
+    scanAxiomDeclLoop b i wantMember seen isUns lps nm ty rw =
+      liftRes b i ((naiveObjLoop axiomFields 15 (tailAt b i) wantMember seen { cv := ⟨nm, lps, ty⟩, isUnsafe := isUns, rewrites := rw }).map
+        (fun d => DeclRec.withRules d.rewrites (.ax d.cv d.isUnsafe))) := by
+  fun_induction scanAxiomDeclLoop b i wantMember seen isUns lps nm ty rw
   obj_head axiomFields_read_suffix
   obj_sub axiomFields_read_suffix case10 case11 case12 case13
   obj_sub axiomFields_read_suffix case14 case15 case16 case17
   obj_num axiomFields_read_suffix case18 case19 case20 case21
   obj_num axiomFields_read_suffix case22 case23 case24 case25
-  case case26 => o_unknown axiomFields x1 x2 x3 x4
-  case case27 => o_other
-  case case28 => o_end
+  obj_sub axiomFields_read_suffix case26 case27 case28 case29
+  case case30 => o_unknown axiomFields x1 x2 x3 x4 x5
+  case case31 => o_other
+  case case32 => o_end
 
 theorem scanAxiomDecl_eq (b : ByteArray) (i : USize) :
     scanAxiomDecl b i = liftRes b i (naiveAxiomDecl (tailAt b i)) := by
   unfold scanAxiomDecl naiveAxiomDecl
-  exact objWrap axiomFields_read_suffix (scanAxiomDeclLoop_eq b (i + 1) true 0 false [] 0 0)
+  exact objWrap axiomFields_read_suffix (scanAxiomDeclLoop_eq b (i + 1) true 0 false [] 0 0 [])
 
 /-! ### `scanDefDecl` -/
 
@@ -1470,11 +1471,12 @@ theorem naiveDefDecl_rest_suffix (l : List UInt8) : (naiveDefDecl l).rest <:+ l 
   exact naiveObject_rest_suffix _ _ defFields_read_suffix _ _ l
 
 theorem scanDefDeclLoop_eq (b : ByteArray) (i : USize) (wantMember : Bool) (seen : UInt32)
-    (hints : HintsRec) (lps : List Nat) (nm : Nat) (safety : String) (ty vl : Nat) :
-    scanDefDeclLoop b i wantMember seen hints lps nm safety ty vl =
-      liftRes b i ((naiveObjLoop defFields 124 (tailAt b i) wantMember seen { cv := ⟨nm, lps, ty⟩, value := vl, hints := hints, safety := safety }).map
-        (fun d => DeclRec.defn d.cv d.value d.hints d.safety)) := by
-  fun_induction scanDefDeclLoop b i wantMember seen hints lps nm safety ty vl
+    (hints : HintsRec) (lps : List Nat) (nm : Nat) (safety : String) (ty vl : Nat)
+    (rw : List Nat) :
+    scanDefDeclLoop b i wantMember seen hints lps nm safety ty vl rw =
+      liftRes b i ((naiveObjLoop defFields 124 (tailAt b i) wantMember seen { cv := ⟨nm, lps, ty⟩, value := vl, hints := hints, safety := safety, rewrites := rw }).map
+        (fun d => DeclRec.withRules d.rewrites (.defn d.cv d.value d.hints d.safety))) := by
+  fun_induction scanDefDeclLoop b i wantMember seen hints lps nm safety ty vl rw
   obj_head defFields_read_suffix
   obj_sub defFields_read_suffix case10 case11 case12 case13
   obj_sub defFields_read_suffix case14 case15 case16 case17
@@ -1483,14 +1485,15 @@ theorem scanDefDeclLoop_eq (b : ByteArray) (i : USize) (wantMember : Bool) (seen
   obj_sub defFields_read_suffix case26 case27 case28 case29
   obj_num defFields_read_suffix case30 case31 case32 case33
   obj_num defFields_read_suffix case34 case35 case36 case37
-  case case38 => o_unknown defFields x1 x2 x3 x4 x5 x6 x7
-  case case39 => o_other
-  case case40 => o_end
+  obj_sub defFields_read_suffix case38 case39 case40 case41
+  case case42 => o_unknown defFields x1 x2 x3 x4 x5 x6 x7 x8
+  case case43 => o_other
+  case case44 => o_end
 
 theorem scanDefDecl_eq (b : ByteArray) (i : USize) :
     scanDefDecl b i = liftRes b i (naiveDefDecl (tailAt b i)) := by
   unfold scanDefDecl naiveDefDecl
-  exact objWrap defFields_read_suffix (scanDefDeclLoop_eq b (i + 1) true 0 (.regular 0) [] 0 "" 0 0)
+  exact objWrap defFields_read_suffix (scanDefDeclLoop_eq b (i + 1) true 0 (.regular 0) [] 0 "" 0 0 [])
 
 /-! ### `scanThmDecl` -/
 
@@ -1504,25 +1507,26 @@ theorem naiveThmDecl_rest_suffix (l : List UInt8) : (naiveThmDecl l).rest <:+ l 
   exact naiveObject_rest_suffix _ _ thmFields_read_suffix _ _ l
 
 theorem scanThmDeclLoop_eq (b : ByteArray) (i : USize) (wantMember : Bool) (seen : UInt32)
-    (lps : List Nat) (nm ty vl : Nat) :
-    scanThmDeclLoop b i wantMember seen lps nm ty vl =
-      liftRes b i ((naiveObjLoop thmFields 30 (tailAt b i) wantMember seen { cv := ⟨nm, lps, ty⟩, value := vl }).map
-        (fun d => DeclRec.thm d.cv d.value)) := by
-  fun_induction scanThmDeclLoop b i wantMember seen lps nm ty vl
+    (lps : List Nat) (nm ty vl : Nat) (rw : List Nat) :
+    scanThmDeclLoop b i wantMember seen lps nm ty vl rw =
+      liftRes b i ((naiveObjLoop thmFields 30 (tailAt b i) wantMember seen { cv := ⟨nm, lps, ty⟩, value := vl, rewrites := rw }).map
+        (fun d => DeclRec.withRules d.rewrites (.thm d.cv d.value))) := by
+  fun_induction scanThmDeclLoop b i wantMember seen lps nm ty vl rw
   obj_head thmFields_read_suffix
   obj_sub thmFields_read_suffix case10 case11 case12 case13
   obj_sub thmFields_read_suffix case14 case15 case16 case17
   obj_num thmFields_read_suffix case18 case19 case20 case21
   obj_num thmFields_read_suffix case22 case23 case24 case25
   obj_num thmFields_read_suffix case26 case27 case28 case29
-  case case30 => o_unknown thmFields x1 x2 x3 x4 x5
-  case case31 => o_other
-  case case32 => o_end
+  obj_sub thmFields_read_suffix case30 case31 case32 case33
+  case case34 => o_unknown thmFields x1 x2 x3 x4 x5 x6
+  case case35 => o_other
+  case case36 => o_end
 
 theorem scanThmDecl_eq (b : ByteArray) (i : USize) :
     scanThmDecl b i = liftRes b i (naiveThmDecl (tailAt b i)) := by
   unfold scanThmDecl naiveThmDecl
-  exact objWrap thmFields_read_suffix (scanThmDeclLoop_eq b (i + 1) true 0 [] 0 0 0)
+  exact objWrap thmFields_read_suffix (scanThmDeclLoop_eq b (i + 1) true 0 [] 0 0 0 [])
 
 /-! ### `scanOpaqueDecl` -/
 
@@ -1536,11 +1540,11 @@ theorem naiveOpaqueDecl_rest_suffix (l : List UInt8) : (naiveOpaqueDecl l).rest 
   exact naiveObject_rest_suffix _ _ opaqueFields_read_suffix _ _ l
 
 theorem scanOpaqueDeclLoop_eq (b : ByteArray) (i : USize) (wantMember : Bool) (seen : UInt32)
-    (isUns : Bool) (lps : List Nat) (nm ty vl : Nat) :
-    scanOpaqueDeclLoop b i wantMember seen isUns lps nm ty vl =
-      liftRes b i ((naiveObjLoop opaqueFields 62 (tailAt b i) wantMember seen { cv := ⟨nm, lps, ty⟩, isUnsafe := isUns, value := vl }).map
-        (fun d => DeclRec.opaq d.cv d.value d.isUnsafe)) := by
-  fun_induction scanOpaqueDeclLoop b i wantMember seen isUns lps nm ty vl
+    (isUns : Bool) (lps : List Nat) (nm ty vl : Nat) (rw : List Nat) :
+    scanOpaqueDeclLoop b i wantMember seen isUns lps nm ty vl rw =
+      liftRes b i ((naiveObjLoop opaqueFields 62 (tailAt b i) wantMember seen { cv := ⟨nm, lps, ty⟩, isUnsafe := isUns, value := vl, rewrites := rw }).map
+        (fun d => DeclRec.withRules d.rewrites (.opaq d.cv d.value d.isUnsafe))) := by
+  fun_induction scanOpaqueDeclLoop b i wantMember seen isUns lps nm ty vl rw
   obj_head opaqueFields_read_suffix
   obj_sub opaqueFields_read_suffix case10 case11 case12 case13
   obj_sub opaqueFields_read_suffix case14 case15 case16 case17
@@ -1548,14 +1552,15 @@ theorem scanOpaqueDeclLoop_eq (b : ByteArray) (i : USize) (wantMember : Bool) (s
   obj_num opaqueFields_read_suffix case22 case23 case24 case25
   obj_num opaqueFields_read_suffix case26 case27 case28 case29
   obj_num opaqueFields_read_suffix case30 case31 case32 case33
-  case case34 => o_unknown opaqueFields x1 x2 x3 x4 x5 x6
-  case case35 => o_other
-  case case36 => o_end
+  obj_sub opaqueFields_read_suffix case34 case35 case36 case37
+  case case38 => o_unknown opaqueFields x1 x2 x3 x4 x5 x6 x7
+  case case39 => o_other
+  case case40 => o_end
 
 theorem scanOpaqueDecl_eq (b : ByteArray) (i : USize) :
     scanOpaqueDecl b i = liftRes b i (naiveOpaqueDecl (tailAt b i)) := by
   unfold scanOpaqueDecl naiveOpaqueDecl
-  exact objWrap opaqueFields_read_suffix (scanOpaqueDeclLoop_eq b (i + 1) true 0 false [] 0 0 0)
+  exact objWrap opaqueFields_read_suffix (scanOpaqueDeclLoop_eq b (i + 1) true 0 false [] 0 0 0 [])
 
 /-! ### `scanQuotDecl` -/
 
@@ -1600,24 +1605,56 @@ theorem naiveIndDecl_rest_suffix (l : List UInt8) : (naiveIndDecl l).rest <:+ l 
   exact naiveObject_rest_suffix _ _ indFields_read_suffix _ _ l
 
 theorem scanIndDeclLoop_eq (b : ByteArray) (i : USize) (wantMember : Bool) (seen : UInt32)
-    (ctors : List IndCtorRec) (recs : List IndRecRec) (types : List IndTypeRec) :
-    scanIndDeclLoop b i wantMember seen ctors recs types =
-      liftRes b i ((naiveObjLoop indFields 26 (tailAt b i) wantMember seen (ctors, recs, types)).map
-        (fun (cs, rs, ts) => DeclRec.ind ts cs rs)) := by
-  fun_induction scanIndDeclLoop b i wantMember seen ctors recs types
+    (ctors : List IndCtorRec) (recs : List IndRecRec) (types : List IndTypeRec)
+    (rw : List Nat) :
+    scanIndDeclLoop b i wantMember seen ctors recs types rw =
+      liftRes b i ((naiveObjLoop indFields 26 (tailAt b i) wantMember seen (ctors, recs, types, rw)).map
+        (fun (cs, rs, ts, rw) => DeclRec.withRules rw (.ind ts cs rs))) := by
+  fun_induction scanIndDeclLoop b i wantMember seen ctors recs types rw
   obj_head indFields_read_suffix
   obj_sub indFields_read_suffix case10 case11 case12 case13
   obj_sub indFields_read_suffix case14 case15 case16 case17
   obj_sub indFields_read_suffix case18 case19 case20 case21
   obj_sub indFields_read_suffix case22 case23 case24 case25
   obj_sub indFields_read_suffix case26 case27 case28 case29
-  case case30 => o_unknown indFields x1 x2 x3 x4 x5
-  case case31 => o_other
-  case case32 => o_end
+  obj_sub indFields_read_suffix case30 case31 case32 case33
+  case case34 => o_unknown indFields x1 x2 x3 x4 x5 x6
+  case case35 => o_other
+  case case36 => o_end
 
 theorem scanIndDecl_eq (b : ByteArray) (i : USize) :
     scanIndDecl b i = liftRes b i (naiveIndDecl (tailAt b i)) := by
   unfold scanIndDecl naiveIndDecl
-  exact objWrap indFields_read_suffix (scanIndDeclLoop_eq b (i + 1) true 0 [] [] [])
+  exact objWrap indFields_read_suffix (scanIndDeclLoop_eq b (i + 1) true 0 [] [] [] [])
+
+/-! ### `scanRuleDecl` -/
+
+theorem rewriteFields_read_suffix : ∀ k slot, rewriteFields k = some slot →
+    ∀ l st, (slot.read l st).rest <:+ l := by
+  intro k slot hf l st
+  cases k <;> simp only [rewriteFields, Option.some.injEq] at hf <;>
+    first | exact absurd hf (by simp) | (subst hf; slot_rest)
+
+theorem naiveRuleDecl_rest_suffix (l : List UInt8) : (naiveRuleDecl l).rest <:+ l := by
+  exact naiveObject_rest_suffix _ _ rewriteFields_read_suffix _ _ l
+
+theorem scanRuleDeclLoop_eq (b : ByteArray) (i : USize) (wantMember : Bool) (seen : UInt32)
+    (hd nm pr : Nat) :
+    scanRuleDeclLoop b i wantMember seen hd nm pr =
+      liftRes b i ((naiveObjLoop rewriteFields 7 (tailAt b i) wantMember seen (hd, nm, pr)).map
+        (fun (h, n, p) => DeclRec.rule n h p)) := by
+  fun_induction scanRuleDeclLoop b i wantMember seen hd nm pr
+  obj_head rewriteFields_read_suffix
+  obj_num rewriteFields_read_suffix case10 case11 case12 case13
+  obj_num rewriteFields_read_suffix case14 case15 case16 case17
+  obj_num rewriteFields_read_suffix case18 case19 case20 case21
+  case case22 => o_unknown rewriteFields x1 x2 x3
+  case case23 => o_other
+  case case24 => o_end
+
+theorem scanRuleDecl_eq (b : ByteArray) (i : USize) :
+    scanRuleDecl b i = liftRes b i (naiveRuleDecl (tailAt b i)) := by
+  unfold scanRuleDecl naiveRuleDecl
+  exact objWrap rewriteFields_read_suffix (scanRuleDeclLoop_eq b (i + 1) true 0 0 0 0)
 
 end ConLeche.Frontend

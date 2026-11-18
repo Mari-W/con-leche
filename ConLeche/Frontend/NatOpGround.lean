@@ -93,6 +93,8 @@ def _root_.ConLeche.Declaration.usedConsts : Declaration → Array Name
           rules.foldl (fun (seen, acc) r => usedConstsGo seen acc r.rhs) (seen, acc)
         | _ => (seen, acc)).2
   | .quotDecl .. => #[]
+  | .rewriteDecl thm _ _ => #[thm]
+  | .useRules _ => #[]
 
 /-- The pinned `Nat` operation records whose ground the pass serves:
 the pin-certified WF operations and the structural ones (whose

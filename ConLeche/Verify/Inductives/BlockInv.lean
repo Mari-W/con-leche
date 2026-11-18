@@ -231,6 +231,7 @@ structure MemberAt (F : Nat) (env : Env) (nP : Nat) (m : MemberShape) : Prop whe
   lps : m.cvT.levelParams = m.declared.levelParams
   how : (formerDefHeaded m.declared = false ∧ m.cvT = m.declared) ∨
     (formerDefHeaded m.declared = true ∧ declinedAtDefinition.contains m.declared.name = false ∧
+      env.rules.active = [] ∧
       checkConstantVal (fueledOps .verified F) env m.declared = .ok () ∧
       (fueledOps .verified F).isDefEq env 0 m.declared.type m.cvT.type = .ok true ∧
       reducedFormer (fueledOps .verified F) env m.declared (nP + m.nIdx) = .ok m.cvT)
@@ -247,6 +248,11 @@ theorem reduceMember_inv {F : Nat} {env : Env} {nP : Nat} {m₀ m : MemberShape}
     · rw [ite_eq_left hg] at h
       exact nomatch h
     rw [ite_eq_right hg] at h
+    by_cases hr : (!env.rules.active.isEmpty) = true
+    · rw [ite_eq_left hr] at h
+      exact nomatch h
+    rw [ite_eq_right hr] at h
+    have hnil : env.rules.active = [] := by simpa using hr
     obtain ⟨u₁, h₁, h⟩ := exceptBind_ok h
     cases u₁
     obtain ⟨cvR, hR, h⟩ := exceptBind_ok h
@@ -263,11 +269,12 @@ theorem reduceMember_inv {F : Nat} {env : Env} {nP : Nat} {m₀ m : MemberShape}
       · show cvR.levelParams = m₀.declared.levelParams
         rw [hd₀, hrf]
       · show formerDefHeaded m₀.declared = true ∧ declinedAtDefinition.contains m₀.declared.name = false ∧
+          env.rules.active = [] ∧
           checkConstantVal (fueledOps .verified F) env m₀.declared = .ok () ∧
           (fueledOps .verified F).isDefEq env 0 m₀.declared.type cvR.type = .ok true ∧
           reducedFormer (fueledOps .verified F) env m₀.declared (nP + m₀.nIdx) = .ok cvR
         rw [hd₀]
-        exact ⟨hd, by simpa using hg, h₁, hb, hR⟩
+        exact ⟨hd, by simpa using hg, hnil, h₁, hb, hR⟩
   · rw [ite_eq_right hd] at h
     simp only [pure, Except.pure, Except.ok.injEq] at h
     subst h

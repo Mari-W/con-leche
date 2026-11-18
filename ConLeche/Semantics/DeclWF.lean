@@ -99,7 +99,7 @@ def quotNeeds (k : QuotKind) : List Name :=
 
 /-- A stub environment storing exactly `quotNeeds k`. -/
 def quotStub (k : QuotKind) : Env :=
-  ⟨(quotNeeds k).map fun n => .axiomInfo ⟨n, [], .sort .zero⟩, [], []⟩
+  ⟨(quotNeeds k).map fun n => .axiomInfo ⟨n, [], .sort .zero⟩, [], {}⟩
 
 /-- The stub stores only the needed names. -/
 theorem quotStub_find {k : QuotKind} {n : Name} (h : ((quotStub k).find? n).isSome = true) :
@@ -295,6 +295,12 @@ theorem declWFStepRun {F : Nat}
     · exact henv
   | quotDecl k cv => exact declQuotRun_envWF henv h
   | indDecl block nP => exact hind h
+  | rewriteDecl thm head prio =>
+    obtain ⟨-, rfl⟩ := h
+    exact henv.stepRules _
+  | useRules S =>
+    subst h
+    exact henv.stepRules _
 
 /-- **One declaration's run keeps well-formedness**, at the fold's dispatch. -/
 theorem declRun_envWF {F : Nat} {env env₂ : Env} {d : Declaration} (henv : EnvWF env)

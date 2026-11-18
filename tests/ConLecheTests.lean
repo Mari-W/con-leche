@@ -223,6 +223,8 @@ private def declCName : ConLeche.Declaration → Name
     cv.name
   | .quotDecl _ cv => cv.name
   | .indDecl b _ => (b.head?.map (·.name)).getD .anonymous
+  | .rewriteDecl thm _ _ => thm
+  | .useRules _ => .anonymous
 
 private def eqModelName : Name := Name.anonymous |>.str "Eq" |>.str "_model"
 private def emptyModelAuxName : Name :=

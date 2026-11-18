@@ -1642,7 +1642,7 @@ theorem declsAlong_acc (T : Tabs) :
     simp only [declsAlong]
     cases lineDecl T c r with
     | none => exact ih _ acc
-    | some x => rw [ih _ (acc.push x), ih _ (#[].push x)]; simp
+    | some x => rw [ih _ (acc ++ x.toArray), ih _ (#[] ++ x.toArray)]; simp
 
 theorem joinD_take (ps : Array FinPart) (k : Nat) (hk : k < ps.size) :
     (ps.toList.take (k + 1)).foldl (fun a x => a ++ x.ds) #[] =
@@ -1793,7 +1793,7 @@ theorem GOK.window {done : List ByteArray} {g : GSt} (hg : GOK done g) {bs : Lis
     (hps c (by omega) hc).2.2.2.2.2
   have hD : ∀ p (hp : p < (winCtx g.P W.c0 bs).rs.length) d,
       (winCtx g.P W.c0 bs).rs[p] = .decl d →
-      ∃ x, declOf (cutLk (g.P.setFrom W (joinN ps) (joinL ps) (joinE ps)).tabs
+      ∃ x, declsOf (cutLk (g.P.setFrom W (joinN ps) (joinL ps) (joinE ps)).tabs
         ((winCtx g.P W.c0 bs).ctr p)) d = .ok (.inl x) := by
     intro p hp d hd
     obtain ⟨c, q, hc, hq, rfl⟩ := chunk_of_pos bs p hp

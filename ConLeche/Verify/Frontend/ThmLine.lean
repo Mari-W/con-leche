@@ -30,7 +30,8 @@ theorem processLineCoreD_thmFalse {st st' : StateD} {k j v : Nat}
     (h : processLineCoreD st (.thm ⟨k, [], j⟩ v) = .ok (.inl st'))
     (hj : st.exprs.get? j = some (Expr.mkConst falseName [])) :
     ∃ cv vl, cv.type = .const falseName [] ∧ Declaration.thmDecl cv vl ∈ st'.decls := by
-  obtain ⟨x, hx, rfl⟩ := processLineCoreD_ok h
+  obtain ⟨xs, hxs, rfl⟩ := processLineCoreD_ok h
+  obtain ⟨x, hx, hmem⟩ := declsOf_ok hxs
   simp only [declOf, declOfF] at hx
   obtain ⟨cvp, hcv, hx⟩ := exceptBind_ok hx
   -- the header: some name, no level parameters, the type `False`
@@ -45,7 +46,7 @@ theorem processLineCoreD_thmFalse {st st' : StateD} {k j v : Nat}
     exact hty.symm
   obtain ⟨vl, _, hx⟩ := exceptBind_ok hx
   simp only [pure, Except.pure, Except.ok.injEq, Sum.inl.injEq] at hx; subst hx
-  exact ⟨cvp, vl, hcvp, pushDecl_mem _ _⟩
+  exact ⟨cvp, vl, hcvp, Array.mem_append_right _ (List.mem_toArray.mpr hmem)⟩
 
 /-- **The theorem line.**  At a state whose expression `j` is `False`,
 the record `{"thm":{…,"name":k,"type":j,"value":v}}` leaves a `thmDecl`

@@ -25,7 +25,7 @@ namespace ConLeche
   simp [FBase.find?]
 
 /-- `mkFEnv` has the empty base layer. -/
-@[simp] theorem mkFEnv_base (env : Env) : (mkFEnv env).base = { rls := mkRlsGo env.rules } := rfl
+@[simp] theorem mkFEnv_base (env : Env) : (mkFEnv env).base = { rls := mkRlsGo env.rules.active } := rfl
 
 /-- A base layer carrying only rules answers no constant. -/
 @[simp] theorem FBase.find?_rls (r : Std.HashMap Name (List Name)) (n : Name) :
@@ -54,9 +54,18 @@ theorem mkFEnv_find? (env : Env) (n : Name) :
   rw [FEnv.lookup_eq]
   show (match (mkIdxGo env.consts)[n]? with
         | some ci => some ci
-        | none => ({ rls := mkRlsGo env.rules } : FBase).find? n) = _
+        | none => ({ rls := mkRlsGo env.rules.active } : FBase).find? n) = _
   rw [mkIdxGo_getElem?, FBase.find?_rls, Env.find?]
   cases env.consts.find? (·.name == n) <;> rfl
+
+/-- A record's rule effect on the index is its rule effect on the environment. -/
+theorem stepRules_env (fe : FEnv) (pd : Declaration) : (fe.stepRules pd).env = fe.env.stepRules pd := by
+  cases pd <;> rfl
+
+/-- A canonical index stays canonical across a record's rule effect. -/
+theorem stepRules_mkFEnv (env : Env) (pd : Declaration) :
+    (mkFEnv env).stepRules pd = mkFEnv (env.stepRules pd) := by
+  cases pd <;> first | rfl | exact FEnv.ext_parts rfl rfl rfl rfl rfl
 
 /-! ## The rule map agrees with `Env.rulesFor` -/
 
@@ -73,14 +82,19 @@ theorem mkRlsGo_getD (c : Name) : ∀ rs : List (Name × Name),
       simp [mkRlsGo_getD c' rs]
     · simp [hc, mkRlsGo_getD c rs]
 
+/-- The rule map is empty exactly at an empty table. -/
+theorem mkRlsGo_isEmpty : ∀ rs : List (Name × Name), (mkRlsGo rs).isEmpty = rs.isEmpty
+  | [] => by simp [mkRlsGo]
+  | (c, t) :: rs => by simp [mkRlsGo]
+
 /-- The per-entry-call rule map computes `Env.rulesFor`. -/
 theorem mkFEnv_rulesFor (env : Env) (c : Name) : (mkFEnv env).rulesFor c = env.rulesFor c := by
   unfold FEnv.rulesFor Env.rulesFor
   rw [mkFEnv_base]
-  show ((mkRlsGo env.rules).getD c []).filter _ = _
+  show ((mkRlsGo env.rules.active).getD c []).filter _ = _
   rw [mkRlsGo_getD]
   simp only [mkFEnv_find?]
-  induction env.rules with
+  induction env.rules.active with
   | nil => rfl
   | cons r rs ih =>
     rw [List.filterMap_cons, List.filterMap_cons]
@@ -113,7 +127,7 @@ theorem mkFEnv_rawTable? (env : Env) (T : Name) :
     (mkFEnv env).rawTable? T = env.tables.find? (·.structName == T) := by
   show (match (mkTblsGo env.tables)[T]? with
     | some t => some t
-    | none => ({ rls := mkRlsGo env.rules } : FBase).findTable? T) = _
+    | none => ({ rls := mkRlsGo env.rules.active } : FBase).findTable? T) = _
   rw [mkTblsGo_getElem?, FBase.findTable?_rls]
   cases env.tables.find? (·.structName == T) <;> rfl
 

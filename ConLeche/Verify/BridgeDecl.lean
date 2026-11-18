@@ -1260,6 +1260,12 @@ theorem checkDeclKind_datF (env : Env) (d : Declaration) (F : Nat) :
       · exact checkBlock_datF env block _ F
       · rfl
     · rfl
+  | rewriteDecl thm head prio =>
+    dsimp only
+    split
+    · simp only [FueledM.atF_throw]
+    · simp only [FueledM.atF_pure]
+  | useRules S => simp only [FueledM.atF_pure]
 
 theorem checkDecl_datF (env : Env) (d : Declaration) (F : Nat) :
     (checkDecl mode (fueledOpsM mode) pins env d).val F =

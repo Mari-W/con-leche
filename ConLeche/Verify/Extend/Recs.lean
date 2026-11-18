@@ -55,7 +55,7 @@ theorem SwapPairSh.name_eq {c₀ c₃ : ConstantInfo}
   · rfl
 
 /-- The lookup correspondence of a shape-level swap. -/
-theorem swapSh_find?_corr {ts : List ProjTable} {rs₀ rs₃ : List (Name × Name)} :
+theorem swapSh_find?_corr {ts : List ProjTable} {rs₀ rs₃ : ConLeche.RuleTable} :
     ∀ {consts₀ consts₃ : List ConstantInfo},
     SwapShList consts₀ consts₃ →
     ∀ n : Name,
@@ -162,7 +162,7 @@ theorem SwapCongr.projEq {env₀ env₃ : Env} (hcg : SwapCongr env₀ env₃) :
 
 /-- A shape-level swap induces the congruences. -/
 theorem SwapShList.congr {consts₀ consts₃ : List ConstantInfo} {ts : List ProjTable}
-    {rs₀ rs₃ : List (Name × Name)}
+    {rs₀ rs₃ : ConLeche.RuleTable}
     (hsw : SwapShList consts₀ consts₃) :
     SwapCongr (Env.mk consts₀ ts rs₀) (Env.mk consts₃ ts rs₃) := by
   have hcorr := swapSh_find?_corr (ts := ts) (rs₀ := rs₀) (rs₃ := rs₃) hsw
@@ -250,6 +250,6 @@ theorem swapSh_find?_corrEnv {env₀ env₃ : Env} (hsw : SwapShList env₀.cons
       env₀.find? n = some (.recInfo cv mI rP false []) ∧
       env₃.find? n = some (.recInfo cv mI rP isK rules) ∧
       cv.name = n :=
-  swapSh_find?_corr (ts := []) (rs₀ := []) (rs₃ := []) hsw n
+  swapSh_find?_corr (ts := []) (rs₀ := {}) (rs₃ := {}) hsw n
 
 end ConLeche

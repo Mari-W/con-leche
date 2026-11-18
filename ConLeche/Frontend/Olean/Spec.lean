@@ -38,7 +38,7 @@ one-byte fields in declaration order):
 | `List` | `nil` = scalar 0; `cons` (1) `head tail` |
 | `ConstantInfo` | `axiomInfo` … `recInfo` (0–7), one field: the `…Val` |
 | `ConstantVal` | `name levelParams type` |
-| `ModuleData` | `imports constNames constants extraConstNames entries` — `isModule` |
+| `ModuleData` | `imports constNames constants extraConstNames entries` (`rewrites`, empty) — `isModule` |
 
 **Binder names, binder infos, `nonDep` and metadata are dropped**, as
 lean4export drops them (`removeMData`, the `nonDep := false`
@@ -423,9 +423,23 @@ structure ModSkel where
   imports : List (ImportF UInt64)
   consts : List Nat
 
+/-- **A `ModuleRewrite` holding no rule and no rule set** (`notes/format.md`): the object at
+`ModuleData`'s sixth field, a constructor with its four arrays empty. -/
+def Region.noRewrites (r : Region) (g : Nat) : Bool :=
+  match r.down g (r.fld g 5) with
+  | some x => r.isCtor x 0 4 &&
+      (List.range 4).all fun i => (r.objArray x (r.fld x i)).map (·.size) == some 0
+  | none => false
+
+/-- **The `ModuleData` constructor**: five object fields, or six where the toolchain stores the
+module's rewrite rules (`ModuleRewrite`, `notes/format.md`).  A module that registers a rule
+or stores a rule set is not read: rules reach the checker through the NDJSON stream only. -/
+def Region.moduleDataOk (r : Region) (g : Nat) : Bool :=
+  r.isCtor g 0 5 || (r.isCtor g 0 6 && r.noRewrites g)
+
 def moduleSkel (r : Region) (root : UInt64) : Option ModSkel := do
   let g ← r.loc root
-  unless r.isCtor g 0 5 do none
+  unless r.moduleDataOk g do none
   let isModule ← r.bool g 0
   let imps ← r.objArray g (r.fld g 0)
   let imports ← imps.toList.mapM (importSkel r)
@@ -470,7 +484,7 @@ def constNamesOk (r : Region) (root : UInt64) : Bool :=
   match r.loc root with
   | none => false
   | some g =>
-    if r.isCtor g 0 5 then
+    if r.moduleDataOk g then
       match r.objArray g (r.fld g 1), r.objArray g (r.fld g 2) with
       | some ns, some cs =>
         ns.size == cs.size &&

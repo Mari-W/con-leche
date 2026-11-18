@@ -19,7 +19,8 @@ no tables): what it reads as never reaches an accepted environment.
 
 namespace ConLeche
 
-/-- The environment with a declaration's constants and tables pushed, each list oldest first. -/
+/-- The environment with a declaration's constants and tables pushed, each list oldest first (its
+rule effect is `Env.stepRules`, applied before). -/
 def Env.pushDelta (env : Env) (L : List ConstantInfo) (Q : List ProjTable) : Env :=
   ⟨L.reverse ++ env.consts, Q.reverse ++ env.tables, env.rules⟩
 
@@ -94,6 +95,7 @@ def declConstants : Declaration → List ConstantInfo
     match readBlock nP block with
     | .ok p => blockConstants p
     | .error _ => []
+  | .rewriteDecl .. | .useRules _ => []
 
 /-- **The projection tables a declaration installs**: those of a recognised inductive block. -/
 def declTables : Declaration → List ProjTable

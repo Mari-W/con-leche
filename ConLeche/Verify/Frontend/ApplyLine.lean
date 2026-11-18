@@ -48,23 +48,48 @@ theorem push_frame (st : StateD) (x : Declaration) :
 theorem pushDecl_frame (st : StateD) (d : Declaration) : Frame st (pushDecl st d) :=
   push_frame _ _
 
-/-- A declaration record that succeeds pushes the record its builder
+theorem pushDecls_frame (st : StateD) (ds : List Declaration) : Frame st (pushDecls st ds) :=
+  ⟨rfl, rfl, rfl, fun _ h => Array.mem_append_left _ h⟩
+
+/-- A declaration record that succeeds pushes the records its builder
 returns, and nothing else. -/
 theorem processLineCoreD_ok {st st' : StateD} {d : DeclRec}
     (h : processLineCoreD st d = .ok (.inl st')) :
-    ∃ x, declOf st.lk d = .ok (.inl x) ∧ st' = pushDecl st x := by
+    ∃ xs, declsOf st.lk d = .ok (.inl xs) ∧ st' = pushDecls st xs := by
   unfold processLineCoreD at h
   obtain ⟨r, hr, h⟩ := exceptBind_ok h
   cases r with
-  | inl x =>
+  | inl xs =>
     simp only [pure, Except.pure, Except.ok.injEq, Sum.inl.injEq] at h
-    exact ⟨x, hr, h.symm⟩
+    exact ⟨xs, hr, h.symm⟩
   | inr v => simp [pure, Except.pure] at h
+
+/-- The records of a declaration record: its record, and the `useRules` records around it. -/
+theorem declsOf_ok {L : Lk String} {d : DeclRec} {xs : List Declaration}
+    (h : declsOf L d = .ok (.inl xs)) :
+    ∃ x, declOf L d = .ok (.inl x) ∧ x ∈ xs := by
+  unfold declsOf declsOfF at h
+  obtain ⟨r, hr, h⟩ := exceptBind_ok h
+  cases r with
+  | inr v => simp [pure, Except.pure] at h
+  | inl x =>
+    refine ⟨x, hr, ?_⟩
+    cases d with
+    | underRules rw d' =>
+      simp only at h
+      obtain ⟨S, -, h⟩ := exceptBind_ok h
+      simp only [pure, Except.pure, Except.ok.injEq, Sum.inl.injEq] at h
+      subst h
+      simp [scopeRules]
+    | _ =>
+      simp only [pure, Except.pure, Except.ok.injEq, Sum.inl.injEq] at h
+      subst h
+      exact List.mem_singleton_self _
 
 theorem processLineCoreD_frame {st st' : StateD} {d : DeclRec}
     (h : processLineCoreD st d = .ok (.inl st')) : Frame st st' := by
   obtain ⟨x, _, rfl⟩ := processLineCoreD_ok h
-  exact pushDecl_frame _ _
+  exact pushDecls_frame _ _
 
 /-- A declaration record IS its semantics (task #292: no pre-scan). -/
 theorem applyDeclD_frame {st st' : StateD} {d : DeclRec}

@@ -114,12 +114,12 @@ theorem FEnv.below_rawTable (fe : FEnv) (n : Name) (k : Nat) :
   · exact FEnv.dropTop_rawTable fe _
   · funext T; rfl
 
-theorem FEnv.dropTop_rls (fe : FEnv) (k : Nat) : (fe.dropTop k).base.rls = fe.base.rls := by
+theorem FEnv.dropTop_rls (fe : FEnv) (k : Nat) : (fe.dropTop k).base.rls = {} := by
   unfold FEnv.dropTop
   split <;> rfl
 
-/-- A view below a block keeps the rule map. -/
-theorem FEnv.below_rls (fe : FEnv) (n : Name) (k : Nat) : (fe.below n k).base.rls = fe.base.rls := by
+/-- A view below a block has no rule (`Env.cutAt`). -/
+theorem FEnv.below_rls (fe : FEnv) (n : Name) (k : Nat) : (fe.below n k).base.rls = {} := by
   unfold FEnv.below
   split
   · exact FEnv.dropTop_rls fe _
@@ -147,7 +147,7 @@ theorem Twin.famBelow {fe₁ fe₂ : FEnv} (h : Twin fe₁ fe₂) (n : Name) :
       (by rw [FEnv.below_rawTable, FEnv.below_rawTable, h.raw])
       (by rw [FEnv.below_chk, FEnv.below_chk]),
       FEnv.rulesFor_congr (h.below n caps.blockPos)
-        (by rw [FEnv.below_rls, FEnv.below_rls, h.rls])⟩
+        (by rw [FEnv.below_rls, FEnv.below_rls])⟩
   · trivial
 
 /-- The view under no constant answers as the index. -/
@@ -1387,29 +1387,31 @@ theorem checkBlockTailS_twin {fe₁ fe₂ : FEnv} (ht : Twin fe₁ fe₂)
 theorem reduceMemberS_congr {fe₁ fe₂ : FEnv} (hfe : fe₁.find? = fe₂.find?)
     (htb : fe₁.findTable? = fe₂.findTable?)
     (hru : fe₁.rulesFor = fe₂.rulesFor)
-    (hfb : ∀ n, FEnv.BelowReads (fe₁.famBelow n) (fe₂.famBelow n)) (nP : Nat) (ms : MemberShape) :
+    (hfb : ∀ n, FEnv.BelowReads (fe₁.famBelow n) (fe₂.famBelow n))
+    (hrl : fe₁.base.rls = fe₂.base.rls) (nP : Nat) (ms : MemberShape) :
     reduceMemberS mode fe₁ ms nP = reduceMemberS mode fe₂ ms nP := by
   have h := sharedOpsC_envFree mode fe₂
-  simp only [reduceMemberS, reducedFormerC_eq, reducedFormer, knotI_congr hfe htb hru,
+  simp only [reduceMemberS, reducedFormerC_eq, reducedFormer, knotI_congr hfe htb hru, hrl,
     sharedOpsC_congr hfe hru htb hfb, checkConstantValC_congr hfe htb hru,
     whnfTelescope_env h fe₁.env, whnfTelescope_env h fe₂.env]
 
 theorem reduceMembersS_congr {fe₁ fe₂ : FEnv} (hfe : fe₁.find? = fe₂.find?)
     (htb : fe₁.findTable? = fe₂.findTable?)
     (hru : fe₁.rulesFor = fe₂.rulesFor)
-    (hfb : ∀ n, FEnv.BelowReads (fe₁.famBelow n) (fe₂.famBelow n)) (nP : Nat) :
+    (hfb : ∀ n, FEnv.BelowReads (fe₁.famBelow n) (fe₂.famBelow n))
+    (hrl : fe₁.base.rls = fe₂.base.rls) (nP : Nat) :
     ∀ l, reduceMembersS mode fe₁ nP l = reduceMembersS mode fe₂ nP l
   | [] => rfl
   | ms :: rest => by
     unfold reduceMembersS
-    simp only [reduceMemberS_congr hfe htb hru hfb, reduceMembersS_congr hfe htb hru hfb nP rest]
+    simp only [reduceMemberS_congr hfe htb hru hfb hrl, reduceMembersS_congr hfe htb hru hfb hrl nP rest]
 
 theorem checkBlockKS_twin {fe₁ fe₂ : FEnv} (ht : Twin fe₁ fe₂)
     (block : List ConstantInfo) (p₀ : BlockShape) :
     RelRun (PushedFrom fe₁ fe₂) (checkBlockKS mode fe₁ block p₀)
       (checkBlockKS mode fe₂ block p₀) := by
   unfold checkBlockKS
-  rw [reduceMembersS_congr (mode := mode) ht.find ht.findTable ht.rulesFor ht.famBelow]
+  rw [reduceMembersS_congr (mode := mode) ht.find ht.findTable ht.rulesFor ht.famBelow ht.rls]
   relrun
   all_goals
     exact RelRun.bind (checkBlockPassS_twin ht _ _) fun _ _ hq =>
@@ -1443,17 +1445,17 @@ theorem checkIndDeclC_twin {fe₁ fe₂ : FEnv} (ht : Twin fe₁ fe₂)
     | exact checkBlockKS_twin ht block _
     | exact RelRun.ofThrow
 
-/-- **A declaration's own checks at twin indices push the same constants onto each, or fail
-alike.** -/
+/-- **A declaration's own checks at twin indices succeed alike, or fail alike.** -/
 theorem checkDeclKindC_twin (pins : List NatOpPinSet) {fe₁ fe₂ : FEnv} (ht : Twin fe₁ fe₂)
     (pd : Declaration) :
-    RelRun (PushedFrom fe₁ fe₂) (checkDeclKindC mode pins fe₁ pd)
+    RelRun (fun _ _ => True) (checkDeclKindC mode pins fe₁ pd)
       (checkDeclKindC mode pins fe₂ pd) := by
   have hfe := ht.find
   have htb := ht.findTable
   have hru := ht.rulesFor
   cases pd with
   | defnDecl cv value hint =>
+    refine RelRun.mono (R := PushedFrom fe₁ fe₂) ?_ fun _ _ _ => trivial
     unfold checkDeclKindC
     simp only [checkConstantValC_congr hfe htb hru]
     refine RelRun.bind_same fun _ => ?_
@@ -1472,11 +1474,13 @@ theorem checkDeclKindC_twin (pins : List NatOpPinSet) {fe₁ fe₂ : FEnv} (ht :
     relrun
     all_goals exact RelRun.pure (PushedFrom.push _ _ _)
   | thmDecl cv value =>
+    refine RelRun.mono (R := PushedFrom fe₁ fe₂) ?_ fun _ _ _ => trivial
     unfold checkDeclKindC
     simp only [checkConstantValC_congr hfe htb hru, checkThmValCI_congr hfe htb hru]
     refine RelRun.bind_same fun _ => RelRun.bind_same fun ci => ?_
     exact RelRun.pure (PushedFrom.push _ _ _)
   | opaqueDecl cv value =>
+    refine RelRun.mono (R := PushedFrom fe₁ fe₂) ?_ fun _ _ _ => trivial
     unfold checkDeclKindC
     simp only [checkConstantValC_congr hfe htb hru]
     refine RelRun.bind_same fun _ => ?_
@@ -1491,6 +1495,7 @@ theorem checkDeclKindC_twin (pins : List NatOpPinSet) {fe₁ fe₂ : FEnv} (ht :
     relrun
     all_goals exact RelRun.pure (PushedFrom.push _ _ _)
   | axiomDecl cv =>
+    refine RelRun.mono (R := PushedFrom fe₁ fe₂) ?_ fun _ _ _ => trivial
     unfold checkDeclKindC
     simp only [checkConstantValC_congr hfe htb hru, stdAxiomOkF_congr hfe, trustCompilerOkF_congr hfe,
       ofReduceAxOkF_congr hfe]
@@ -1500,17 +1505,26 @@ theorem checkDeclKindC_twin (pins : List NatOpPinSet) {fe₁ fe₂ : FEnv} (ht :
       | exact RelRun.pure (PushedFrom.refl _ _)
       | exact RelRun.pure (PushedFrom.push _ _ _)
   | indDecl block nP =>
+    refine RelRun.mono (R := PushedFrom fe₁ fe₂) ?_ fun _ _ _ => trivial
     unfold checkDeclKindC
     exact checkIndDeclC_twin ht block nP
   | quotDecl k cv =>
+    refine RelRun.mono (R := PushedFrom fe₁ fe₂) ?_ fun _ _ _ => trivial
     unfold checkDeclKindC
     exact checkQuotRecordC_twin ht k cv
+  | rewriteDecl thm head prio =>
+    unfold checkDeclKindC
+    simp only [hfe]
+    cases ruleDeclError? fe₂.find? thm head with
+    | some e => exact RelRun.ofThrow
+    | none => exact RelRun.pure trivial
+  | useRules S => exact RelRun.pure trivial
 
-/-- **Every declaration step at twin indices pushes the same constants
-onto each, or fails alike.** -/
+/-- **Every declaration step at twin indices succeeds alike, or fails alike** (what it pushes is
+`checkDeclC_pushes`'s). -/
 theorem checkDeclC_twin (pins : List NatOpPinSet) {fe₁ fe₂ : FEnv} (ht : Twin fe₁ fe₂)
     (pd : Declaration) :
-    RelRun (PushedFrom fe₁ fe₂) (checkDeclC mode pins fe₁ pd) (checkDeclC mode pins fe₂ pd) := by
+    RelRun (fun _ _ => True) (checkDeclC mode pins fe₁ pd) (checkDeclC mode pins fe₂ pd) := by
   unfold checkDeclC
   refine RelRun.bind (checkDeclKindC_twin pins ht pd) fun a₁ a₂ h => ?_
   relrun
@@ -1519,7 +1533,7 @@ theorem checkDeclC_twin (pins : List NatOpPinSet) {fe₁ fe₂ : FEnv} (ht : Twi
 theorem checkDeclStepC_twin (pins : List NatOpPinSet) {fe₁ fe₂ : FEnv} (ht : Twin fe₁ fe₂)
    
     (pd : Declaration) :
-    RelRun (PushedFrom fe₁ fe₂) (checkDeclStepC mode pins fe₁ pd)
+    RelRun (fun _ _ => True) (checkDeclStepC mode pins fe₁ pd)
       (checkDeclStepC mode pins fe₂ pd) := by
   unfold checkDeclStepC
   exact RelRun.bind_same fun _ => checkDeclC_twin pins ht pd

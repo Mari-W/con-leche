@@ -162,6 +162,15 @@ def checkDeclKind (ops : CheckerOps m) (pins : List NatOpPinSet) (env : Env)
       | .error e => throw e
     else throw (.invalid "number of parameters mismatch")
   | .quotDecl k cv => checkQuotRecord env k cv
+  | .rewriteDecl thm head _ =>
+    -- a rule's registration: the fragment and shape check, then the rule recorded; it fires only
+    -- under a later `useRules` that names its theorem
+    match ruleDeclError? env.find? thm head with
+    | some e => throw e
+    | none => pure (env.stepRules d)
+  | .useRules _ =>
+    -- the rule set the following records are checked under, trusted as given
+    pure (env.stepRules d)
 
 /-- **Check a single declaration**: its own checks, then the reserved names' (`basisNamesOk`),
 which justify the model's fixed meanings of the basis names.  The mode is part of the signature

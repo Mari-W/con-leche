@@ -41,8 +41,9 @@ structure FBase where
   /-- A view below a block (`FEnv.below`): a table is answered only where
   its bodies resolve in the view (`FEnv.findTable?`, `Env.liveTables`). -/
   chk : Bool := false
-  /-- The rewrite rules by head constant (`Env.rules`), newest first; a rule
-  fires only where its theorem is stored (`FEnv.rulesFor`). -/
+  /-- The active rewrite rules by head constant (`Env.rules`), in firing order; a rule
+  fires only where its theorem is stored (`FEnv.rulesFor`).  Empty in a view below a block
+  (`Env.cutAt`). -/
   rls : Std.HashMap Name (List Name) := {}
 
 /-- The base layer's lookup: a visible entry's constant. -/
@@ -254,15 +255,15 @@ def mkTblsGo : List ProjTable → Std.HashMap Name ProjTable
   | [] => ∅
   | t :: ts => (mkTblsGo ts).insert t.structName t
 
-/-- The rule map's build, from the back: each head's theorems newest first, as `Env.rulesFor`
-reads them. -/
+/-- The rule map's build, from the back: each head's theorems in the active table's order, as
+`Env.rulesFor` reads them. -/
 def mkRlsGo : List (Name × Name) → Std.HashMap Name (List Name)
   | [] => ∅
   | (c, t) :: rs => (mkRlsGo rs).insert c (t :: (mkRlsGo rs).getD c [])
 
 /-- Build the index of `env`. -/
 def mkFEnv (env : Env) : FEnv :=
-  FEnv.ofParts env (mkIdxGo env.consts) { rls := mkRlsGo env.rules } [] (mkTblsGo env.tables)
+  FEnv.ofParts env (mkIdxGo env.consts) { rls := mkRlsGo env.rules.active } [] (mkTblsGo env.tables)
 
 namespace FEnv
 
@@ -415,6 +416,16 @@ environments, one bucket array.  Read-only: nothing pushes onto it. -/
 def overlay (fe : FEnv) (new : List ConstantInfo) : FEnv :=
   ofParts ⟨new ++ fe.env.consts, fe.env.tables, fe.env.rules⟩ fe.idx fe.base (new ++ fe.ovl) fe.tbls
 
+/-- **A record's rule effect on the index** (`Env.stepRules`): a registration records the rule, a
+`useRules` rebuilds the active table and its rule map, any other record changes nothing. -/
+def stepRules (fe : FEnv) (d : Declaration) : FEnv :=
+  match d with
+  | .rewriteDecl .. => ofParts (fe.env.stepRules d) fe.idx fe.base fe.ovl fe.tbls
+  | .useRules _ =>
+    ofParts (fe.env.stepRules d) fe.idx { fe.base with rls := mkRlsGo (fe.env.stepRules d).rules.active }
+      fe.ovl fe.tbls
+  | _ => fe
+
 /-- The table map's lookup, ungated: a miss in the map falls through to
 the base layer (empty but in a view of a stream's index). -/
 def rawTable? (fe : FEnv) (T : Name) : Option ProjTable :=
@@ -470,10 +481,12 @@ only where it is live there (`FBase.chk`). -/
 def dropTop (fe : FEnv) (k : Nat) : FEnv :=
   if k ≤ fe.env.consts.length then
     let cs := fe.env.consts.drop k
-    ofParts ⟨cs, fe.env.tables, fe.env.rules⟩ (mkIdxGo cs) { fe.base with chk := true } [] fe.tbls
+    ofParts ⟨cs, fe.env.tables, fe.env.rules⟩ (mkIdxGo cs) { fe.base with chk := true, rls := {} } []
+      fe.tbls
   else
     ofParts ⟨[], fe.env.tables, fe.env.rules⟩ ∅
-      { fe.base with below := fe.base.below - (k - fe.env.consts.length), chk := true } [] fe.tbls
+      { fe.base with below := fe.base.below - (k - fe.env.consts.length), chk := true, rls := {} } []
+      fe.tbls
 
 /-- **The view below the first entry named `n`, less `k` more constants** (`Env.suffixAfter`,
 `Env.cutAt`).  The entry is among the constants pushed onto this index, or in the frozen layer,
@@ -485,7 +498,8 @@ def below (fe : FEnv) (n : Name) (k : Nat) : FEnv :=
     let c := match fe.base.idx[n]? with
       | some (c, _) => if c < fe.base.below then c - k else 0
       | none => 0
-    ofParts ⟨[], fe.env.tables, fe.env.rules⟩ ∅ { fe.base with below := c, chk := true } [] fe.tbls
+    ofParts ⟨[], fe.env.tables, fe.env.rules⟩ ∅ { fe.base with below := c, chk := true, rls := {} } []
+      fe.tbls
 
 /-- **The rules registered for the head constant `c`** (`Env.rulesFor` through the index):
 newest first, each theorem stored here. -/

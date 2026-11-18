@@ -247,7 +247,7 @@ def Env.suffixAfter (cs : List ConstantInfo) (n : Name) : List ConstantInfo :=
 /-- A table live at the constants `cs`: its structure is among them and
 its bodies resolve there. -/
 def Env.tableOkAt (cs : List ConstantInfo) (t : ProjTable) : Bool :=
-  (cs.find? (·.name == t.structName)).isSome && t.bodies.all (·.constsResolve ⟨cs, [], []⟩)
+  (cs.find? (·.name == t.structName)).isSome && t.bodies.all (·.constsResolve ⟨cs, [], {}⟩)
 
 /-- The tables `Env.findTable?` answers at the constants `cs`: each name's
 first table, where it is live there. -/
@@ -258,10 +258,10 @@ def Env.liveTables (cs : List ConstantInfo) : List ProjTable → List ProjTable
     if Env.tableOkAt cs t then t :: rest else rest
 
 /-- The environment cut at `cs` (a suffix of its constants): those constants, the tables live
-there, and the rules whose theorems are among them. -/
+there, and no rewrite rule.  A family's telescope is reduced without rules (`familyTelescope`):
+the active rules change with every `useRules`, and a reading below a block must not. -/
 def Env.cutAt (env : Env) (cs : List ConstantInfo) : Env :=
-  ⟨cs, Env.liveTables cs env.tables,
-    env.rules.filter fun r => (cs.find? (·.name == r.2)).isSome⟩
+  ⟨cs, Env.liveTables cs env.tables, {}⟩
 
 /-- **Where the family named `n` has its telescope read**: below its block,
 cut at the constants older than its entry, less the `caps.blockPos` formers
@@ -1192,5 +1192,71 @@ def ProjEntry.typeAt (entry : ProjEntry) (us : List Level) (targs : List Expr)
     (pe : Expr) : Expr :=
   (entry.body.instantiateLevelParams entry.levelParams us).instantiateList
     (pe :: targs.reverse)
+
+/-! ## User rewrite rules: the registration check
+
+A registration (`Declaration.rewriteDecl`) names a stored theorem and the head constant of its
+left side.  The check is the fragment and shape check the C++ kernel runs at
+`Kernel.Environment.addRewriteRule` (`notes/format.md`): the statement is `∀ xs, @Eq A l r`, the
+left side is the declared head constant applied to a linear first-order pattern, every variable
+of the right side is one of the left side's, and the head is no pinned basis constant.  No proof
+reads it: `Red.rewrite` accepts any stored theorem, and each firing checks its own premises. -/
+
+/-- **A linear first-order pattern** over the `n` binders of a rule, its variables (the loose
+bound variables, innermost `0`) collected in `seen`, each at most once: a variable, or a
+constant applied to patterns.  `head` marks the function position of an application, where no
+variable may stand. -/
+def rulePat (n : Nat) : Bool → List Nat → Expr → Option (List Nat)
+  | head, seen, .bvar k => if !head && k < n && !seen.contains k then some (k :: seen) else none
+  | _, seen, .const _ _ => some seen
+  | _, seen, .app f a => (rulePat n true seen f).bind fun s => rulePat n false s a
+  | _, _, _ => none
+
+/-- The level parameters a rule's left side binds: those standing as a whole level argument of
+one of its constants (`.param p`), where the matcher takes the level it meets (`matchLevel`). -/
+def ruleLhsParams : Expr → List Name
+  | .const _ us => us.filterMap fun u => match u with
+    | .param p => some p
+    | _ => none
+  | .app f a => ruleLhsParams f ++ ruleLhsParams a
+  | _ => []
+
+/-- **What a rule's registration is told**, or `none` when it passes (the checks of the C++
+kernel's `addRewriteRule`): the theorem is stored, its statement is `∀ xs, @Eq A l r`, `l` is
+the declared head applied to a linear first-order pattern (no literal), every binder of `xs`
+occurs in `l`, every variable of `r` is bound by `l`, every level parameter of `r` stands as a
+`.param` level of `l`, and the head is no pinned basis constant. -/
+def ruleDeclError? (find : Name → Option ConstantInfo) (thm head : Name) : Option CheckError :=
+  match find thm with
+  | some (.thmInfo cv) =>
+    let n := (ruleTele cv.type).1
+    match eqSpine? (ruleTele cv.type).2 with
+    | some (eqn, _, _, l, r) =>
+      if eqn != eqName then
+        some (.invalid s!"rewrite rule {thm}: its statement is not an equation")
+      else
+        match l.getAppFn with
+        | .const c _ =>
+          if c != head then
+            some (.invalid s!"rewrite rule {thm}: declared head {head}, but its left side is headed by {c}")
+          else if reservedBasisNames.contains head then
+            some (.invalid s!"rewrite rule {thm}: its head {head} is a pinned basis constant")
+          else
+            match rulePat n true [] l with
+            | none =>
+              some (.invalid s!"rewrite rule {thm}: its left side is not a linear first-order pattern")
+            | some vs =>
+              if !(List.range n).all fun k => vs.contains k then
+                some (.invalid s!"rewrite rule {thm}: a variable of its statement does not occur in its left side")
+              else if !(List.range n).all fun k => !r.hasLooseBVar k || vs.contains k then
+                some (.invalid
+                  s!"rewrite rule {thm}: its right side has a variable its left side does not bind")
+              else if !r.allLevelParamsDefined (ruleLhsParams l) then
+                some (.invalid
+                  s!"rewrite rule {thm}: its right side has a universe parameter its left side does not bind")
+              else none
+        | _ => some (.invalid s!"rewrite rule {thm}: its left side is not headed by a constant")
+    | none => some (.invalid s!"rewrite rule {thm}: its statement is not ∀ xs, l = r")
+  | _ => some (.invalid s!"rewrite rule {thm}: no stored theorem of that name")
 
 end ConLeche

@@ -720,8 +720,8 @@ def chunkDeclsGo (P : @& Prior) (W : @& Win) (d : @& Array LineRec) (first : Boo
     if d[i].placed (first && i == 0) then
       match d[i] with
       | .decl r =>
-        match declOfF (vN P W ct.n) (vL P W ct.l) (vE P W ct.e) r with
-        | .ok (.inl x) => chunkDeclsGo P W d first (i + 1) ct (acc.push x)
+        match declsOfF (vN P W ct.n) (vL P W ct.l) (vE P W ct.e) r with
+        | .ok (.inl xs) => chunkDeclsGo P W d first (i + 1) ct (acc ++ xs.toArray)
         | _ => none
       | r => chunkDeclsGo P W d first (i + 1) (ct.step r) acc
     else none

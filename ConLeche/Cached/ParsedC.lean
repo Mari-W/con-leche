@@ -313,6 +313,11 @@ def checkDeclKindC (pins : List NatOpPinSet) (fe : FEnv) (pd : Declaration) :
         throw (.notImplemented (nonStdAxiomMsg cv.name))
   | .indDecl block nP => checkIndDeclC mode fe block nP
   | .quotDecl k cv => checkQuotRecordC fe k cv
+  | .rewriteDecl thm head _ =>
+    match ruleDeclError? fe.find? thm head with
+    | some e => throw e
+    | none => pure (fe.stepRules pd)
+  | .useRules _ => pure (fe.stepRules pd)
 
 /-- **One declaration** (`checkDecl`'s twin): its own checks, then the reserved names'. -/
 def checkDeclC (pins : List NatOpPinSet) (fe : FEnv) (pd : Declaration) :
@@ -338,6 +343,8 @@ def declCLabel : Declaration → String
   | .axiomDecl cv => s!"axiom {cv.name}"
   | .indDecl b _ => s!"inductive {(b.head?.map (·.name)).getD .anonymous}"
   | .quotDecl _ cv => s!"quot {cv.name}"
+  | .rewriteDecl thm _ _ => s!"rewrite {thm}"
+  | .useRules S => s!"rewrite rules ({S.length})"
 
 /-- The check of one record: flush, then check. -/
 def checkDeclStepC (pins : List NatOpPinSet) (fe : FEnv) (pd : Declaration) :

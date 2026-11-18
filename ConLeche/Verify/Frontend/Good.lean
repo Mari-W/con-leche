@@ -711,7 +711,7 @@ builder, and every line where it may stand (`n` lines before the
 window): every line is right at `T`. -/
 theorem allOK_of_good {Γ : WCtx} {T : Tabs} {n : Nat} (hT : GoodTabs Γ T)
     (hD : ∀ p (h : p < Γ.rs.length) d, Γ.rs[p] = .decl d →
-      ∃ x, declOf (cutLk T (Γ.ctr p)) d = .ok (.inl x))
+      ∃ x, declsOf (cutLk T (Γ.ctr p)) d = .ok (.inl x))
     (hP : ∀ p (h : p < Γ.rs.length), Γ.rs[p].placed (n + p == 0) = true) :
     AllOK T Γ.c0 n Γ.rs := by
   apply allOK_of_forall hP

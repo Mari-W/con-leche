@@ -69,6 +69,10 @@ business (`ConLeche/Frontend/Prepare.lean`). -/
 def pushDecl (st : StateD) (d : Declaration) : StateD :=
   { st with decls := st.decls.push d }
 
+/-- One line's records, appended in order. -/
+def pushDecls (st : StateD) (ds : List Declaration) : StateD :=
+  { st with decls := st.decls ++ ds.toArray }
+
 @[inline] def StateD.name (st : StateD) (i : Nat) : M Name :=
   match st.names.get? i with
   | some n => pure n
@@ -444,16 +448,42 @@ changed, from key lookups in a DOM to fields of a syntax record. -/
     match ← validateIndF nm lv ex tys cts rcs with
     | .inl v => pure (.inr v)
     | .inr (cts, nPd) => return .inl (← indBlockOfF nm lv ex tys cts rcs nPd)
+  | .rule t h p => return .inl (.rewriteDecl (← nm t) (← nm h) p)
+  -- the record itself; its rule set is `declsOfF`'s
+  | .underRules _ d => declOfF nm lv ex d
 
 /-- The declaration builder over an `Lk` record. -/
 @[inline] def declOf (L : Lk String) (d : DeclRec) : M (Declaration ⊕ RecordVerdict) :=
   declOfF L.name L.level L.expr d
 
-/-- A declaration record applied to the state: its record pushed, or its
+/-- **A record under its rule set** (`notes/format.md`): a record whose `rewrites` field lists
+`R(D)` is checked under exactly that set and the records after it under none, so it travels
+between `useRules R(D)` and `useRules []`.  Every line is read on its own (the rounds parse reads
+them in parallel), so the `useRules` records come in these pairs and not only where the set
+changes. -/
+def scopeRules (S : List Name) (x : Declaration) : List Declaration :=
+  [.useRules S, x, .useRules []]
+
+/-- **A declaration record's records**: the record, between its rule set's `useRules` records
+when it has one (`scopeRules`). -/
+@[specialize] def declsOfF (nm : Nat → M Name) (lv : Nat → M Level) (ex : Nat → M Expr)
+    (d : @& DeclRec) : M (List Declaration ⊕ RecordVerdict) := do
+  match ← declOfF nm lv ex d with
+  | .inl x =>
+    match d with
+    | .underRules rw _ => return .inl (scopeRules (← rw.mapM nm) x)
+    | _ => return .inl [x]
+  | .inr v => pure (.inr v)
+
+/-- The records builder over an `Lk` record. -/
+@[inline] def declsOf (L : Lk String) (d : DeclRec) : M (List Declaration ⊕ RecordVerdict) :=
+  declsOfF L.name L.level L.expr d
+
+/-- A declaration record applied to the state: its records pushed, or its
 verdict. -/
 def processLineCoreD (st : StateD) (d : @& DeclRec) : M (StateD ⊕ RecordVerdict) := do
-  match ← declOf st.lk d with
-  | .inl x => pure (.inl (pushDecl st x))
+  match ← declsOf st.lk d with
+  | .inl xs => pure (.inl (pushDecls st xs))
   | .inr v => pure (.inr v)
 
 /-- A declaration record.  **`sorryAx` is the FOLD's** (user ruling):

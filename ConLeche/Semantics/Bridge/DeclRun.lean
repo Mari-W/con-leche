@@ -455,5 +455,19 @@ theorem checkDeclRun_of {F : Nat}
   | axiomDecl cv => exact declAxiomRun_of h
   | quotDecl k cv => exact declQuotRunOf h
   | indDecl block nP => exact hind h
+  | rewriteDecl thm head prio =>
+    unfold checkDeclKind at h
+    dsimp only at h
+    cases he : ruleDeclError? env.find? thm head with
+    | some e =>
+      rw [he] at h
+      exact nomatch h
+    | none =>
+      rw [he] at h
+      exact ⟨he, (Except.ok.inj h).symm⟩
+  | useRules S =>
+    unfold checkDeclKind at h
+    dsimp only at h
+    exact (Except.ok.inj h).symm
 
 end ConLeche.Semantics

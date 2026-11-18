@@ -26,19 +26,6 @@ open scoped Lean.Order
 
 variable {env : Env}
 
-/-- The rules of a head through the index's rule map, gated by the cut's lookups, are the cut's. -/
-private theorem rulesFor_cut (rules : List (Name × Name)) (cs : List ConstantInfo) (c : Name) :
-    (rules.filterMap fun r => if r.1 == c then some r.2 else none).filter
-        (fun t => (Env.find? ⟨cs, [], []⟩ t).isSome) =
-      (Env.cutAt ⟨[], [], rules⟩ cs).rulesFor c := by
-  unfold Env.rulesFor Env.cutAt
-  simp only [Env.find?]
-  induction rules with
-  | nil => rfl
-  | cons r rs ih =>
-    by_cases h1 : r.1 = c <;> by_cases h2 : (cs.find? (·.name == r.2)).isSome <;>
-      simp_all
-
 /-- **Head normalization below a family's block simulates its fueled original.** -/
 theorem whnfBS_spec (henv : EnvWF env) {n : Name} {d : Nat} {e : Expr} {s₀ : CState}
     (hs : CSOK .verified false env s₀) (hw : Expr.WScoped d e) :
@@ -86,15 +73,14 @@ theorem whnfBS_spec (henv : EnvWF env) {n : Name} {d : Nat} {e : Expr} {s₀ : C
         funext c
         rw [mkFEnv_rulesFor]
         unfold FEnv.rulesFor
-        rw [hf, mkFEnv_find?_fun]
-        have hb : ((mkFEnv env).below n caps.blockPos).base.rls = mkRlsGo env.rules := by
+        have hb : ((mkFEnv env).below n caps.blockPos).base.rls = {} := by
           unfold FEnv.below
           split
           · unfold FEnv.dropTop
             split <;> rfl
           · rfl
-        rw [hb, mkRlsGo_getD]
-        exact rulesFor_cut env.rules _ c
+        rw [hb]
+        simp [Env.rulesFor, Env.cutAt]
       rw [(knotI_congr hf ht hru).2.1] at hrun
       obtain ⟨hs₁, ⟨F, hF⟩, hwt⟩ :=
         triple_iff_run.mp (opW_spec henv' (flushC_csok hs.residue) hw) t s₁ hrun

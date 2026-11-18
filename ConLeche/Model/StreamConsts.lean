@@ -93,6 +93,8 @@ kind of record claims a name and a type for:
   | .axiomDecl cv, cv' => cv' = cv ∧ cv.name ≠ sorryAxName ∧ cv.name ≠ quotSoundName
   | .indDecl _ _, _ => False
   | .quotDecl _ _, _ => False
+  | .rewriteDecl .., _ => False
+  | .useRules _, _ => False
 
 /-! ## A name-unique environment finds what it holds -/
 
@@ -179,6 +181,8 @@ theorem checkDecl_declares {env env₂ : Env} {F : Nat}
     · exact hann
   | quotDecl k cv₀ => exact hcv.elim
   | indDecl block nP => exact hcv.elim
+  | rewriteDecl thm head prio => exact hcv.elim
+  | useRules S => exact hcv.elim
 
 /-! ## The walk -/
 

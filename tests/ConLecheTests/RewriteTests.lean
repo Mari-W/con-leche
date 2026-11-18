@@ -37,9 +37,11 @@ open ConLeche
   .app (.app (.app (.const eqName [.succ (.succ .zero)]) ty0) l) r
 
 /-- `Eq`, a type `T` with an inhabitant `a`, the definition `Fn := T → T`, a type `code` with an
-inhabitant `g`, and three stored theorems, `code_eq : code = Fn`, `code_bad : code = a` (whose
-right side is no type) and `code_refl : code = code`. -/
+inhabitant `g`, and four stored theorems, `code_eq : code = Fn`, `code_bad : code = a` (whose
+right side is no type), `code_refl : code = code` and `code_vac : ∀ x : T, code = Fn` (whose
+binder the left side does not bind). -/
 @[expose] def baseConsts : List ConstantInfo := [
+  .thmInfo ⟨nm "code_vac", [], .forallE cT (eqTy cCode cFn)⟩,
   .thmInfo ⟨nm "code_refl", [], eqTy cCode cCode⟩,
   .thmInfo ⟨nm "code_bad", [], eqTy cCode cA⟩,
   .thmInfo ⟨nm "code_eq", [], eqTy cCode cFn⟩,
@@ -52,7 +54,7 @@ right side is no type) and `code_refl : code = code`. -/
     (.forallE (.bvar 0) (.forallE (.bvar 1) (.sort .zero)))⟩ {}]
 
 /-- The environment with the given rules (head, theorem). -/
-@[expose] def envR (rs : List (Name × Name)) : Env := ⟨baseConsts, [], rs⟩
+@[expose] def envR (rs : List (Name × Name)) : Env := ⟨baseConsts, [], { active := rs }⟩
 
 @[expose] def pureRun (rs : List (Name × Name)) (d : Declaration) : Except CheckError Env :=
   checkDecl .verified (pureOps .verified) [] (envR rs) d
@@ -96,5 +98,50 @@ right side is no type) and `code_refl : code = code`. -/
   "rewrite rule budget exhausted: code_refl would fire past 65536 firings"
 #guard cachedV [(nm "code", nm "code_refl")] declY ==
   "rewrite rule budget exhausted: code_refl would fire past 65536 firings"
+
+/-! ### Registration and rule sets
+
+The same declarations as records: a rule is registered (`rewriteDecl`) and fires only under a
+`useRules` that names it; the firing order is priority descending (`activeTable`). -/
+
+@[expose] def pureSeq (ds : List Declaration) : Except CheckError Env :=
+  ds.foldlM (checkDecl .verified (pureOps .verified) []) (envR [])
+
+@[expose] def cachedSeq (ds : List Declaration) : Except (CheckError × Nat) (Nat × FEnv) :=
+  ds.foldlM (Cached.declStep .verified [] 1024) (0, mkFEnv (envR []))
+
+@[expose] def seqV (ds : List Declaration) : String × String :=
+  (verdict id (pureSeq ds), verdict (·.1) (cachedSeq ds))
+
+@[expose] def reg (thm : String) (prio : Nat := 1000) : Declaration :=
+  .rewriteDecl (nm thm) (nm "code") prio
+
+-- registered and in force: the rule fires
+#guard seqV [reg "code_eq", .useRules [nm "code_eq"], declY] == ("ok", "ok")
+-- registered but not in the declaration's rule set: no firing
+#guard seqV [reg "code_eq", declY] == ("function expected", "function expected")
+#guard seqV [reg "code_eq", .useRules [nm "code_eq"], .useRules [], declY] ==
+  ("function expected", "function expected")
+-- a rule set naming an unregistered theorem activates nothing
+#guard seqV [.useRules [nm "code_eq"], declY] == ("function expected", "function expected")
+-- priority: the higher rule is tried first
+#guard seqV [reg "code_eq" 2000, reg "code_refl" 1000,
+    .useRules [nm "code_eq", nm "code_refl"], declY] == ("ok", "ok")
+#guard seqV [reg "code_eq" 1000, reg "code_refl" 2000,
+    .useRules [nm "code_eq", nm "code_refl"], declY] ==
+  ("rewrite rule budget exhausted: code_refl would fire past 65536 firings",
+   "rewrite rule budget exhausted: code_refl would fire past 65536 firings")
+-- equal priorities: `Name.cmp` (`code_eq` before `code_refl`)
+#guard seqV [reg "code_refl", reg "code_eq", .useRules [nm "code_refl", nm "code_eq"], declY] ==
+  ("ok", "ok")
+-- malformed registrations
+#guard seqV [.rewriteDecl (nm "a") (nm "code") 1000] ==
+  ("rewrite rule a: no stored theorem of that name", "rewrite rule a: no stored theorem of that name")
+#guard seqV [.rewriteDecl (nm "code_vac") (nm "code") 1000] ==
+  ("rewrite rule code_vac: a variable of its statement does not occur in its left side",
+   "rewrite rule code_vac: a variable of its statement does not occur in its left side")
+#guard seqV [.rewriteDecl (nm "code_eq") (nm "g") 1000] ==
+  ("rewrite rule code_eq: declared head g, but its left side is headed by code",
+   "rewrite rule code_eq: declared head g, but its left side is headed by code")
 
 end ConLecheTests.Rewrite

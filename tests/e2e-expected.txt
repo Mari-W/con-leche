@@ -3485,3 +3485,24 @@
 # the low 64 bits alone puts every key in one bucket and takes minutes,
 # which the 10 s timeout in tests/arena.sh turns into a failure (exit 124).
 0 lit_hash_low_bits.ndjson
+# rewrite_rule_*: user rewrite rules (notes/format.md), from scripts/rewrite-fixtures/.  The base
+# stream is the plain export; `rr_use := fun n g => g 0` with `g : rrT n` types only when the rule
+# `rrT_eq : ∀ n, rrT n = rrFn` fires.
+0 rewrite_rule_base.ndjson
+# registered and listed in the declaration's `rewrites`: the rule fires
+0 rewrite_rule_accept.ndjson
+# registered, but the declaration's `rewrites` omits it: no firing, "function expected"
+1 rewrite_rule_omitted.ndjson
+# a `rewrites` entry no `rewrite` line registered activates nothing
+1 rewrite_rule_unregistered.ndjson
+# two overlapping rules on `rrT`: the higher priority fires first.  `rrT_eq` (2000) before the
+# looping `rrT_refl` (1000) accepts; the other way round the firing budget rejects
+0 rewrite_rule_priority.ndjson
+1 rewrite_rule_priority_loop.ndjson
+# malformed registrations: a head that is not the left side's, a name that is no theorem
+1 rewrite_rule_bad_head.ndjson
+1 rewrite_rule_not_thm.ndjson
+# `rrT_pi : ∀ n, rrT n = (Nat → Nat)`: the right side infers to `Sort (imax 1 1)`, not `Type`,
+# so the firing's syntactic type comparison refuses it.  Target verdict 0 (the install-time
+# law, plan A4)
+1 rewrite_rule_pi.ndjson

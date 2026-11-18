@@ -65,11 +65,11 @@ theorem declsRun_thmDecl_const {mode : CheckMode} {ds : List Declaration}
           | nil => intro e; exact List.Subset.refl _
           | cons d l ih =>
             intro e c hc
-            refine ih (e.pushDelta (declConstants d) (declTables d)) ?_
-            simp [Env.pushDelta, hc]
+            refine ih ((e.stepRules d).pushDelta (declConstants d) (declTables d)) ?_
+            simp [Env.pushDelta, Env.stepRules, hc]
         refine hconsts ds fe₁.env ?_
         rw [hpush, pushDelta_env]
-        simp [Env.pushDelta, declConstants]
+        simp [Env.pushDelta, declConstants, FEnv.stepRules]
       rw [henv]
       exact ⟨_, hmemc, by simp [ConstantInfo.toConstantVal, hty]⟩
     · exact ih hmem'

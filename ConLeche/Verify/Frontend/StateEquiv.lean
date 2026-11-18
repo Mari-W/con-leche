@@ -84,13 +84,13 @@ theorem applyRecord_equiv {a b : StateD} (h : a.Equiv b) (r : LineRec) :
     · simp [bind, Except.bind, ResRel, throw, throwThe, MonadExcept.throw, MonadExceptOf.throw]
   | decl d =>
     simp only [applyRecord, applyDeclD, processLineCoreD, h.lk]
-    cases declOf b.lk d with
+    cases declsOf b.lk d with
     | error e => simp [bind, Except.bind, ResRel]
     | ok y =>
       cases y with
       | inl x =>
         simp only [bind, Except.bind, pure, Except.pure]
-        exact ⟨h.names, h.levels, h.exprs, by simp [pushDecl, h.decls]⟩
+        exact ⟨h.names, h.levels, h.exprs, by simp [pushDecls, h.decls]⟩
       | inr v => simp [bind, Except.bind, pure, Except.pure, ResRel]
   | header => exact h
   | blank => exact h

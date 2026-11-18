@@ -303,7 +303,7 @@ theorem blockFormerFacts_of {F : Nat} {env envI : Env}
     have hmem := List.mem_of_getElem? hms
     have hA := hAt ms hmem
     obtain ⟨-, -, -, -, -, -, -, htr, htf, hlpd, hbt, -⟩ := hsyn m ms.cvT hT
-    rcases hA.how with ⟨hdh, he⟩ | ⟨hdh, hgd, h₁, hb, -⟩
+    rcases hA.how with ⟨hdh, he⟩ | ⟨hdh, hgd, -, h₁, hb, -⟩
     · rw [← he]
       exact FormerDeclared.refl (hfd m ms.cvT hT) htf hlpd hbt htr
         (ConLeche.checkConstantVal_litShapeAt (ConLeche.checkBlockInds_checked h ms hmem))

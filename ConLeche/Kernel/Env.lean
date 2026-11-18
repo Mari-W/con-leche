@@ -373,6 +373,15 @@ inductive Declaration where
   `Declaration.quotDecl`, which is likewise the record's own kind and
   not a basis decision. -/
   | quotDecl (kind : QuotKind) (val : ConstantVal)
+  /-- **A rewrite rule's registration** (`notes/format.md`): the stored theorem `thm`, the head
+  constant of its left side `head` (redundant, checked against the theorem) and its priority.
+  Registration installs no constant and activates nothing: a rule fires only while a later
+  `useRules` names its theorem. -/
+  | rewriteDecl (thm head : Name) (prio : Nat)
+  /-- **The rule set the following records are checked under**: the registered rules whose
+  theorem is in `S` (the stream's `R(D)`, trusted as given).  The frontends emit one only where
+  the set changes. -/
+  | useRules (S : List Name)
   deriving DecidableEq, Repr, Inhabited
 
 namespace Declaration
@@ -450,8 +459,59 @@ def names : Declaration → List Name
   | .axiomDecl cv | .defnDecl cv .. | .thmDecl cv .. | .opaqueDecl cv .. => [cv.name]
   | .quotDecl _ cv => [cv.name]
   | .indDecl block _ => block.map (·.name)
+  | .rewriteDecl .. | .useRules _ => []
 
 end Declaration
+
+/-! ## Rewrite rules: registration and the active table -/
+
+/-- Lean's `Name.cmp`: the prefixes first, a numeric component before a string one. -/
+def Name.cmp : Name → Name → Ordering
+  | .anonymous, .anonymous => .eq
+  | .anonymous, _ => .lt
+  | _, .anonymous => .gt
+  | .num p₁ i₁, .num p₂ i₂ =>
+    match Name.cmp p₁ p₂ with
+    | .eq => compare i₁ i₂
+    | o => o
+  | .num _ _, .str _ _ => .lt
+  | .str _ _, .num _ _ => .gt
+  | .str p₁ n₁, .str p₂ n₂ =>
+    match Name.cmp p₁ p₂ with
+    | .eq => compare n₁ n₂
+    | o => o
+
+/-- A registered rewrite rule: its theorem, its left side's head constant and its priority
+(`notes/format.md`). -/
+structure RewriteRule where
+  thm : Name
+  head : Name
+  prio : Nat
+  deriving DecidableEq, Repr, Inhabited
+
+/-- **The firing order** (`notes/format.md`): priority descending, then the theorem's name by
+`Name.cmp`.  Search control only: no proof reads it. -/
+def RewriteRule.before (a b : RewriteRule) : Bool :=
+  b.prio < a.prio || (a.prio == b.prio && Name.cmp a.thm b.thm != .gt)
+
+/-- **The active table of a rule set `S`**: the registered rules whose theorem is in `S`, in
+firing order, as `(head, theorem)` entries.  `S` is trusted as given. -/
+def activeTable (reg : List RewriteRule) (S : List Name) : List (Name × Name) :=
+  ((reg.filter fun r => S.contains r.thm).mergeSort RewriteRule.before).map fun r => (r.head, r.thm)
+
+/-- The rewrite rules of an environment: the active table, `(head, theorem)` entries in firing
+order (`Env.rulesFor`), and every registered rule, newest first. -/
+structure RuleTable where
+  active : List (Name × Name) := []
+  registered : List RewriteRule := []
+  deriving Repr, Inhabited
+
+/-- A record's effect on the rules: a registration adds its rule, a `useRules` rebuilds the
+active table from the registered rules, every other record keeps them. -/
+def RuleTable.step (rt : RuleTable) : Declaration → RuleTable
+  | .rewriteDecl thm head prio => { rt with registered := ⟨thm, head, prio⟩ :: rt.registered }
+  | .useRules S => { rt with active := activeTable rt.registered S }
+  | _ => rt
 
 /-- The global environment: the constants accepted so far and the
 structures' projection tables, each list newest first.  Names are
@@ -463,20 +523,24 @@ The tables are not constants (task #362): no `.const` names one, they
 are read by `.proj` nodes alone, keyed on the structure's name
 (`findTable?`).
 
-The rewrite rules are the theorems registered to rewrite terms headed by a
-constant, each entry `(head, theorem)`, newest first (`rulesFor`).  Only a
-stored theorem fires (`Red.rewrite` accepts any stored theorem); no
-declaration registers one yet. -/
+The rewrite rules (`RuleTable`) are the registered rules and the active table: the registered
+rules whose theorem the last `useRules` named, each entry `(head, theorem)`, in firing order
+(`rulesFor`).  Only a stored theorem fires (`Red.rewrite` accepts any stored theorem). -/
 structure Env where
   consts : List ConstantInfo
   tables : List ProjTable
-  rules : List (Name × Name)
+  rules : RuleTable
   deriving Repr, Inhabited
 
 namespace Env
 
 /-- The empty environment; the starting point of every checker run. -/
-def empty : Env := ⟨[], [], []⟩
+def empty : Env := ⟨[], [], {}⟩
+
+/-- **The environment after a record's rule effect**: a registration adds the rule, a `useRules`
+rebuilds the active table, any other record keeps the rules. -/
+def stepRules (env : Env) (d : Declaration) : Env :=
+  { env with rules := env.rules.step d }
 
 def find? (env : Env) (n : Name) : Option ConstantInfo :=
   env.consts.find? (·.name == n)
@@ -499,7 +563,7 @@ def findProj? (env : Env) (T : Name) (i : Nat) : Option ProjEntry :=
 /-- **The rules registered for the head constant `c`**, newest first: the
 theorems named by the rule table under `c` that the environment stores. -/
 def rulesFor (env : Env) (c : Name) : List Name :=
-  env.rules.filterMap fun r => if r.1 == c && (env.find? r.2).isSome then some r.2 else none
+  env.rules.active.filterMap fun r => if r.1 == c && (env.find? r.2).isSome then some r.2 else none
 
 end Env
 

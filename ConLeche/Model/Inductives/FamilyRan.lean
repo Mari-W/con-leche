@@ -69,11 +69,11 @@ theorem readTelescope_eq {env : Env} {cv : ConstantVal} {caps : IndCaps} {F : Na
   exact familyTelescope_unique hx.choose_spec.choose_spec h
 
 /-- **An extension under fresh names**: the constants and the tables pushed name nothing the
-environment stores. -/
+environment stores.  The rules are free to change: a family's telescope is read without them
+(`Env.cutAt`). -/
 structure FreshExt (env env' : Env) : Prop where
   consts : ∃ new, env'.consts = new ++ env.consts ∧ ∀ c ∈ new, env.find? c.name = none
   tables : ∃ newT, env'.tables = newT ++ env.tables ∧ ∀ t ∈ newT, env.find? t.structName = none
-  rules : ∃ newR, env'.rules = newR ++ env.rules ∧ ∀ r ∈ newR, env.find? r.2 = none
 
 /-- A stored name keeps its constant across fresh pushes. -/
 theorem FreshExt.find {env env' : Env} (hx : FreshExt env env') {n : Name} {ci : ConstantInfo}
@@ -95,53 +95,42 @@ theorem FreshExt.trans {env₁ env₂ env₃ : Env} (h₁ : FreshExt env₁ env�
   obtain ⟨new₂, hc₂, hf₂⟩ := h₂.consts
   obtain ⟨T₁, ht₁, hg₁⟩ := h₁.tables
   obtain ⟨T₂, ht₂, hg₂⟩ := h₂.tables
-  obtain ⟨R₁, hr₁, hq₁⟩ := h₁.rules
-  obtain ⟨R₂, hr₂, hq₂⟩ := h₂.rules
   have hnone : ∀ n, env₂.find? n = none → env₁.find? n = none := fun n h => by
     cases hc : env₁.find? n with
     | none => rfl
     | some ci => rw [h₁.find hc] at h; exact nomatch h
   refine ⟨⟨new₂ ++ new₁, by rw [hc₂, hc₁, List.append_assoc], fun c hc => ?_⟩,
-    ⟨T₂ ++ T₁, by rw [ht₂, ht₁, List.append_assoc], fun t ht => ?_⟩,
-    ⟨R₂ ++ R₁, by rw [hr₂, hr₁, List.append_assoc], fun r hr => ?_⟩⟩
+    ⟨T₂ ++ T₁, by rw [ht₂, ht₁, List.append_assoc], fun t ht => ?_⟩⟩
   · rcases List.mem_append.mp hc with hc | hc
     · exact hnone _ (hf₂ c hc)
     · exact hf₁ c hc
   · rcases List.mem_append.mp ht with ht | ht
     · exact hnone _ (hg₂ t ht)
     · exact hg₁ t ht
-  · rcases List.mem_append.mp hr with hr | hr
-    · exact hnone _ (hq₂ r hr)
-    · exact hq₁ r hr
 
 /-- **The environment below a stored family's block across pushes**: constants under fresh names,
 tables of structures outside the cut. -/
 theorem Env.famBelow_push {env env' : Env} {new : List ConstantInfo} {newT : List ProjTable}
-    {newR : List (Name × Name)}
     {n : Name} (hc : env'.consts = new ++ env.consts) (hne : ∀ c ∈ new, c.name ≠ n)
-    (ht : env'.tables = newT ++ env.tables) (hr : env'.rules = newR ++ env.rules)
+    (ht : env'.tables = newT ++ env.tables)
     {ci : ConstantInfo} (h : env.find? n = some ci)
-    (hT : ∀ t ∈ newT, ∀ E, env.famBelow n = some E → E.consts.find? (·.name == t.structName) = none)
-    (hR : ∀ r ∈ newR, ∀ E, env.famBelow n = some E → E.consts.find? (·.name == r.2) = none) :
+    (hT : ∀ t ∈ newT, ∀ E, env.famBelow n = some E → E.consts.find? (·.name == t.structName) = none) :
     env'.famBelow n = env.famBelow n := by
   have hfind : env'.find? n = env.find? n := by
     show env'.consts.find? _ = env.consts.find? _
     rw [hc, List.find?_append, List.find?_eq_none.mpr (fun c hc' he => hne c hc' (by simpa using he)),
       Option.none_or]
   have hT' := hT
-  have hR' := hR
-  unfold Env.famBelow at hT' hR' ⊢
+  unfold Env.famBelow at hT' ⊢
   rw [hfind, h] at *
   cases ci
   case indInfo cv caps =>
-    simp only at hT' hR' ⊢
+    simp only at hT' ⊢
     congr 1
-    unfold Env.cutAt at hT' hR' ⊢
-    rw [hc, Env.suffixAfter_append_of_ne _ hne, ht, hr]
+    unfold Env.cutAt at hT' ⊢
+    rw [hc, Env.suffixAfter_append_of_ne _ hne, ht]
     congr 1
-    · exact Env.liveTables_append_dead _ fun t htm => hT' t htm _ rfl
-    · rw [List.filter_append, List.filter_eq_nil_iff.mpr (fun r hrm => by
-        simp [hR' r hrm _ rfl]), List.nil_append]
+    exact Env.liveTables_append_dead _ fun t htm => hT' t htm _ rfl
   all_goals rfl
 
 /-- **The environment below a stored family's block is the same across fresh pushes.** -/
@@ -149,7 +138,6 @@ theorem FreshExt.famBelow {env env' : Env} (hx : FreshExt env env') {n : Name} {
     (h : env.find? n = some ci) : env'.famBelow n = env.famBelow n := by
   obtain ⟨new, hc, hfr⟩ := hx.consts
   obtain ⟨newT, ht, hgt⟩ := hx.tables
-  obtain ⟨newR, hr, hgr⟩ := hx.rules
   have hne : ∀ c ∈ new, c.name ≠ n := fun c hc' he => by
     have := hfr c hc'
     rw [he, h] at this
@@ -173,12 +161,11 @@ theorem FreshExt.famBelow {env env' : Env} (hx : FreshExt env env') {n : Name} {
       rw [hm] at hfound
       exact nomatch hfound
     all_goals exact nomatch hE
-  exact Env.famBelow_push hc hne ht hr h (fun t htm => hcut _ (hgt t htm))
-    (fun r hrm => hcut _ (hgr r hrm))
+  exact Env.famBelow_push hc hne ht h (fun t htm => hcut _ (hgt t htm))
 
 /-- No push is an extension under fresh names. -/
 theorem FreshExt.refl (env : Env) : FreshExt env env :=
-  ⟨⟨[], rfl, fun _ h => nomatch h⟩, ⟨[], rfl, fun _ h => nomatch h⟩, ⟨[], rfl, fun _ h => nomatch h⟩⟩
+  ⟨⟨[], rfl, fun _ h => nomatch h⟩, ⟨[], rfl, fun _ h => nomatch h⟩⟩
 
 /-- Head normalization's equations do not see the environment where `whnf` does not. -/
 theorem whnfTelescope_congr_whnf {ops₁ ops₂ : ConLeche.CheckerOps ConLeche.CheckM}
@@ -222,14 +209,14 @@ theorem reducedFormer_below_eq {mode : ConLeche.CheckMode} {F : Nat} {env E : En
   unfold ConLeche.reducedFormer
   rw [whnfTelescope_congr_whnf hw]
 
-/-- The environment cut at all its constants extends it: the same constants, and every stored
-structure's table live. -/
-theorem envExt_cutAt_self {env : Env} (hsf : StoredFacts env) :
+/-- The environment cut at all its constants extends it while no rule is active: the same
+constants, every stored structure's table live, and no rule on either side. -/
+theorem envExt_cutAt_self {env : Env} (hsf : StoredFacts env) (hnil : env.rules.active = []) :
     EnvExt env (env.cutAt env.consts) where
   find := fun _ _ h => h
   table := fun T hT => by
     unfold Env.findTable? Env.cutAt
-    simp only [show ∀ (ts : List ProjTable) (rs : List (Name × Name)),
+    simp only [show ∀ (ts : List ProjTable) (rs : ConLeche.RuleTable),
       Env.find? ⟨env.consts, ts, rs⟩ T = env.find? T from fun _ _ => rfl, hT, ↓reduceIte]
     rw [Env.liveTables_find]
     cases ht : env.tables.find? (·.structName == T) with
@@ -241,17 +228,10 @@ theorem envExt_cutAt_self {env : Env} (hsf : StoredFacts env) :
         simp only [Env.tableOkAt, Bool.and_eq_true]
         refine ⟨h0, Array.all_eq_true_iff_forall_mem.mpr fun b hb => ?_⟩
         obtain ⟨i, hi⟩ := Array.getElem?_of_mem hb
-        exact (ConLeche.Expr.constsResolve_eq_of_find (env := env) (env' := ⟨env.consts, [], []⟩) rfl b).trans
+        exact (ConLeche.Expr.constsResolve_eq_of_find (env := env) (env' := ⟨env.consts, [], {}⟩) rfl b).trans
           (h2 i b hi).2.2.1
       simp [Option.filter, hres]
-  rules := fun c => by
-    unfold Env.rulesFor Env.cutAt
-    simp only [Env.find?]
-    induction env.rules with
-    | nil => rfl
-    | cons r rs ih =>
-      by_cases h1 : r.1 = c <;> by_cases h2 : (env.consts.find? (·.name == r.2)).isSome <;>
-        simp_all
+  rules := fun c => by simp [Env.rulesFor, Env.cutAt, hnil]
   facts := hsf
 
 /-- **The reductions behind a carrier's recorded telescopes**: a member whose declared type does

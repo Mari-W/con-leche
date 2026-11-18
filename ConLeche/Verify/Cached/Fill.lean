@@ -33,8 +33,7 @@ theorem declTables_fillDecl (d : Declaration) : declTables (fillDecl F d) = decl
 
 theorem StreamIndex.add_fillDecl (I : StreamIndex) (d : Declaration) :
     I.add (fillDecl F d) = I.add d := by
-  simp only [StreamIndex.add, declConstantsC_eq, declConstants_fillDecl, declTablesC_eq,
-    declTables_fillDecl]
+  cases d <;> simp only [fillDecl, StreamIndex.add, declConstantsC_eq, declTablesC_eq] <;> rfl
 
 /-- **The index, at any theorems' values.** -/
 theorem buildIndex_fill (ds : Array Declaration) :

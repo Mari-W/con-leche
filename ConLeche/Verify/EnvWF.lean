@@ -261,7 +261,7 @@ structure EnvWF (env : Env) : Prop where
   /-- a stored recursor's rules' binders -/
   rules : ∀ c ∈ env.consts, RuleWF c
   /-- every cut a family's telescope is read at holds what its constants refer to -/
-  below : ∀ cs, Env.Reach env.consts cs → ∀ c ∈ cs, ConstWF ⟨cs, [], []⟩ c
+  below : ∀ cs, Env.Reach env.consts cs → ∀ c ∈ cs, ConstWF ⟨cs, [], {}⟩ c
 
 /-- The table of a stored structure, off `EnvWF`. -/
 theorem EnvWF.table {env : Env} (henv : EnvWF env) {T : Name} {tbl : ProjTable}
@@ -312,7 +312,7 @@ theorem litShapeAt_of_reservedRec {cv : ConstantVal} (h : reservedRecName cv.nam
 
 /-- `find?` on a cons. -/
 theorem Env.find?_cons {c : ConstantInfo} {cs : List ConstantInfo} {ts : List ProjTable}
-    {rs : List (Name × Name)} {n : Name} :
+    {rs : ConLeche.RuleTable} {n : Name} :
     Env.find? ⟨c :: cs, ts, rs⟩ n = if c.name = n then some c else Env.find? ⟨cs, ts, rs⟩ n := by
   simp only [Env.find?, List.find?]
   split
@@ -680,7 +680,7 @@ theorem EnvWF.cons {c : ConstantInfo} {env : Env} (hs : litShapeOk c = true)
   intro cs hcut
   rcases Env.Reach.of_cons hb hcut with rfl | hold
   · intro c' hc'
-    exact ConstWF.of_find (env := ⟨c :: env.consts, env.tables, env.rules⟩) (env' := ⟨c :: env.consts, [], []⟩) rfl (hcs c' hc')
+    exact ConstWF.of_find (env := ⟨c :: env.consts, env.tables, env.rules⟩) (env' := ⟨c :: env.consts, [], {}⟩) rfl (hcs c' hc')
   · exact henv.below cs hold
 
 theorem Expr.constsResolve_eq_of_isSome {env env' : Env}
@@ -716,6 +716,12 @@ theorem TableWF.of_find {env env' : Env} (h : env'.find? = env.find?) {t : ProjT
   unfold TableWF at ht ⊢
   simp only [Expr.constsResolve_eq_of_find h, h]
   exact ht
+
+/-- **A record's rule effect keeps `EnvWF`**: the constants and the tables stay, and nothing
+well-formedness reads looks at the rules. -/
+theorem EnvWF.stepRules {env : Env} (h : EnvWF env) (d : Declaration) : EnvWF (env.stepRules d) :=
+  ⟨fun c hc => ConstWF.of_find (env := env) (env' := env.stepRules d) rfl (h.consts c hc), h.shapes,
+    fun t ht => TableWF.of_find (env := env) (env' := env.stepRules d) rfl (h.tables t ht), h.inds, h.ctors, h.rules, h.below⟩
 
 /-- **Installing a well-formed table preserves `EnvWF`** (task #362): the
 constants read the environment only through `find?`, which a table
@@ -819,7 +825,7 @@ refer to (`EnvWF.below`), its tables are live there, and every cut it reaches is
 theorem EnvWF.cut {env : Env} (henv : EnvWF env) {cs : List ConstantInfo}
     (hr : Env.Reach env.consts cs) : EnvWF (env.cutAt cs) := by
   have hsub : ∀ c ∈ cs, c ∈ env.consts := fun c hc => hr.suffix.subset hc
-  refine ⟨fun c hc => ConstWF.of_find (env := ⟨cs, [], []⟩) (env' := env.cutAt cs) rfl (henv.below cs hr c hc), fun c hc => henv.shapes c (hsub c hc),
+  refine ⟨fun c hc => ConstWF.of_find (env := ⟨cs, [], {}⟩) (env' := env.cutAt cs) rfl (henv.below cs hr c hc), fun c hc => henv.shapes c (hsub c hc),
     fun t ht => ?_, fun c hc => henv.inds c (hsub c hc), fun c hc => henv.ctors c (hsub c hc),
     fun c hc => henv.rules c (hsub c hc), fun cs' hr' => henv.below cs' (hr.trans hr')⟩
   obtain ⟨htm, hok⟩ := Env.mem_liveTables ht
@@ -828,7 +834,7 @@ theorem EnvWF.cut {env : Env} (henv : EnvWF env) {cs : List ConstantInfo}
   refine ⟨hok.1, h1, fun i b hb => ?_⟩
   obtain ⟨g1, g2, -, g4⟩ := h2 i b hb
   have hres := (Array.all_eq_true_iff_forall_mem.mp hok.2) b (Array.mem_of_getElem? hb)
-  exact ⟨g1, g2, (Expr.constsResolve_eq_of_find (env := ⟨cs, [], []⟩) (env' := env.cutAt cs) rfl b).trans hres, g4⟩
+  exact ⟨g1, g2, (Expr.constsResolve_eq_of_find (env := ⟨cs, [], {}⟩) (env' := env.cutAt cs) rfl b).trans hres, g4⟩
 
 /-- **The environment a family's telescope is read at is well formed.** -/
 theorem EnvWF.famBelow {env env' : Env} (henv : EnvWF env) {n : Name}
@@ -851,7 +857,7 @@ theorem EnvWF.of_append {env E : Env} {new : List ConstantInfo} (henv : EnvWF en
   rw [hsplit] at hcs
   rcases Env.Reach.of_append hnew hcs with rfl | h
   · intro c hc'
-    exact ConstWF.of_find (env := E) (env' := ⟨new ++ env.consts, [], []⟩)
+    exact ConstWF.of_find (env := E) (env' := ⟨new ++ env.consts, [], {}⟩)
       (by funext n; show (new ++ env.consts).find? _ = E.consts.find? _; rw [hsplit])
       (hc c (hsplit ▸ hc'))
   · exact henv.below cs h

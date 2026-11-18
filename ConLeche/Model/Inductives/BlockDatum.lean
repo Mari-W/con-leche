@@ -335,7 +335,7 @@ theorem lfpCover_formers (mp : EnvModelM V env) {envI : Env} {q : BlockShape} {i
         exact hfresh cv hcv
       show List.find? _ _ = _
       rw [henv]
-      exact find?_append_of_fresh (ts := []) (rs := []) hfr hf)
+      exact find?_append_of_fresh (ts := []) (rs := {}) hfr hf)
     (fun n hn => hagX n fun cvTb hcvTb h => by
       rw [h, hfresh cvTb hcvTb] at hn
       exact nomatch hn)

@@ -487,6 +487,8 @@ theorem reduceMemberS_same (mode : CheckMode) (fe : FEnv) (ms : MemberShape) (nP
   split
   · split
     · exact Yields.ofThrow
+    split
+    · exact Yields.ofThrow
     refine Yields.bind fun _ => ?_
     refine Yields.bind' (Q := fun cvR => cvR.name = ms.cvT.name) ?_ fun cvR hc => ?_
     · unfold reducedFormerC
@@ -642,7 +644,7 @@ theorem checkBlockKS_pushes (mode : CheckMode) (fe : FEnv) (block : List Constan
 /-- **A declaration's own checks push what it installs**, at every mode. -/
 theorem checkDeclKindC_pushes (mode : CheckMode) (fe : FEnv) (pd : Declaration) :
     Yields (checkDeclKindC mode pins fe pd)
-      (· = FEnv.pushDelta (declConstants pd) (declTables pd) fe) := by
+      (· = FEnv.pushDelta (declConstants pd) (declTables pd) (fe.stepRules pd)) := by
   unfold checkDeclKindC
   cases pd with
   | defnDecl cv value hint =>
@@ -694,10 +696,18 @@ theorem checkDeclKindC_pushes (mode : CheckMode) (fe : FEnv) (pd : Declaration) 
       | error e => exact Yields.ofThrow
       | ok p => exact checkBlockKS_pushes mode fe block p
     · exact Yields.ofThrow
+  | rewriteDecl thm head prio =>
+    simp only []
+    split
+    · exact Yields.ofThrow
+    · exact Yields.pure rfl
+  | useRules S => exact Yields.pure rfl
 
-/-- **An accepting step pushes what the declaration installs**, at every mode. -/
+/-- **An accepting step pushes what the declaration installs**, at every mode, after its rule
+effect. -/
 theorem checkDeclC_pushes (mode : CheckMode) (fe : FEnv) (pd : Declaration) :
-    Yields (checkDeclC mode pins fe pd) (· = FEnv.pushDelta (declConstants pd) (declTables pd) fe) := by
+    Yields (checkDeclC mode pins fe pd)
+      (· = FEnv.pushDelta (declConstants pd) (declTables pd) (fe.stepRules pd)) := by
   unfold checkDeclC
   refine Yields.bind' (checkDeclKindC_pushes mode fe pd) fun fe₂ h => ?_
   subst h
@@ -706,16 +716,17 @@ theorem checkDeclC_pushes (mode : CheckMode) (fe : FEnv) (pd : Declaration) :
 
 theorem checkDeclStepC_pushes (mode : CheckMode) (fe : FEnv) (pd : Declaration) :
     Yields (checkDeclStepC mode pins fe pd)
-      (· = FEnv.pushDelta (declConstants pd) (declTables pd) fe) := by
+      (· = FEnv.pushDelta (declConstants pd) (declTables pd) (fe.stepRules pd)) := by
   unfold checkDeclStepC
   ybind
   exact checkDeclC_pushes mode fe pd
 
 /-! ## The environment of an accepted stream -/
 
-/-- **The environment a stream denotes**: every record's constants and tables, in order. -/
+/-- **The environment a stream denotes**: every record's rule effect, constants and tables, in
+order. -/
 @[expose] def streamEnv (ds : List Declaration) (env : Env := Env.empty) : Env :=
-  ds.foldl (fun e pd => e.pushDelta (declConstants pd) (declTables pd)) env
+  ds.foldl (fun e pd => (e.stepRules pd).pushDelta (declConstants pd) (declTables pd)) env
 
 theorem declsRun_env (mode : CheckMode) {ds : List Declaration}
     {p q : Nat × FEnv} (h : DeclsRun mode pins maxNatSize ds p q) :
@@ -727,7 +738,7 @@ theorem declsRun_env (mode : CheckMode) {ds : List Declaration}
     have h₁ := checkDeclStepC_pushes (pins := pins) mode p.2 pd _ fe₁ s₁ hstepC
     rw [ih]
     simp only at h₁
-    rw [h₁, pushDelta_env]
+    rw [h₁, pushDelta_env, stepRules_env]
     rfl
 
 /-- **An accepted stream's environment is a function of the stream**, at every mode. -/

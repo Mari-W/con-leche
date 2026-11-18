@@ -226,6 +226,17 @@ inductive DeclRec where
   | quot (cv : CVRec) (kind : String)
   | ind (types : List IndTypeRec) (ctors : List IndCtorRec)
         (recs : List IndRecRec)
+  /-- a rewrite rule's registration, `{"rewrite":{"name":t,"head":h,"prio":p}}` (lean4export
+  3.2) -/
+  | rule (name head prio : Nat)
+  /-- a declaration record with a non-empty `rewrites` field: the rule set `R(D)` it is checked
+  under, as name indices -/
+  | underRules (rewrites : List Nat) (d : DeclRec)
+
+/-- A declaration record under its `rewrites` field: the record itself when the field is absent
+or empty. -/
+def DeclRec.withRules (rw : List Nat) (d : DeclRec) : DeclRec :=
+  if rw.isEmpty then d else .underRules rw d
 
 /-- One line of the stream. -/
 inductive LineRec where
@@ -263,6 +274,7 @@ inductive Key where
   | kDef
   | kFn
   | kForallE
+  | kHead
   | kHints
   | kI
   | kIdx
@@ -296,10 +308,13 @@ inductive Key where
   | kOpaque
   | kParam
   | kPre
+  | kPrio
   | kProj
   | kQuot
   | kRecs
   | kRegular
+  | kRewrite
+  | kRewrites
   | kRhs
   | kRules
   | kSafety

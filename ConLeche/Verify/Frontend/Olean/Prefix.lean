@@ -304,6 +304,15 @@ theorem isCtor_parts {P : Region} {g t k : Nat} (h : P.isCtor g t k = true) :
   simp only [Region.isCtor, Bool.and_eq_true, beq_iff_eq] at h
   exact ⟨h.1.1, h.1.2, h.2⟩
 
+theorem moduleDataOk_parts {P : Region} {g : Nat} (h : P.moduleDataOk g = true) :
+    5 ≤ P.nobjs g ∧ P.fits g = true := by
+  unfold Region.moduleDataOk at h
+  rcases Bool.or_eq_true_iff.mp h with h | h
+  · obtain ⟨-, hN, hF⟩ := isCtor_parts h
+    exact ⟨by omega, hF⟩
+  · obtain ⟨-, hN, hF⟩ := isCtor_parts (Bool.and_eq_true_iff.mp h).1
+    exact ⟨by omega, hF⟩
+
 theorem down (hs : Region.Sub P r n) {g : Nat} (hg : g ≤ n) (v : UInt64) :
     r.down g v = P.down g v := by
   simp only [Region.down]
@@ -1055,6 +1064,35 @@ theorem constNamesGo_sub (hs : Region.Sub P r n) :
       simp only [hs.loc_ok hok, hs.nameP_sub hok, IH]
     · rfl
 
+theorem noRewrites_sub (hs : Region.Sub P r n) {g : Nat} (hg : P.Good g) (hgn : g ≤ n)
+    (hC : P.isCtor g 0 6 = true) : r.noRewrites g = P.noRewrites g := by
+  obtain ⟨-, hN, hF⟩ := isCtor_parts hC
+  unfold Region.noRewrites
+  rw [hs.fld hg hF (by omega), hs.down hgn]
+  cases hd : P.down g (P.fld g 5) with
+  | none => rfl
+  | some x =>
+    have hx := hs.good_of_down hd
+    have hxn : x ≤ n := by have := Region.down_lt hd; omega
+    dsimp only
+    rw [hs.isCtor hx]
+    by_cases hc : P.isCtor x 0 4 = true
+    · obtain ⟨-, hN', hF'⟩ := isCtor_parts hc
+      simp only [hc, Bool.true_and, show List.range 4 = [0, 1, 2, 3] from rfl, List.all_cons,
+        List.all_nil, hs.fld hx hF' (show 0 < P.nobjs x by omega),
+        hs.fld hx hF' (show 1 < P.nobjs x by omega), hs.fld hx hF' (show 2 < P.nobjs x by omega),
+        hs.fld hx hF' (show 3 < P.nobjs x by omega), hs.objArray_sub hxn]
+    · simp [hc]
+
+/-- A `ModuleData`'s constructor reads alike through a prefix. -/
+theorem moduleDataOk_sub (hs : Region.Sub P r n) {g : Nat} (hg : P.Good g) (hgn : g ≤ n) :
+    r.moduleDataOk g = P.moduleDataOk g := by
+  unfold Region.moduleDataOk
+  rw [hs.isCtor hg, hs.isCtor hg]
+  by_cases h6 : P.isCtor g 0 6 = true
+  · rw [hs.noRewrites_sub hg hgn h6]
+  · simp [h6]
+
 theorem constNamesOk_sub (hs : Region.Sub P r n) {a : UInt64} {g : Nat} (hl : P.loc a = some g) :
     constNamesOk r a = constNamesOk P a := by
   unfold constNamesOk
@@ -1062,10 +1100,10 @@ theorem constNamesOk_sub (hs : Region.Sub P r n) {a : UInt64} {g : Nat} (hl : P.
   have hg := hs.good a g hl
   have hgn : g ≤ n := by have := hs.lt hg; omega
   dsimp only
-  rw [hs.isCtor hg]
+  rw [hs.moduleDataOk_sub hg hgn]
   split
   · rename_i hC
-    obtain ⟨-, hN, hF⟩ := isCtor_parts hC
+    obtain ⟨hN, hF⟩ := moduleDataOk_parts hC
     rw [hs.fld hg hF (by omega), hs.fld hg hF (by omega), hs.objArray_sub hgn, hs.objArray_sub hgn]
     split
     · rename_i ns cs h1 h2
@@ -1091,10 +1129,10 @@ theorem moduleSkel_sub (hs : Region.Sub P r n) {a : UInt64} {g : Nat} (hl : P.lo
   obtain rfl : g = g' := Option.some.inj (hl.symm.trans hg')
   have hg := hs.good a g hl
   have hgn : g ≤ n := by have := hs.lt hg; omega
-  simp only [hs.isCtor hg]
+  simp only [hs.moduleDataOk_sub hg hgn]
   split
   · rename_i hC
-    obtain ⟨-, hN, hF⟩ := isCtor_parts hC
+    obtain ⟨hN, hF⟩ := moduleDataOk_parts hC
     refine bind_congr' (hs.bool hg 0) fun _ _ => ?_
     refine bind_congr' (by rw [hs.fld hg hF (by omega), hs.objArray_sub hgn]) fun imps hi => ?_
     refine bind_congr' (listMapM_congr _ fun i hm =>

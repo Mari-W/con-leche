@@ -44,7 +44,7 @@ theorem SwapPairTy.name_eq {c₀ c₃ : ConstantInfo} (h : SwapPairTy c₀ c₃)
   · exact hn.symm
 
 /-- The lookup correspondence of a type-and-rules swap. -/
-theorem swapTy_find?_corr {ts : List ProjTable} {rs₀ rs₃ : List (Name × Name)} :
+theorem swapTy_find?_corr {ts : List ProjTable} {rs₀ rs₃ : ConLeche.RuleTable} :
     ∀ {consts₀ consts₃ : List ConstantInfo},
     SwapTyList consts₀ consts₃ →
     ∀ n : Name,
@@ -104,7 +104,7 @@ theorem swapTy_mem_corr :
 
 /-- A type-and-rules swap induces the congruences. -/
 theorem SwapTyList.congr {consts₀ consts₃ : List ConstantInfo} {ts : List ProjTable}
-    {rs₀ rs₃ : List (Name × Name)}
+    {rs₀ rs₃ : ConLeche.RuleTable}
     (hsw : SwapTyList consts₀ consts₃) :
     SwapCongr (Env.mk consts₀ ts rs₀) (Env.mk consts₃ ts rs₃) := by
   have hcorr := swapTy_find?_corr (ts := ts) (rs₀ := rs₀) (rs₃ := rs₃) hsw
@@ -182,6 +182,6 @@ theorem swapTy_find?_corrEnv {env₀ env₃ : Env} (hsw : SwapTyList env₀.cons
       env₃.find? n = some (.recInfo cv' mI rP isK rules') ∧
       cv'.name = cv.name ∧ cv'.levelParams = cv.levelParams ∧ cv.name = n ∧
       reservedRecName cv.name = false :=
-  swapTy_find?_corr (ts := []) (rs₀ := []) (rs₃ := []) hsw n
+  swapTy_find?_corr (ts := []) (rs₀ := {}) (rs₃ := {}) hsw n
 
 end ConLeche

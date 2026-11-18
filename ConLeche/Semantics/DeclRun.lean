@@ -202,6 +202,9 @@ def DeclKindRun (F : Nat)
   | .axiomDecl cv, env₂ => DeclAxiomRun F env cv env₂
   | .indDecl block nP, env₂ => Ind block nP env₂
   | .quotDecl k cv, env₂ => DeclQuotRun env k cv env₂
+  | .rewriteDecl thm head prio, env₂ =>
+    ruleDeclError? env.find? thm head = none ∧ env₂ = env.stepRules (.rewriteDecl thm head prio)
+  | .useRules S, env₂ => env₂ = env.stepRules (.useRules S)
 
 /-- **The per-declaration run relation**: the declaration's own checks, then the reserved names'
 (`basisNamesOk`). -/

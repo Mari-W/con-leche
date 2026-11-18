@@ -68,6 +68,18 @@ theorem PushChain.find? {env : Env} {fe : FEnv} (h : PushChain env fe)
   calc fe.find? n = (mkFEnv fe.env).find? n := by rw [← h1]
     _ = fe.env.find? n := mkFEnv_find? _ n
 
+/-- **A record's rule effect keeps a chain**: the constants and the tables stay, and the index
+stays canonical. -/
+theorem PushChain.stepRules {env : Env} {fe : FEnv} (h : PushChain env fe) (d : Declaration) :
+    PushChain env (fe.stepRules d) := by
+  obtain ⟨hc, ⟨new, hn, hnd, hfr⟩, hN, ⟨newQ, hq, hfq⟩⟩ := h
+  have he : (fe.stepRules d).env = fe.env.stepRules d := stepRules_env fe d
+  refine ⟨?_, ⟨new, by rw [he]; exact hn, hnd, hfr⟩, fun h0 => by rw [he]; exact hN h0,
+    ⟨newQ, by rw [he]; exact hq, hfq⟩⟩
+  rw [he]
+  conv => lhs; rw [hc]
+  exact stepRules_mkFEnv fe.env d
+
 /-- A lookup that fails names no stored constant. -/
 theorem Env.find?_none_notin {env : Env} {n : Name} (h : env.find? n = none) :
     n ∉ env.consts.map (·.name) := by
@@ -590,6 +602,12 @@ theorem checkDeclKindC_push (mode : CheckMode) {env : Env} {fe : FEnv}
       | error e => exact Yields.ofThrow
       | ok p => exact checkBlockKS_push mode h block p (ConLeche.readBlock_declared (by assumption))
     · exact Yields.ofThrow
+  | rewriteDecl thm head prio =>
+    simp only []
+    split
+    · exact Yields.ofThrow
+    · exact Yields.pure (h.stepRules _)
+  | useRules S => exact Yields.pure (h.stepRules _)
 
 theorem checkDeclC_push (mode : CheckMode) {env : Env} {fe : FEnv}
     (h : PushChain env fe) (pd : Declaration) :

@@ -121,12 +121,21 @@ front of the fold, ahead of the definition it would be declared at. -/
 def declinedAtDefinition : List Name :=
   [stringOfListName, listNilName, listConsName, charOfNatName, boolName]
 
+/-- What a family declared at a definition under active rewrite rules is told: its telescope is
+read without rules below its block (`Env.cutAt`), so its block's check must reduce it without
+rules too. -/
+def ruleScopedFamilyMsg (n : Name) : String :=
+  s!"a family stored at a definition while rewrite rules are active ({n})"
+
 /-- **A member's former at its telescope**, official's `whnf` loop where the declared type does
-not show it: the declared type checked, reduced, and the two compared. -/
+not show it: the declared type checked, reduced, and the two compared.  Declined while rewrite
+rules are active (`ruleScopedFamilyMsg`). -/
 def reduceMember (ops : CheckerOps m) (env : Env) (ms : MemberShape) (nP : Nat) : m MemberShape :=
   if formerDefHeaded ms.cvT then do
     if declinedAtDefinition.contains ms.cvT.name then
       throw (.notImplemented s!"this family stored at a definition ({ms.cvT.name})")
+    else if !env.rules.active.isEmpty then
+      throw (.notImplemented (ruleScopedFamilyMsg ms.cvT.name))
     else do
       checkConstantVal ops env ms.cvT
       let cvR ← reducedFormer ops env ms.cvT (nP + ms.nIdx)

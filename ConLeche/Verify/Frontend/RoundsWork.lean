@@ -1706,7 +1706,7 @@ theorem chunkDeclsGo_spec {Γ : WCtx} {P : Prior} {W : Win} {c : Nat} {recs : Ar
     ∀ i ct acc ds, chunkDeclsGo P W recs first i ct acc = some ds → ct = Γ.ctr (off + i) →
     ds = declsAlong T ct (recs.toList.drop i) acc ∧
     (∀ q (hq : q < recs.size) d, i ≤ q → recs[q] = .decl d →
-      ∃ x, declOf (cutLk T (Γ.ctr (off + q))) d = .ok (.inl x)) ∧
+      ∃ x, declsOf (cutLk T (Γ.ctr (off + q))) d = .ok (.inl x)) ∧
     ∀ q (hq : q < recs.size), i ≤ q → recs[q].placed (first && q == 0) = true := by
   have hsucc : ∀ i (h : i < recs.size), Γ.ctr (off + (i + 1)) = (Γ.ctr (off + i)).step recs[i] := by
     intro i h
@@ -1725,7 +1725,7 @@ theorem chunkDeclsGo_spec {Γ : WCtx} {P : Prior} {W : Win} {c : Nat} {recs : Ar
     have w1 : vN P W ct.n = (cutLk T ct).name := vN_eq v1
     have w2 : vL P W ct.l = (cutLk T ct).level := vL_eq v2
     have w3 : vE P W ct.e = (cutLk T ct).expr := vE_eq v3
-    have hdecl : declOf (cutLk T ct) r = .ok (.inl x) := by
+    have hdecl : declsOf (cutLk T ct) r = .ok (.inl x) := by
       rw [← hx, w1, w2, w3]; rfl
     have hct' : ct = Γ.ctr (off + (i + 1)) := by rw [hsucc i h, hr, ← hct]; rfl
     obtain ⟨ih1, ih2, ih3⟩ := ih ds hds hct'
@@ -1798,7 +1798,7 @@ theorem chunkDecls_spec {Γ : WCtx} {P : Prior} {W : Win} {c : Nat} {first : Boo
     (hV : ViewBelow Γ P W off recs.size T) {ds : Array Declaration}
     (h : chunkDecls P W c first recs = some ds) :
     (∀ q (hq : q < recs.size) d, recs[q] = .decl d →
-      ∃ x, declOf (cutLk T (Γ.ctr (off + q))) d = .ok (.inl x)) ∧
+      ∃ x, declsOf (cutLk T (Γ.ctr (off + q))) d = .ok (.inl x)) ∧
     ds = declsAlong T (Γ.ctr off) recs.toList #[] ∧
     (∀ q (hq : q < recs.size), recs[q].placed (first && q == 0) = true) ∧
     (first = true → 0 < recs.size) := by

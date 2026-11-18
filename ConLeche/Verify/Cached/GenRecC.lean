@@ -1618,7 +1618,7 @@ theorem reduceMemberS_eq (env : Env) (ms : MemberShape) (nP : Nat) :
     reduceMemberS .verified (mkFEnv env) ms nP =
       reduceMember (sharedOpsC .verified (mkFEnv env)) env ms nP := by
   simp only [reduceMemberS, reduceMember, reducedFormerC_eq, checkConstantValC_eq,
-    checkConstantValF_eq, mkFEnv_env]
+    checkConstantValF_eq, mkFEnv_env, mkFEnv_base, mkRlsGo_isEmpty]
   rfl
 
 /-- `reducedFormerS_spec`, its result scoped. -/

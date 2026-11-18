@@ -37,7 +37,7 @@ variable {V : Type w} [SetTheory V]
 /-! ## An environment extended by a list of constants -/
 
 theorem find?_append (new : List ConstantInfo) (env : Env) (n : Name)
-    {ts : List ConLeche.ProjTable} {rs : List (Name × Name)} :
+    {ts : List ConLeche.ProjTable} {rs : ConLeche.RuleTable} :
     Env.find? ⟨new ++ env.consts, ts, rs⟩ n = (new.find? (·.name == n)).or (env.find? n) := by
   simp only [Env.find?, List.find?_append]
 
@@ -49,7 +49,7 @@ theorem find?_append_none {new : List ConstantInfo} {n : Name}
 
 theorem find?_append_of_fresh {new : List ConstantInfo} {env : Env}
     (hfresh : ∀ c ∈ new, env.find? c.name = none) {n : Name} {ci : ConstantInfo}
-    (h : env.find? n = some ci) {ts : List ConLeche.ProjTable} {rs : List (Name × Name)} :
+    (h : env.find? n = some ci) {ts : List ConLeche.ProjTable} {rs : ConLeche.RuleTable} :
     Env.find? ⟨new ++ env.consts, ts, rs⟩ n = some ci := by
   rw [find?_append, find?_append_none (fun c hc hh => by
     have := hfresh c hc; rw [hh, h] at this; exact nomatch this)]

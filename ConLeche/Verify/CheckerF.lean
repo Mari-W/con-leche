@@ -310,7 +310,7 @@ theorem mkFEnv_below_findTable (env : Env) (n : Name) (k : Nat) :
       have hname : t.structName = T := by simpa using List.find?_some ht
       simp only [Option.filter, Env.tableOkAt, hname, hfd, Bool.true_and]
       rw [show (fun x => Expr.constsResolveF ((mkFEnv env).below n k) x)
-          = fun x => x.constsResolve ⟨(Env.suffixAfter env.consts n).drop k, [], []⟩ from
+          = fun x => x.constsResolve ⟨(Env.suffixAfter env.consts n).drop k, [], {}⟩ from
         funext (constsResolveF_of_find (by rw [hf]; rfl))]
   · rename_i hfd
     simp only [hfd, Bool.false_eq_true, ↓reduceIte]

@@ -2467,8 +2467,8 @@
    124  /-- Store one more constant. -/
    125  def add (env : Env) (n : Name) (ci : ConstInfo) : Env := ⟨(n, ci) :: env.consts⟩
 
-== ConLeche/Kernel/Env.lean#L470
-   470  structure Env where
+== ConLeche/Kernel/Env.lean#L529
+   529  structure Env where
 
 == whitepaper/Fragment/Env.lean#L63-L100
     63  /-- What kind of constant a name is stored as. -/
@@ -3264,18 +3264,18 @@
    763    (S.large = true → ¬ S.NeverProp → S.ctors.length ≤ 1) ∧
    764    (∃ T, Infer (S.envCtors env) [] S.recType T)
 
-== ConLeche/Kernel/Inductives/BlockTail.lean#L153-L163
-   153  def checkBlock (ops : CheckerOps m) (env : Env) (block : List ConstantInfo) (p₀ : BlockShape) :
-   154      m Env := do
-   155    unless (p₀.allCtors.map (·.1.name)).Nodup ∧ p₀.memberNames.Nodup do
-   156      throw (.invalid "direct rec: duplicate constructor")
-   157    unless boolTrueName ∉ p₀.memberNames ∧ boolFalseName ∉ p₀.memberNames do
-   158      throw (.invalid "direct rec: a family at a `Bool` constructor's name")
-   159    let ms ← reduceMembers ops env p₀.nP p₀.members
-   160    let q ← checkBlockPass ops env { p₀ with members := ms } (blockIsRec p₀)
-   161    let Q ← unwrapOr (blockTables p₀ p₀.members) (.internal "direct structure: projection bodies")
-   162    checkBlockTail ops block q Q
-   163    pure (env.pushDelta (blockConstants p₀) Q)
+== ConLeche/Kernel/Inductives/BlockTail.lean#L162-L172
+   162  def checkBlock (ops : CheckerOps m) (env : Env) (block : List ConstantInfo) (p₀ : BlockShape) :
+   163      m Env := do
+   164    unless (p₀.allCtors.map (·.1.name)).Nodup ∧ p₀.memberNames.Nodup do
+   165      throw (.invalid "direct rec: duplicate constructor")
+   166    unless boolTrueName ∉ p₀.memberNames ∧ boolFalseName ∉ p₀.memberNames do
+   167      throw (.invalid "direct rec: a family at a `Bool` constructor's name")
+   168    let ms ← reduceMembers ops env p₀.nP p₀.members
+   169    let q ← checkBlockPass ops env { p₀ with members := ms } (blockIsRec p₀)
+   170    let Q ← unwrapOr (blockTables p₀ p₀.members) (.internal "direct structure: projection bodies")
+   171    checkBlockTail ops block q Q
+   172    pure (env.pushDelta (blockConstants p₀) Q)
 
 == whitepaper/Fragment/Decl.lean#L307-L312
    307  /-- **A rule's type**: `∀ params motive minors fields, motive idx (C params fields)`
@@ -5236,20 +5236,20 @@
    137    no_empty_inductive_inhabitant V hacc (S := IndSpec.falseSpec name recName elim) rfl rfl rfl rfl
    138      hrec e
 
-== ConLeche/Model/Fold.lean#L444-L451
-   444  theorem no_proof_of_False_pure (V : Type w) [SetTheory V]
-   445      {F : Nat}
-   446      {ds : List Declaration} {env' : Env}
-   447      (h : checkDeclsPure .verified (fueledOps .verified F) pins ds = .ok env') :
-   448      ∀ c ∈ env'.consts,
-   449        c.toConstantVal.type = .const falseName [] → False := by
-   450    obtain ⟨mp⟩ := checkDeclsPure_sound_of (V := V) h
-   451    exact fun c hc hty => no_constant_of_False mp c hc hty
+== ConLeche/Model/Fold.lean#L452-L459
+   452  theorem no_proof_of_False_pure (V : Type w) [SetTheory V]
+   453      {F : Nat}
+   454      {ds : List Declaration} {env' : Env}
+   455      (h : checkDeclsPure .verified (fueledOps .verified F) pins ds = .ok env') :
+   456      ∀ c ∈ env'.consts,
+   457        c.toConstantVal.type = .const falseName [] → False := by
+   458    obtain ⟨mp⟩ := checkDeclsPure_sound_of (V := V) h
+   459    exact fun c hc hty => no_constant_of_False mp c hc hty
 
-== ConLeche/Model/Fold.lean#L373-L375
-   373  theorem foldPM {F : Nat} :
-   374      ∀ (ds : List Declaration) (env : Env) {env' : Env},
-   375        EnvModelOk V env →
+== ConLeche/Model/Fold.lean#L381-L383
+   381  theorem foldPM {F : Nat} :
+   382      ∀ (ds : List Declaration) (env : Env) {env' : Env},
+   383        EnvModelOk V env →
 
 >>> whitepaper/sections/05-nested.typ
 
@@ -6173,15 +6173,15 @@
 
 >>> whitepaper/sections/07-left-out.typ
 
-== ConLeche/Kernel/Install.lean#L68-L75
-    68  def blockTables (p : BlockShape) : List MemberShape → Option (List ProjTable)
-    69    | [] => some []
-    70    | ms :: rest =>
-    71      match ms.structCtor? with
-    72      | some c =>
-    73        (structProjBodies ms.declared.name p.nP c.2 c.1.type).bind fun bodies =>
-    74          (blockTables p rest).map (⟨ms.declared.name, p.lps, p.nP, c.1.name, c.2, bodies⟩ :: ·)
-    75      | none => blockTables p rest
+== ConLeche/Kernel/Install.lean#L69-L76
+    69  def blockTables (p : BlockShape) : List MemberShape → Option (List ProjTable)
+    70    | [] => some []
+    71    | ms :: rest =>
+    72      match ms.structCtor? with
+    73      | some c =>
+    74        (structProjBodies ms.declared.name p.nP c.2 c.1.type).bind fun bodies =>
+    75          (blockTables p rest).map (⟨ms.declared.name, p.lps, p.nP, c.1.name, c.2, bodies⟩ :: ·)
+    76      | none => blockTables p rest
 
 == ConLeche/Rules/Rel.lean#L200-L215
    200    /-- **The structural projection** `proj_i (ctor p⃗ x⃗) ↦ x_i`
@@ -6395,12 +6395,12 @@
     84  
 
 == ConLeche/Cached/StreamIndex.lean#L65
-    65  def buildIndex (ds : Array Declaration) : StreamIndex :=
+    65    let (idx, next) := insertConsts I.base.idx I.next (declConstantsC pd)
 
-== ConLeche/Verify/Cached/StreamIndex.lean#L682-L684
-   682  theorem checkDecls_of_jobs {ds : Array Declaration}
-   683      (h : ∀ k (hk : k < ds.size), recordJob mode pins maxNatSize (buildIndex ds).freeze k ds[k] = .ok ()) :
-   684      checkDecls mode pins maxNatSize ds = .ok (streamEnv ds.toList) := by
+== ConLeche/Verify/Cached/StreamIndex.lean#L719-L721
+   719  theorem checkDecls_of_jobs {ds : Array Declaration}
+   720      (h : ∀ k (hk : k < ds.size), recordJob mode pins maxNatSize (buildIndex ds).freeze k ds[k] = .ok ()) :
+   721      checkDecls mode pins maxNatSize ds = .ok (streamEnv ds.toList) := by
 
 == ConLeche/Kernel/Expr.lean#L435-L437
    435  inductive Expr where
