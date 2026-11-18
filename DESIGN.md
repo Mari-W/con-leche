@@ -115870,3 +115870,36 @@ reached). `tests/arena.sh` exits 0 (log `_tmp/r5/a4-arena.log`): e2e 623/623 wit
 axioms pinned, olean gate 122/122, tutorial 90/92 as before, trusted and `--jobs` sweeps without
 divergence. Anchors that moved in OVERVIEW, the whitepaper and README (the `sorryAx` link only)
 were repointed and their expectations regenerated.
+
+## Matching up to whnf and non-linear rules: the design, not started (2026-11-18, rewrite-rules, item 2)
+
+This run stopped before item 2, so this record states the route it worked out. The A4 law
+(`RuleLaw`) covers both sides and `A`. Matching needs one law per pattern position.
+
+**The relation.** `Red.rewrite` keeps the instance `l` of the left side and relates the term `e`
+to it by a new premise `MatchRel env d e l`. The two sides share the head and its spine. At each
+argument position the two subterms are equal, or the term's subterm reduces (`Red*`, a literal
+through `Red.natLit`) to one that matches the pattern position again (`MatchRel`), or, at a
+repeated pattern variable, the two are definitionally equal (`DefEq`). `RuleGate`'s `l = e`
+becomes `MatchRel`. `ruleMatch` already compares a repeated variable syntactically. It gains a
+monadic twin that retries a failed constant or constructor position once on `whnf` (a `Nat`
+literal read as `Nat.zero`/`Nat.succ`) and compares a repeated variable by `isDefEq` after the
+syntactic test, with its cached twin. `rulePat` drops its linearity test.
+
+**The model.** `MatchRel e l` gives `⟦e⟧ = ⟦l⟧` off the point, by induction over the spine. At
+`f a` against `f' a'`, `⟦f⟧ = ⟦f'⟧` by induction (`⟦f⟧` is not the point because `⟦f a⟧` is not).
+The per-position law gives `⟦f'⟧ ∈ piV N F`, `⟦a'⟧ ∈ N` and `IsTy N`. `arg_mem_of_head` then gives
+`⟦a⟧ ∈ N`. The position's own relation gives equality off the point (`RedSem` and the inner
+`MatchRel`, or `DefEqSem`), and `IsTy.eq_of_ne_pt` closes it. Every term involved is graded: the
+term's positions through `WellDenoted_app`, the instance's through the certificate's graded
+residual, and a reduct through `RedSem`.
+
+**The per-position law.** For each application node `f' a'` of the left side, the registration
+checks the closed terms `fun xs => a'` against `∀ xs, D` and `fun xs => f'` against
+`∀ xs, (y : D) → B`, where `D` and `B` come from `f'`'s inferred type exposed as a `Π` by `whnf`.
+The law and `RuleLawKit` gain the node memberships along the fit, as `sidesT_fit` does for the
+sides. Exposing the `Π` under the rule's binders needs the binders opened: that is the open
+engineering question.
+
+Consumers to repair: the shift, scope, leaves, member-freedom, extension, `atF` and pair lemmas
+of `rewriteAttempt` (as for `RuleGate` today), the bridge, and the cached simulation.
