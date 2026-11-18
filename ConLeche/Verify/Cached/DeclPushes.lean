@@ -578,9 +578,14 @@ theorem pushAll_env_tables :
   | [], _ => rfl
   | ci :: L, fe => pushAll_env_tables L (fe.push ci)
 
+theorem pushAll_env_rules :
+    ∀ (L : List ConstantInfo) (fe : FEnv), (FEnv.pushAll L fe).env.rules = fe.env.rules
+  | [], _ => rfl
+  | ci :: L, fe => pushAll_env_rules L (fe.push ci)
+
 theorem pushTables_env :
     ∀ (Q : List ProjTable) (fe : FEnv),
-      (FEnv.pushTables Q fe).env = ⟨fe.env.consts, Q.reverse ++ fe.env.tables⟩
+      (FEnv.pushTables Q fe).env = ⟨fe.env.consts, Q.reverse ++ fe.env.tables, fe.env.rules⟩
   | [], _ => rfl
   | t :: Q, fe => by
     show (FEnv.pushTables Q (fe.pushTable t)).env = _
@@ -590,31 +595,31 @@ theorem pushTables_env :
 theorem pushDelta_env (L : List ConstantInfo) (Q : List ProjTable) (fe : FEnv) :
     (FEnv.pushDelta L Q fe).env = fe.env.pushDelta L Q := by
   unfold FEnv.pushDelta Env.pushDelta
-  rw [pushTables_env, pushAll_env_consts, pushAll_env_tables]
+  rw [pushTables_env, pushAll_env_consts, pushAll_env_tables, pushAll_env_rules]
 
 /-- A canonical index stays canonical across a declaration's pushes. -/
 theorem pushDelta_mkFEnv (L : List ConstantInfo) (Q : List ProjTable) (env : Env) :
     FEnv.pushDelta L Q (mkFEnv env) = mkFEnv (env.pushDelta L Q) := by
   have hA : ∀ (L : List ConstantInfo) (env : Env),
-      FEnv.pushAll L (mkFEnv env) = mkFEnv ⟨L.reverse ++ env.consts, env.tables⟩ := by
+      FEnv.pushAll L (mkFEnv env) = mkFEnv ⟨L.reverse ++ env.consts, env.tables, env.rules⟩ := by
     intro L
     induction L with
     | nil => intro env; rfl
     | cons ci L ih =>
       intro env
-      rw [FEnv.pushAll, show (mkFEnv env).push ci = mkFEnv ⟨ci :: env.consts, env.tables⟩ from
+      rw [FEnv.pushAll, show (mkFEnv env).push ci = mkFEnv ⟨ci :: env.consts, env.tables, env.rules⟩ from
         FEnv.ext_parts rfl rfl rfl rfl rfl]
       refine (ih _).trans ?_
       simp
   have hQ : ∀ (Q : List ProjTable) (env : Env),
-      FEnv.pushTables Q (mkFEnv env) = mkFEnv ⟨env.consts, Q.reverse ++ env.tables⟩ := by
+      FEnv.pushTables Q (mkFEnv env) = mkFEnv ⟨env.consts, Q.reverse ++ env.tables, env.rules⟩ := by
     intro Q
     induction Q with
     | nil => intro env; rfl
     | cons t Q ih =>
       intro env
       show FEnv.pushTables Q ((mkFEnv env).pushTable t) = _
-      refine (ih ⟨env.consts, t :: env.tables⟩).trans ?_
+      refine (ih ⟨env.consts, t :: env.tables, env.rules⟩).trans ?_
       simp
   unfold FEnv.pushDelta Env.pushDelta
   rw [hA, hQ]

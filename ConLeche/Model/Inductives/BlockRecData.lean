@@ -1364,7 +1364,8 @@ theorem find?_consBlockRecsR_at {q : BlockShape} :
       · next hh => exact absurd rfl hh
     | succ j =>
       have hrest : ∀ x ∈ rest, (Env.mk (ConstantInfo.recInfo r0.1 (q.majorIdxAt m)
-          (q.rulePrefixAt m) (R (m) r0).1 (R (m) r0).2 :: env.consts) env.tables).find? x.1.name = none := by
+          (q.rulePrefixAt m) (R (m) r0).1 (R (m) r0).2 :: env.consts) env.tables env.rules).find? x.1.name
+            = none := by
         intro x hx
         rw [ConLeche.Env.find?_cons]
         split

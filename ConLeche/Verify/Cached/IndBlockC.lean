@@ -48,7 +48,7 @@ theorem consSumCtorsF_mkFEnv (nP : Nat) (T : Name) :
   | [], _ => rfl
   | c :: cs, env => by
     simp only [consSumCtorsF, consSumCtors, push_mkFEnv,
-      consSumCtorsF_mkFEnv nP T cs ⟨.ctorInfo c.1 nP c.2 T :: env.consts, env.tables⟩]
+      consSumCtorsF_mkFEnv nP T cs ⟨.ctorInfo c.1 nP c.2 T :: env.consts, env.tables, env.rules⟩]
 
 theorem consBlockCtorsF_mkFEnv (nP : Nat) :
     ∀ (groups : List (Name × List (ConstantVal × Nat))) (env : Env),

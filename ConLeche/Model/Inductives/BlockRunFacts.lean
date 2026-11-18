@@ -162,6 +162,28 @@ theorem blockRun_findTable {F : Nat} {env env₂ : Env} {block : List ConstantIn
   rw [List.find?_append, List.find?_eq_none.mpr (fun t ht => by simp [hne t ht])]
   rfl
 
+/-- The install extends the environment under fresh names. -/
+theorem blockRun_freshExt {F : Nat} {env env₂ : Env} {block : List ConstantInfo} {nPd : Nat}
+    {p₀ : BlockShape} (hdp : ConLeche.readBlock nPd block = .ok p₀)
+    (hrun : ConLeche.Semantics.BlockRun F env block p₀ env₂) : FreshExt env env₂ := by
+  have hd := ConLeche.readBlock_declared hdp
+  have henv := ConLeche.Semantics.blockRun_env hd hrun
+  have hfr := blockRun_fresh hd hrun
+  refine ⟨⟨(ConLeche.blockConstants p₀).reverse, by rw [henv]; rfl, fun c hc =>
+      hfr c.name (List.mem_map_of_mem (List.mem_reverse.mp hc))⟩,
+    ⟨((ConLeche.blockTables p₀ p₀.members).getD []).reverse, by rw [henv]; rfl, fun t ht => ?_⟩,
+    ⟨[], by rw [henv]; rfl, fun _ h => nomatch h⟩⟩
+  obtain ⟨m, hm, hn⟩ : ∃ m ∈ p₀.members, t.structName = m.declared.name := by
+    cases hQ : ConLeche.blockTables p₀ p₀.members with
+    | none => simp only [hQ, Option.getD_none, List.reverse_nil, List.not_mem_nil] at ht
+    | some Q =>
+      simp only [hQ, Option.getD_some, List.mem_reverse] at ht
+      exact ConLeche.blockTables_names _ _ Q hQ t ht
+  rw [hn]
+  exact hfr m.declared.name (by
+    rw [ConLeche.Cached.blockConstants_names]
+    exact List.mem_append_left _ (List.mem_append_left _ (List.mem_map_of_mem hm)))
+
 /-- **The uniform block step, at a recognised block whose records take no reserved name.** -/
 theorem declBlock {F : Nat} {env env₂ : Env} {block : List ConstantInfo} {nPd : Nat} {p₀ : BlockShape}
     (mp : EnvModelM V env)
@@ -222,7 +244,7 @@ theorem declBlock {F : Nat} {env env₂ : Env} {block : List ConstantInfo} {nPd 
   refine ⟨declBlockAt (p₀ := { p₀ with members := ms }) mp
     (fun m hm => (hlps m hm).trans hlpsEq.symm) hAt
     (fun c hc => by rw [hlpsEq]; exact ⟨hClps₀ c (hctors c hc), hresC c (hctors c hc)⟩)
-    hresM hresR hR hcov hRan hNat (blockRun_findTable hdp hrun₀),
+    hresM hresR hR hcov hRan hNat (blockRun_freshExt hdp hrun₀),
     natFacts_block hNat hdp hres hrun₀⟩
 
 end ConLeche.Model

@@ -95,10 +95,12 @@ def reducedFormer (ops : CheckerOps m) (env : Env) (cv : ConstantVal) (n : Nat) 
 
 /-- **A stored family's type former, at its telescope**: its stored type where that shows one,
 else its reduct (official reads the type through `whnf`).  Every reader of a family's telescope
-goes through this: what is stored is what the stream declares. -/
+goes through this: what is stored is what the stream declares.  The reduct is read below the
+family's block (`CheckerOps.below`, `Env.famBelow`), the environment its block's check reduced it
+at, so a later declaration (a rewrite rule among them) changes no reading. -/
 def familyTelescope (ops : CheckerOps m) (env : Env) (cv : ConstantVal) (caps : IndCaps) : m Expr :=
   if formerDefHeaded cv then do
-    let cvR ← reducedFormer ops env cv (caps.nparams + caps.nIdx)
+    let cvR ← reducedFormer (ops.below cv.name) env cv (caps.nparams + caps.nIdx)
     pure cvR.type
   else pure cv.type
 

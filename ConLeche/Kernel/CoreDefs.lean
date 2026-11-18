@@ -230,6 +230,47 @@ def Expr.constsResolve (env : Env) : Expr → Bool
     ty.constsResolve env && val.constsResolve env && body.constsResolve env
   | .proj s _ e => (env.find? s).isSome && e.constsResolve env
 
+/-! ## The environment below a block
+
+A family declared at a definition has its telescope read by a reduction
+(`familyTelescope`).  Every reading runs at the environment its block ran
+at, found from the family's own entry: the constants older than it, less
+the block's formers installed before it (`IndCaps.blockPos`), and the
+tables live there.  So a reading never sees a constant or a rule installed
+after the block. -/
+
+/-- The constants of `cs` strictly older than the first entry named `n`
+(none where `n` has no entry). -/
+def Env.suffixAfter (cs : List ConstantInfo) (n : Name) : List ConstantInfo :=
+  (cs.dropWhile fun c => !(c.name == n)).drop 1
+
+/-- A table live at the constants `cs`: its structure is among them and
+its bodies resolve there. -/
+def Env.tableOkAt (cs : List ConstantInfo) (t : ProjTable) : Bool :=
+  (cs.find? (·.name == t.structName)).isSome && t.bodies.all (·.constsResolve ⟨cs, [], []⟩)
+
+/-- The tables `Env.findTable?` answers at the constants `cs`: each name's
+first table, where it is live there. -/
+def Env.liveTables (cs : List ConstantInfo) : List ProjTable → List ProjTable
+  | [] => []
+  | t :: ts =>
+    let rest := (Env.liveTables cs ts).filter (·.structName != t.structName)
+    if Env.tableOkAt cs t then t :: rest else rest
+
+/-- The environment cut at `cs` (a suffix of its constants): those constants, the tables live
+there, and the rules whose theorems are among them. -/
+def Env.cutAt (env : Env) (cs : List ConstantInfo) : Env :=
+  ⟨cs, Env.liveTables cs env.tables,
+    env.rules.filter fun r => (cs.find? (·.name == r.2)).isSome⟩
+
+/-- **Where the family named `n` has its telescope read**: below its block,
+cut at the constants older than its entry, less the `caps.blockPos` formers
+its block installed first.  `none` where `n` holds no family. -/
+def Env.famBelow (env : Env) (n : Name) : Option Env :=
+  match env.find? n with
+  | some (.indInfo _ caps) => some (env.cutAt ((Env.suffixAfter env.consts n).drop caps.blockPos))
+  | _ => none
+
 /-- Convert a `Nat`-literal major premise to constructor form, one
 layer; anything else passes through. -/
 def litToCtorIfNat (env : Env) : Expr → Expr
@@ -698,6 +739,103 @@ def piResidual : Expr → List Expr → Option Expr
   | e, [] => some e
   | .forallE _ b, a :: as => piResidual (b.instantiate1 a) as
   | _, _ :: _ => none
+
+/-- The subterms of `e` reachable through `.app` nodes alone, `e`
+first: where a first-order rewrite rule's matcher finds its arguments. -/
+def appSubterms : Expr → List Expr
+  | .app f a => .app f a :: (appSubterms f ++ appSubterms a)
+  | e => [e]
+
+/-! ## User rewrite rules: the first-order matcher
+
+A rule is a stored theorem `∀ x₀ … x_{n-1}, @Eq A l r`.  The matcher reads
+the left side under its `n` binders (loose bound variables name them,
+innermost `0`) against a term: a bound variable takes the subterm it
+meets (the same one at every occurrence), an application matches an
+application, a constant matches a constant of the same name whose levels
+match the pattern's (a theorem level parameter takes the level it meets,
+consistently), and every other node must be closed and equal to the
+term's.  No proof is needed of it: the firing checks what it produced
+(`rewriteAttempt`). -/
+
+/-- The leading `∀` binders of a statement and its body. -/
+def ruleTele : Expr → Nat × Expr
+  | .forallE _ b => ((ruleTele b).1 + 1, (ruleTele b).2)
+  | e => (0, e)
+
+/-- A level pattern against a level: a theorem level parameter takes the level it meets
+(consistently); every other level must be equal. -/
+def matchLevel (lps : List Name) (st : List (Option Level)) : Level → Level → Option (List (Option Level))
+  | .param p, l' =>
+    match lps.idxOf? p with
+    | some j =>
+      match st.getD j none with
+      | some l'' => if l'' = l' then some st else none
+      | none => some (st.set j (some l'))
+    | none => if Level.param p = l' then some st else none
+  | l, l' => if l = l' then some st else none
+
+/-- Level patterns against levels, pairwise. -/
+def matchLevels (lps : List Name) :
+    List (Option Level) → List Level → List Level → Option (List (Option Level))
+  | st, [], [] => some st
+  | st, l :: ls, l' :: ls' => (matchLevel lps st l l').bind fun st => matchLevels lps st ls ls'
+  | _, _, _ => none
+
+/-- **The first-order match** of a rule's left side under `n` binders against a term, from the
+binder slots (outermost first) and the level slots. -/
+def ruleMatch (n : Nat) (lps : List Name) :
+    List (Option Expr) × List (Option Level) → Expr → Expr →
+      Option (List (Option Expr) × List (Option Level))
+  | (sl, lv), .bvar k, e =>
+    if k < n then
+      match sl.getD (n - 1 - k) none with
+      | some e' => if e' = e then some (sl, lv) else none
+      | none => some (sl.set (n - 1 - k) (some e), lv)
+    else none
+  | st, .app f a, .app f' a' => (ruleMatch n lps st f f').bind fun st => ruleMatch n lps st a a'
+  | (sl, lv), .const c ls, .const c' ls' =>
+    if c = c' then (matchLevels lps lv ls ls').map fun lv => (sl, lv) else none
+  | st, p, e => if p.looseBVarsBounded 0 = true ∧ p = e then some st else none
+
+/-- Is `e` a constant? -/
+def Expr.isConstB : Expr → Bool
+  | .const _ _ => true
+  | _ => false
+
+/-- The parts of an `@Eq.{u} A l r` spine: the head's name, the level, the type and both sides. -/
+def eqSpine? : Expr → Option (Name × Level × Expr × Expr × Expr)
+  | .app (.app (.app (.const eqn [u]) A) l) rhs => some (eqn, u, A, l, rhs)
+  | _ => none
+
+/-- **The syntactic gate of a rule's firing**: the spine's head is `Eq`, the levels are the
+theorem's, the left side is the term, the term's head is a constant, every argument is a subterm
+of the term's application tree, and every free-variable leaf of the right side is one of the
+term's. -/
+def RuleGate (cv : ConstantVal) (us : List Level) (args : List Expr) (e : Expr) (eqn : Name)
+    (l rhs : Expr) : Prop :=
+  eqn = eqName ∧ us.length = cv.levelParams.length ∧ l = e ∧
+    (∀ x ∈ args, x ∈ appSubterms e) ∧ (∀ x ∈ rhs.fvarLeaves, x ∈ e.fvarLeaves) ∧
+    e.getAppFn.isConstB = true
+
+instance (cv : ConstantVal) (us : List Level) (args : List Expr) (e : Expr) (eqn : Name)
+    (l rhs : Expr) : Decidable (RuleGate cv us args e eqn l rhs) :=
+  inferInstanceAs (Decidable (_ ∧ _))
+
+/-- **The arguments and levels at which a stored theorem's left side is the term**, in binder
+order and in the order of the theorem's level parameters. -/
+def ruleArgs (cv : ConstantVal) (e : Expr) : Option (List Expr × List Level) :=
+  match (ruleTele cv.type).2 with
+  | .app (.app (.app (.const _ [_]) _) l₀) _ =>
+    let n := (ruleTele cv.type).1
+    match ruleMatch n cv.levelParams
+        (List.replicate n none, List.replicate cv.levelParams.length none) l₀ e with
+    | some (sl, lv) =>
+      match sl.mapM id, lv.mapM id with
+      | some args, some us => some (args, us)
+      | _, _ => none
+    | none => none
+  | _ => none
 
 /-- The fabricated projections of a structure-eta spine: the
 `.proj T j b` nodes, one per field of the family's projection table

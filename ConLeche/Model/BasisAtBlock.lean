@@ -83,21 +83,21 @@ theorem RenRel.cons {κ : Prop} {L₀ : List ConstantInfo} {E env env' : Env} (R
     (hc : PinCopy p (pinnedInfo p.name)) (hc' : PinCopy p' (pinnedInfo p.name))
     (hk : κ → (∀ cv mI rP isK rules, p ≠ .recInfo cv mI rP isK rules) → p' = p)
     (hL : p ∈ L₀) (hf : env.find? p.name = none) :
-    RenRel κ L₀ E ⟨p :: env.consts, env.tables⟩ ⟨p' :: env'.consts, env'.tables⟩ := by
+    RenRel κ L₀ E ⟨p :: env.consts, env.tables, env.rules⟩ ⟨p' :: env'.consts, env'.tables, env'.rules⟩ := by
   have hnm : p'.name = p.name := by rw [hc'.name, pinnedInfo_name hres]
   have hf' : env'.find? p.name = none := by
     have := R.ren.isSome p.name
     rw [hf] at this
     exact Option.isNone_iff_eq_none.mp (by simpa using this)
-  have hp1 : (⟨p :: env.consts, env.tables⟩ : Env).find? p.name = some p :=
+  have hp1 : (⟨p :: env.consts, env.tables, env.rules⟩ : Env).find? p.name = some p :=
     Env.find?_cons_self _ _
-  have hp2 : (⟨p' :: env'.consts, env'.tables⟩ : Env).find? p.name = some p' := by
+  have hp2 : (⟨p' :: env'.consts, env'.tables, env'.rules⟩ : Env).find? p.name = some p' := by
     rw [← hnm]; exact Env.find?_cons_self _ _
   have hne1 : ∀ {n}, p.name ≠ n →
-      (⟨p :: env.consts, env.tables⟩ : Env).find? n = env.find? n := fun hne => by
+      (⟨p :: env.consts, env.tables, env.rules⟩ : Env).find? n = env.find? n := fun hne => by
     rw [Env.find?_cons, ite_eq_right hne]
   have hne2 : ∀ {n}, p.name ≠ n →
-      (⟨p' :: env'.consts, env'.tables⟩ : Env).find? n = env'.find? n := fun hne => by
+      (⟨p' :: env'.consts, env'.tables, env'.rules⟩ : Env).find? n = env'.find? n := fun hne => by
     rw [Env.find?_cons, hnm, ite_eq_right hne]
   refine ⟨⟨.cons (.inr ⟨hres, hc, hc'⟩) R.ren.consts, R.ren.tables⟩, fun c' hm => ?_, fun n hn => ?_,
     fun hκ n ci ci' h1 h2 hnr => ?_, fun n ci h1 hn => ?_⟩
@@ -437,20 +437,20 @@ theorem coverStep_keep {E env env' : Env} {L₀ : List ConstantInfo}
 parameter, the recursor's motive at another. -/
 theorem coverStep_eq {E env' : Env} {L₀ : List ConstantInfo} {p p1 : Name} (hne : p1 ≠ p)
     (mpE : EnvModelM V E)
-    (mp : EnvModelM V ⟨eqRecA :: eqReflA :: eqI :: E.consts, E.tables⟩)
+    (mp : EnvModelM V ⟨eqRecA :: eqReflA :: eqI :: E.consts, E.tables, E.rules⟩)
     (hEv : ∀ ψ : Name → Nat, mp.base2.acval eqName ψ = eqValT ψ)
     (hRv : ∀ ψ : Name → Nat, mp.base2.acval eqReflName ψ = eqReflValT ψ)
-    (R : RenRel False L₀ E ⟨eqRecA :: eqReflA :: eqI :: E.consts, E.tables⟩ env') (hwf : EnvWF env')
-    (henv' : env' = ⟨eqRecA.atLps [p1, p] :: eqReflA.atLps [p] :: eqI.atLps [p] :: E.consts, E.tables⟩) :
+    (R : RenRel False L₀ E ⟨eqRecA :: eqReflA :: eqI :: E.consts, E.tables, E.rules⟩ env') (hwf : EnvWF env')
+    (henv' : env' = ⟨eqRecA.atLps [p1, p] :: eqReflA.atLps [p] :: eqI.atLps [p] :: E.consts, E.tables, E.rules⟩) :
     ∃ mp' : EnvModelM V env', mp'.base2.acval = renAcval mp.base2.acval
-        ⟨eqRecA :: eqReflA :: eqI :: E.consts, E.tables⟩ env' ∧
+        ⟨eqRecA :: eqReflA :: eqI :: E.consts, E.tables, E.rules⟩ env' ∧
       (∀ D ∈ mp'.lfpBlocks, D ∈ mp.lfpBlocks ∨ ∀ mm, D.telescope mm = none) ∧
       (LfpCover mp [] → LfpCover mp' []) := by
   subst henv'
   have h := R.ren
-  generalize henv : (⟨eqRecA :: eqReflA :: eqI :: E.consts, E.tables⟩ : Env) = env at mp R h
+  generalize henv : (⟨eqRecA :: eqReflA :: eqI :: E.consts, E.tables, E.rules⟩ : Env) = env at mp R h
   generalize hen' : (⟨eqRecA.atLps [p1, p] :: eqReflA.atLps [p] :: eqI.atLps [p] :: E.consts,
-    E.tables⟩ : Env) = env' at R h hwf
+    E.tables, E.rules⟩ : Env) = env' at R h hwf
   -- the block's lookups
   have f3 : env.find? (eqName.str "rec") = some eqRecA := by
     subst henv
@@ -1003,7 +1003,7 @@ reads the head's level-parameter names (a reference is positional, `denote_ren`)
 so only the head differs. -/
 theorem coverStep_head {E env env' : Env} {pin p' : ConstantInfo} {L₀ : List ConstantInfo}
     (mpE : EnvModelM V E) (mp : EnvModelM V env) (R : RenRel False L₀ E env env') (hwf : EnvWF env')
-    (henv : env = ⟨pin :: E.consts, E.tables⟩) (henv' : env' = ⟨p' :: E.consts, E.tables⟩)
+    (henv : env = ⟨pin :: E.consts, E.tables, E.rules⟩) (henv' : env' = ⟨p' :: E.consts, E.tables, E.rules⟩)
     (hnm : p'.name = pin.name) (hrename : p' = pin.atLps p'.toConstantVal.levelParams)
     (hfresh : E.find? pin.name = none)
     -- a recursor's rules do not read a constructor's names

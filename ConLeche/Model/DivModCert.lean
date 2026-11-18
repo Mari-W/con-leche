@@ -1657,7 +1657,7 @@ theorem dmFrame_of {mp : EnvModelM V env} {c : Name}
     {lps : List Name} {type' value' : Expr} {hint : ReducibilityHint}
     (hmem : c ∈ ConLeche.natDivModNames)
     (hgenv : ConLeche.divModEnvGuard
-      (⟨.defnInfo ⟨c, lps, type'⟩ value' hint :: env.consts, env.tables⟩ : Env) c
+      (⟨.defnInfo ⟨c, lps, type'⟩ value' hint :: env.consts, env.tables, env.rules⟩ : Env) c
       = true)
     {A Ta : (Name → Nat) → Term}
     (hA : ∀ ψ, denote mp.base2.acval env ψ 0 value' = some (A ψ))
@@ -1685,7 +1685,7 @@ theorem dmFrame_of {mp : EnvModelM V env} {c : Name}
   have hnF : ConLeche.boolFalseName ≠ c := hnF0.symm
   have hnE : eqName ≠ c := hnE0.symm
   have hdown : ∀ (n : Name) (ci : ConstantInfo), n ≠ c →
-      (⟨.defnInfo ⟨c, lps, type'⟩ value' hint :: env.consts, env.tables⟩
+      (⟨.defnInfo ⟨c, lps, type'⟩ value' hint :: env.consts, env.tables, env.rules⟩
         : Env).find? n = some ci → env.find? n = some ci := by
     intro n ci hnn hf
     rwa [ConLeche.Env.find?_cons, ite_eq_right (fun hh => hnn hh.symm)] at hf
@@ -1713,7 +1713,7 @@ theorem dmFrame_of {mp : EnvModelM V env} {c : Name}
       ∃ cvn vn hn, env.find? n = some (.defnInfo cvn vn hn) ∧
         cvn.levelParams = [] ∧
         ConLeche.natOpTyPinned
-          (⟨.defnInfo ⟨c, lps, type'⟩ value' hint :: env.consts, env.tables⟩
+          (⟨.defnInfo ⟨c, lps, type'⟩ value' hint :: env.consts, env.tables, env.rules⟩
             : Env) n cvn.type = true := by
     intro n hn hnc
     obtain ⟨cvn, vn, hintn, hfn2, hpinn⟩ :=
@@ -1988,7 +1988,7 @@ theorem divMod_install {F : Nat} (mp : EnvModelM V env)
     (hcmem : c ∈ ConLeche.natDivModNames)
     (hfresh : env.find? c = none)
     (hgenv : ConLeche.divModEnvGuard
-      (⟨.defnInfo ⟨c, lps, type'⟩ value' hint :: env.consts, env.tables⟩ : Env) c
+      (⟨.defnInfo ⟨c, lps, type'⟩ value' hint :: env.consts, env.tables, env.rules⟩ : Env) c
       = true)
     {ps : ConLeche.NatOpPinSet}
     (hcerts : ConLeche.checkDivModCerts (m := ConLeche.CheckM)
@@ -2006,7 +2006,7 @@ theorem divMod_install {F : Nat} (mp : EnvModelM V env)
     (hmemA : ∀ (ψ : Name → Nat) (ρ : Nat → V),
       interp V ρ (A ψ) ∈ˢ interp V ρ (Ta ψ))
     (m₂ : EnvModel V
-      ⟨.defnInfo ⟨c, lps, type'⟩ value' hint :: env.consts, env.tables⟩)
+      ⟨.defnInfo ⟨c, lps, type'⟩ value' hint :: env.consts, env.tables, env.rules⟩)
     (hac : m₂.acval = acvalWith mp.base2.acval c A) :
     DivMod m₂ φ := by
   intro cq hcqN cv' v' hint' hf₂

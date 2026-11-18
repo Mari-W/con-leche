@@ -38,9 +38,9 @@ variable {V : Type w} [SetTheory V] {env : Env}
 /-- **The carrier at a table install**: the prefix's, with the table's
 well-formedness and head data added. -/
 @[expose] def EnvModel.pushTable (m : EnvModel V env) {t : ProjTable}
-    (hwf : ConLeche.EnvWF ⟨env.consts, t :: env.tables⟩)
+    (hwf : ConLeche.EnvWF ⟨env.consts, t :: env.tables, env.rules⟩)
     (hhead : ConLeche.TableHead env t) :
-    EnvModel V ⟨env.consts, t :: env.tables⟩ where
+    EnvModel V ⟨env.consts, t :: env.tables, env.rules⟩ where
   wf := hwf
   acval := m.acval
   cval_closed := m.cval_closed
@@ -54,7 +54,7 @@ well-formedness and head data added. -/
 guards and their equations' readings are the prefix's. -/
 theorem natOps_pushTable (mp : EnvModelM V env) {t : ProjTable}
     (hT : env.findTable? t.structName = none)
-    {m₂ : EnvModel V ⟨env.consts, t :: env.tables⟩} (hac : m₂.acval = mp.base2.acval)
+    {m₂ : EnvModel V ⟨env.consts, t :: env.tables, env.rules⟩} (hac : m₂.acval = mp.base2.acval)
     (φ : Name → Nat) : NatOps m₂ φ := by
   intro c hcN cv v hint hf
   obtain ⟨hg, hpin, hlaws⟩ := mp.nat_ops φ c hcN cv v hint hf
@@ -80,24 +80,24 @@ the table's law and its fields' projection laws are supplied.  The leaf
 valuation is the prefix's; everything else transports. -/
 theorem declStep_preserves_of_pushTable (mp : EnvModelM V env) {t : ProjTable}
     (hT : env.findTable? t.structName = none)
-    (hwf : ConLeche.EnvWF ⟨env.consts, t :: env.tables⟩)
+    (hwf : ConLeche.EnvWF ⟨env.consts, t :: env.tables, env.rules⟩)
     (hhead : ConLeche.TableHead env t)
-    (htlaw : ∀ m₂ : EnvModel V ⟨env.consts, t :: env.tables⟩,
+    (htlaw : ∀ m₂ : EnvModel V ⟨env.consts, t :: env.tables, env.rules⟩,
       m₂.acval = mp.base2.acval →
       ∀ φ : Name → Nat, TowerTableLaw m₂ φ t.structName t)
-    (hlaw : ∀ m₂ : EnvModel V ⟨env.consts, t :: env.tables⟩,
+    (hlaw : ∀ m₂ : EnvModel V ⟨env.consts, t :: env.tables, env.rules⟩,
       m₂.acval = mp.base2.acval →
       ∀ (φ : Name → Nat) (i : Nat), i < t.numFields →
         TowerEntryLaw m₂ φ t.structName i (t.entry i)) :
-    ∃ mp' : EnvModelM V ⟨env.consts, t :: env.tables⟩,
+    ∃ mp' : EnvModelM V ⟨env.consts, t :: env.tables, env.rules⟩,
       mp'.base2.acval = mp.base2.acval := by
-  let m₂ : EnvModel V ⟨env.consts, t :: env.tables⟩ := mp.base2.pushTable hwf hhead
+  let m₂ : EnvModel V ⟨env.consts, t :: env.tables, env.rules⟩ := mp.base2.pushTable hwf hhead
   have hac : m₂.acval = mp.base2.acval := rfl
-  have hx : ModelExt mp ⟨env.consts, t :: env.tables⟩ m₂.acval := ModelExt.pushTable mp hT
+  have hx : ModelExt mp ⟨env.consts, t :: env.tables, env.rules⟩ m₂.acval := ModelExt.pushTable mp hT
   have hbound := envWF_constsBound mp.base2.wf
   -- a stored type's reading at the install is the prefix's
   have hreadT : ∀ c ∈ env.consts, ∀ (ψ : Name → Nat) (ta : Term),
-      denote m₂.acval ⟨env.consts, t :: env.tables⟩ ψ 0 c.toConstantVal.type = some ta →
+      denote m₂.acval ⟨env.consts, t :: env.tables, env.rules⟩ ψ 0 c.toConstantVal.type = some ta →
       denote mp.base2.acval env ψ 0 c.toConstantVal.type = some ta := by
     intro c hc ψ ta hta
     obtain ⟨ta', hta'⟩ := mp.type_reads c hc ψ
@@ -137,7 +137,7 @@ theorem declStep_preserves_of_pushTable (mp : EnvModelM V env) {t : ProjTable}
         obtain rfl := Option.some.inj hft
         rw [← hh.1]
         exact hlaw m₂ hac φ i hi
-      · have hP : Env.findProj? ⟨env.consts, t :: env.tables⟩ T i = env.findProj? T i := by
+      · have hP : Env.findProj? ⟨env.consts, t :: env.tables, env.rules⟩ T i = env.findProj? T i := by
           unfold Env.findProj?
           rw [ConLeche.Env.findTable?_pushTable, ite_eq_right hh]
         rw [hP] at hf
@@ -145,6 +145,6 @@ theorem declStep_preserves_of_pushTable (mp : EnvModelM V env) {t : ProjTable}
     lfpBlocks := mp.lfpBlocks
     lfp_ok := mp.lfp_ok_transport (fun _ _ hf _ => hf) (fun _ _ _ _ => rfl)
       (fun ψ d _ _ hb hta => hx.denote hb hta)
-      (fun _ => ConstsBound.of_isSome (env₀ := env) (env₁ := ⟨env.consts, t :: env.tables⟩) fun _ h => h) }, rfl⟩
+      (fun _ => ConstsBound.of_isSome (env₀ := env) (env₁ := ⟨env.consts, t :: env.tables, env.rules⟩) fun _ h => h) }, rfl⟩
 
 end ConLeche.Model

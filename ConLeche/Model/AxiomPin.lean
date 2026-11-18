@@ -76,12 +76,12 @@ theorem axiomTrustCompiler
     (mp : EnvModelM V env) {cv : ConstantVal} {type' : Expr}
     (hopn : natOpName cv.name = false)
     (hcv : ConstantValRun F env cv type')
-    (hwf₂ : ConLeche.EnvWF ⟨.axiomInfo ⟨cv.name, cv.levelParams, type'⟩ :: env.consts, env.tables⟩)
+    (hwf₂ : ConLeche.EnvWF ⟨.axiomInfo ⟨cv.name, cv.levelParams, type'⟩ :: env.consts, env.tables, env.rules⟩)
     (hname : cv.name = ConLeche.trustCompilerName)
     (hok : ConLeche.trustCompilerOk env ⟨cv.name, cv.levelParams, type'⟩
       = true) :
     CoverStep mp
-      ⟨.axiomInfo ⟨cv.name, cv.levelParams, type'⟩ :: env.consts, env.tables⟩ := by
+      ⟨.axiomInfo ⟨cv.name, cv.levelParams, type'⟩ :: env.consts, env.tables, env.rules⟩ := by
   have hcv' := hcv
   obtain ⟨hfind, hnd, hlbt, hitf, hann, htp, htr,
     -⟩ := hcv'
@@ -160,11 +160,11 @@ theorem axiomStd
     (mp : EnvModelM V env) {cv : ConstantVal} {type' : Expr}
     (hopn : natOpName cv.name = false)
     (hcv : ConstantValRun F env cv type')
-    (hwf₂ : ConLeche.EnvWF ⟨.axiomInfo ⟨cv.name, cv.levelParams, type'⟩ :: env.consts, env.tables⟩)
+    (hwf₂ : ConLeche.EnvWF ⟨.axiomInfo ⟨cv.name, cv.levelParams, type'⟩ :: env.consts, env.tables, env.rules⟩)
     (hok : ConLeche.stdAxiomOk env ⟨cv.name, cv.levelParams, type'⟩
       = true) :
     CoverStep mp
-      ⟨.axiomInfo ⟨cv.name, cv.levelParams, type'⟩ :: env.consts, env.tables⟩ := by
+      ⟨.axiomInfo ⟨cv.name, cv.levelParams, type'⟩ :: env.consts, env.tables, env.rules⟩ := by
   by_cases hn : cv.name = propextName
   · refine harvestAxiom (V := V) (hwf₂ := hwf₂) mp hopn hcv (by rw [hn]; decide)
       (A := fun _ => .const .propext []) (fun _ => trivial)

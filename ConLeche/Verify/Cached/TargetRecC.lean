@@ -288,8 +288,25 @@ theorem find?_consBlockRecsT_of_bare {q : BlockShape} :
     simp only [List.map_cons, consBlockRecsBare] at h
     simp only [consBlockRecsT]
     refine find?_consBlockRecsT_of_bare
-      (envA := ⟨.recInfo cv (q.majorIdxAt m) (q.rulePrefixAt m) false [] :: envA.consts, envA.tables⟩) ?_ n h
+      (envA := ⟨.recInfo cv (q.majorIdxAt m) (q.rulePrefixAt m) false [] :: envA.consts, envA.tables, envA.rules⟩) ?_ n h
     exact find?_cons_mono rfl hf
+
+/-- The stored recursors consed on top of the constants, none of them a family. -/
+theorem consBlockRecsT_split {q : BlockShape} :
+    ∀ (m : Nat) (out : List (ConstantVal × TargetMajor × List Expr)) (env : Env),
+      ∃ new, (consBlockRecsT q m out env).consts = new ++ env.consts ∧
+        ∀ c ∈ new, ∀ cv caps, c ≠ .indInfo cv caps
+  | _, [], _ => ⟨[], rfl, fun _ h => nomatch h⟩
+  | m, (cv, M, rhss) :: rest, env => by
+    obtain ⟨new, h, hn⟩ := consBlockRecsT_split (q := q) (m + 1) rest
+      ⟨.recInfo cv (q.majorIdxAt m) (q.rulePrefixAt m) (recKExpected q M)
+        (generatedRules (q.rulePrefixAt m) M rhss) :: env.consts, env.tables, env.rules⟩
+    refine ⟨new ++ [.recInfo cv (q.majorIdxAt m) (q.rulePrefixAt m) (recKExpected q M)
+        (generatedRules (q.rulePrefixAt m) M rhss)],
+      by simp only [consBlockRecsT]; rw [h]; simp, fun c hc cv' caps => ?_⟩
+    rcases List.mem_append.mp hc with hc | hc
+    · exact hn c hc cv' caps
+    · rw [List.mem_singleton.mp hc]; exact fun h => ConstantInfo.noConfusion h
 
 theorem mem_consBlockRecsT {q : BlockShape} :
     ∀ {m : Nat} {out : List (ConstantVal × TargetMajor × List Expr)} {env : Env}
@@ -358,9 +375,11 @@ theorem envWF_consBlockRecsT {q : BlockShape}
         = true →
       ((consBlockRecsT q 0 out env).find? n).isSome = true :=
     find?_consBlockRecsT_of_bare (fun _ hn => hn)
-  refine ⟨fun c hc => ?_, fun c hc => ?_, fun t ht => TableWF.mono hdomEnv
-    (henv.tables t (by rw [consBlockRecsT_tables] at ht; exact ht)), fun c hc => ?_,
-    fun c hc => ?_, fun c hc => ?_⟩
+  obtain ⟨new, hsplit, hnew⟩ := consBlockRecsT_split (q := q) 0 out env
+  refine EnvWF.of_append henv hsplit hnew (fun c hc => ?_) (fun c hc => ?_)
+    (fun t ht => TableWF.mono hdomEnv
+    (henv.tables t (by rw [consBlockRecsT_tables] at ht; exact ht))) (fun c hc => ?_)
+    (fun c hc => ?_) (fun c hc => ?_)
   rotate_left
   · rcases mem_consBlockRecsT hc with hc' | ⟨i, t, hti, rfl⟩
     · exact henv.shapes c hc'

@@ -1309,7 +1309,7 @@ theorem FormerData.cross {m : EnvModel V env} {cvT : ConstantVal}
     {c₀ : ConstantInfo} {A : (Name → Nat) → Term}
     (hfresh : env.find? c₀.name = none)
     (hcb : ConstsBound env cvT.type)
-    (m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables⟩)
+    (m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables, env.rules⟩)
     (hac : m₂.acval = acvalWith m.acval c₀.name A) :
     FormerData m₂ cvT nP resSort pps where
   read ψ := by
@@ -1330,7 +1330,7 @@ theorem FormerData.pushTable {m : EnvModel V env} {cvT : ConstantVal}
     (h : FormerData m cvT nP resSort pps)
     {t : ConLeche.ProjTable} (hT : env.findTable? t.structName = none)
     (hcb : ConstsBound env cvT.type)
-    (m₂ : EnvModel V ⟨env.consts, t :: env.tables⟩)
+    (m₂ : EnvModel V ⟨env.consts, t :: env.tables, env.rules⟩)
     (hac : m₂.acval = m.acval) :
     FormerData m₂ cvT nP resSort pps where
   read ψ := by

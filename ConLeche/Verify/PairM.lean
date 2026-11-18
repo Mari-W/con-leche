@@ -524,6 +524,56 @@ theorem reduceNat_snd_proj (d : Nat) (e : Expr) :
   unfold reduceNat
   snd_tac
 
+theorem rewriteAttempt_fst_proj (d : Nat) (e : Expr) (t : Name) :
+    (rewriteAttempt (pairFns r₁ r₂ h) env d e t).val.1 = rewriteAttempt r₁ env d e t := by
+  unfold rewriteAttempt
+  fst_tac
+
+theorem rewriteAttempt_snd_proj (d : Nat) (e : Expr) (t : Name) :
+    (rewriteAttempt (pairFns r₁ r₂ h) env d e t).val.2 = rewriteAttempt r₂ env d e t := by
+  unfold rewriteAttempt
+  snd_tac
+
+theorem rewriteRules_fst_proj (d : Nat) (e : Expr) :
+    ∀ ts : List Name,
+      (rewriteRules (pairFns r₁ r₂ h) env d e ts).val.1 = rewriteRules r₁ env d e ts
+  | [] => rfl
+  | t :: ts => by
+    unfold rewriteRules
+    rw [PairM.fst_bind, rewriteAttempt_fst_proj]
+    congr 1
+    funext o
+    cases o with
+    | some e₂ => rfl
+    | none => exact rewriteRules_fst_proj d e ts
+
+theorem rewriteRules_snd_proj (d : Nat) (e : Expr) :
+    ∀ ts : List Name,
+      (rewriteRules (pairFns r₁ r₂ h) env d e ts).val.2 = rewriteRules r₂ env d e ts
+  | [] => rfl
+  | t :: ts => by
+    unfold rewriteRules
+    rw [PairM.snd_bind, rewriteAttempt_snd_proj]
+    congr 1
+    funext o
+    cases o with
+    | some e₂ => rfl
+    | none => exact rewriteRules_snd_proj d e ts
+
+theorem rewriteStep_fst_proj (d : Nat) (e : Expr) :
+    (rewriteStep (pairFns r₁ r₂ h) env d e).val.1 = rewriteStep r₁ env d e := by
+  unfold rewriteStep
+  split
+  · exact rewriteRules_fst_proj d e _
+  · rfl
+
+theorem rewriteStep_snd_proj (d : Nat) (e : Expr) :
+    (rewriteStep (pairFns r₁ r₂ h) env d e).val.2 = rewriteStep r₂ env d e := by
+  unfold rewriteStep
+  split
+  · exact rewriteRules_snd_proj d e _
+  · rfl
+
 theorem ensureSort_fst_proj (d : Nat) (e : Expr) :
     (ensureSort (pairFns r₁ r₂ h) env d e).val.1 =
       ensureSort r₁ env d e := by
@@ -715,6 +765,7 @@ macro "fst_step2" : tactic =>
     | (rw [iotaIndexOk_fst])
     | (rw [defEqList_fst])
     | (rw [reduceNat_fst_proj])
+    | (rw [rewriteStep_fst_proj])
     | (rw [ensureSort_fst_proj])
     | (rw [proofIrrel_fst_proj])
     | (rw [propIrrel_fst_proj])
@@ -743,6 +794,7 @@ macro "snd_step2" : tactic =>
     | (rw [iotaIndexOk_snd])
     | (rw [defEqList_snd])
     | (rw [reduceNat_snd_proj])
+    | (rw [rewriteStep_snd_proj])
     | (rw [ensureSort_snd_proj])
     | (rw [proofIrrel_snd_proj])
     | (rw [propIrrel_snd_proj])
@@ -1088,6 +1140,7 @@ macro "fst_core3" x:tactic : tactic =>
     | (rw [iotaIndexOk_fst])
     | (rw [defEqList_fst])
     | (rw [reduceNat_fst_proj])
+    | (rw [rewriteStep_fst_proj])
     | (rw [ensureSort_fst_proj])
     | (rw [proofIrrel_fst_proj])
     | (rw [structEtaCertWith_fst_proj])
@@ -1124,6 +1177,7 @@ macro "snd_core3" x:tactic : tactic =>
     | (rw [iotaIndexOk_snd])
     | (rw [defEqList_snd])
     | (rw [reduceNat_snd_proj])
+    | (rw [rewriteStep_snd_proj])
     | (rw [ensureSort_snd_proj])
     | (rw [proofIrrel_snd_proj])
     | (rw [structEtaCertWith_snd_proj])
@@ -1313,6 +1367,7 @@ macro "fst_core4" x:tactic : tactic =>
     | (rw [iotaIndexOk_fst])
     | (rw [defEqList_fst])
     | (rw [reduceNat_fst_proj])
+    | (rw [rewriteStep_fst_proj])
     | (rw [ensureSort_fst_proj])
     | (rw [proofIrrel_fst_proj])
     | (rw [propIrrel_fst_proj])
@@ -1375,6 +1430,7 @@ macro "snd_core4" x:tactic : tactic =>
     | (rw [iotaIndexOk_snd])
     | (rw [defEqList_snd])
     | (rw [reduceNat_snd_proj])
+    | (rw [rewriteStep_snd_proj])
     | (rw [ensureSort_snd_proj])
     | (rw [proofIrrel_snd_proj])
     | (rw [propIrrel_snd_proj])
@@ -1436,42 +1492,54 @@ each gets one projection lemma with a continuation hypothesis and the
 loop lemma is a plain induction on the step budget. -/
 
 theorem whnfStep_fst_proj (d : Nat) (k : Expr → PairM rel Expr)
-    (k₁ : Expr → M₁ Expr) (hk : ∀ e, (k e).val.1 = k₁ e) (e : Expr) :
-    (whnfStep (pairFns r₁ r₂ h) env d k e).val.1 =
-      whnfStep r₁ env d k₁ e := by
+    (k₁ : Expr → M₁ Expr) (hk : ∀ e, (k e).val.1 = k₁ e)
+    (kr : Name → Expr → PairM rel Expr) (kr₁ : Name → Expr → M₁ Expr)
+    (hkr : ∀ t e, (kr t e).val.1 = kr₁ t e) (e : Expr) :
+    (whnfStep (pairFns r₁ r₂ h) env d k kr e).val.1 =
+      whnfStep r₁ env d k₁ kr₁ e := by
   unfold whnfStep
-  fst_tac4k hk
+  fst_tac4k hk <;> first | rfl | rw [hkr]
 
 theorem whnfStep_snd_proj (d : Nat) (k : Expr → PairM rel Expr)
-    (k₂ : Expr → M₂ Expr) (hk : ∀ e, (k e).val.2 = k₂ e) (e : Expr) :
-    (whnfStep (pairFns r₁ r₂ h) env d k e).val.2 =
-      whnfStep r₂ env d k₂ e := by
+    (k₂ : Expr → M₂ Expr) (hk : ∀ e, (k e).val.2 = k₂ e)
+    (kr : Name → Expr → PairM rel Expr) (kr₂ : Name → Expr → M₂ Expr)
+    (hkr : ∀ t e, (kr t e).val.2 = kr₂ t e) (e : Expr) :
+    (whnfStep (pairFns r₁ r₂ h) env d k kr e).val.2 =
+      whnfStep r₂ env d k₂ kr₂ e := by
   unfold whnfStep
-  snd_tac4k hk
+  snd_tac4k hk <;> first | rfl | rw [hkr]
 
 theorem whnfLoop_fst_proj (d : Nat) :
-    ∀ (n : Nat) (e : Expr),
-      (whnfLoop (pairFns r₁ r₂ h) env d n e).val.1 = whnfLoop r₁ env d n e
-  | 0, _ => rfl
-  | n + 1, e =>
-    whnfStep_fst_proj d _ _ (fun e' => whnfLoop_fst_proj d n e') e
+    ∀ (n fires : Nat) (e : Expr),
+      (whnfLoop (pairFns r₁ r₂ h) env d n fires e).val.1 = whnfLoop r₁ env d n fires e
+  | 0, _, _ => rfl
+  | n + 1, fires, e =>
+    whnfStep_fst_proj d _ _ (fun e' => whnfLoop_fst_proj d n fires e') _ _
+      (fun t e' => by
+        cases fires with
+        | zero => rfl
+        | succ f => exact whnfLoop_fst_proj d n f e') e
 
 theorem whnfLoop_snd_proj (d : Nat) :
-    ∀ (n : Nat) (e : Expr),
-      (whnfLoop (pairFns r₁ r₂ h) env d n e).val.2 = whnfLoop r₂ env d n e
-  | 0, _ => rfl
-  | n + 1, e =>
-    whnfStep_snd_proj d _ _ (fun e' => whnfLoop_snd_proj d n e') e
+    ∀ (n fires : Nat) (e : Expr),
+      (whnfLoop (pairFns r₁ r₂ h) env d n fires e).val.2 = whnfLoop r₂ env d n fires e
+  | 0, _, _ => rfl
+  | n + 1, fires, e =>
+    whnfStep_snd_proj d _ _ (fun e' => whnfLoop_snd_proj d n fires e') _ _
+      (fun t e' => by
+        cases fires with
+        | zero => rfl
+        | succ f => exact whnfLoop_snd_proj d n f e') e
 
 theorem whnfBody_fst_proj (d : Nat) (e : Expr) :
     (whnfBody (pairFns r₁ r₂ h) env d e).val.1 =
       whnfBody r₁ env d e :=
-  whnfLoop_fst_proj d whnfLoopFuel e
+  whnfLoop_fst_proj d whnfLoopFuel ruleFireBudget e
 
 theorem whnfBody_snd_proj (d : Nat) (e : Expr) :
     (whnfBody (pairFns r₁ r₂ h) env d e).val.2 =
       whnfBody r₂ env d e :=
-  whnfLoop_snd_proj d whnfLoopFuel e
+  whnfLoop_snd_proj d whnfLoopFuel ruleFireBudget e
 
 theorem inferBody_fst_proj (d : Nat) (e : Expr) :
     (inferBody (pairFns r₁ r₂ h) env d e).val.1 =

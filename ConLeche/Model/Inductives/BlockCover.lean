@@ -36,8 +36,9 @@ variable {V : Type w} [SetTheory V]
 
 /-! ## An environment extended by a list of constants -/
 
-theorem find?_append (new : List ConstantInfo) (env : Env) (n : Name) :
-    Env.find? ⟨new ++ env.consts, env.tables⟩ n = (new.find? (·.name == n)).or (env.find? n) := by
+theorem find?_append (new : List ConstantInfo) (env : Env) (n : Name)
+    {ts : List ConLeche.ProjTable} {rs : List (Name × Name)} :
+    Env.find? ⟨new ++ env.consts, ts, rs⟩ n = (new.find? (·.name == n)).or (env.find? n) := by
   simp only [Env.find?, List.find?_append]
 
 theorem find?_append_none {new : List ConstantInfo} {n : Name}
@@ -48,7 +49,8 @@ theorem find?_append_none {new : List ConstantInfo} {n : Name}
 
 theorem find?_append_of_fresh {new : List ConstantInfo} {env : Env}
     (hfresh : ∀ c ∈ new, env.find? c.name = none) {n : Name} {ci : ConstantInfo}
-    (h : env.find? n = some ci) : Env.find? ⟨new ++ env.consts, env.tables⟩ n = some ci := by
+    (h : env.find? n = some ci) {ts : List ConLeche.ProjTable} {rs : List (Name × Name)} :
+    Env.find? ⟨new ++ env.consts, ts, rs⟩ n = some ci := by
   rw [find?_append, find?_append_none (fun c hc hh => by
     have := hfresh c hc; rw [hh, h] at this; exact nomatch this)]
   exact h
@@ -71,13 +73,13 @@ theorem lfpCover_append {env env' : Env} {new : List ConstantInfo} (mp : EnvMode
         ∃ cv caps, env.find? C = some (.indInfo cv caps) ∧ caps.all = []) :
     ∃ mk : EnvModelM V env', mk.base2 = mpX.base2 ∧ mk.lfpBlocks = mp.lfpBlocks ∧
       (LfpCover mp ex → LfpCover mk ex') := by
-  obtain ⟨cs, ts⟩ := env'
+  obtain ⟨cs, ts, rs⟩ := env'
   simp only at henv htab
   subst henv htab
   have hbound := ConLeche.Verify.envWF_constsBound mp.base2.wf
   have hden : ∀ (ψ : Name → Nat) (d : Nat) (e : Expr), ConstsBound env e →
       ∀ {ea : Term}, denote mp.base2.acval env ψ d e = some ea →
-        denote mpX.base2.acval ⟨new ++ env.consts, env.tables⟩ ψ d e = some ea := by
+        denote mpX.base2.acval ⟨new ++ env.consts, env.tables, rs⟩ ψ d e = some ea := by
     intro ψ d e hcb ea h
     refine denote_envExtend_mono (fun hf => hfwd _ _ hf)
       ⟨natLitSupported_mono_of_keep hfwd, strLitSupported_mono_of_keep hfwd⟩
@@ -87,7 +89,7 @@ theorem lfpCover_append {env env' : Env} {new : List ConstantInfo} (mp : EnvMode
   have hok := mp.lfp_ok_transport (acval' := mpX.base2.acval)
     (fun n ci hf _ => hfwd n ci hf) (fun n _ hf _ => hag n (by rw [hf]; rfl))
     (fun ψ d e _ hb hta => hden ψ d e hb hta)
-    (fun _ => ConstsBound.of_isSome (env₁ := ⟨new ++ env.consts, env.tables⟩)
+    (fun _ => ConstsBound.of_isSome (env₁ := ⟨new ++ env.consts, env.tables, rs⟩)
       fun n h => by
         cases hf : env.find? n with
         | none => rw [hf] at h; exact nomatch h
@@ -137,7 +139,7 @@ theorem consSumCtors_consts (nP : Nat) (T : Name) :
   | [], _ => rfl
   | c :: cs, env => by
     rw [show ConLeche.consSumCtors nP T (c :: cs) env
-      = ConLeche.consSumCtors nP T cs ⟨.ctorInfo c.1 nP c.2 T :: env.consts, env.tables⟩ from rfl,
+      = ConLeche.consSumCtors nP T cs ⟨.ctorInfo c.1 nP c.2 T :: env.consts, env.tables, env.rules⟩ from rfl,
       consSumCtors_consts nP T cs]
     simp
 
@@ -147,6 +149,32 @@ theorem consSumCtors_tables (nP : Nat) (T : Name) :
       (ConLeche.consSumCtors nP T L env).tables = env.tables
   | [], _ => rfl
   | _ :: rest, _ => consSumCtors_tables nP T rest _
+
+theorem consSumCtors_rules (nP : Nat) (T : Name) :
+    ∀ (l : List (ConstantVal × Nat)) (env : Env), (ConLeche.consSumCtors nP T l env).rules = env.rules
+  | [], _ => rfl
+  | _ :: l, _ => consSumCtors_rules nP T l _
+
+theorem consBlockCtors_rules (nP : Nat) :
+    ∀ (L : List (Name × List (ConstantVal × Nat))) (env : Env),
+      (ConLeche.consBlockCtors nP L env).rules = env.rules
+  | [], _ => rfl
+  | (T, l) :: L, env => by
+    rw [show ConLeche.consBlockCtors nP ((T, l) :: L) env
+      = ConLeche.consBlockCtors nP L (ConLeche.consSumCtors nP T l env) from rfl,
+      consBlockCtors_rules nP L, consSumCtors_rules]
+
+theorem consBlockInds_rules {p₁ : BlockShape} {isRec : Bool} :
+    ∀ (cvs : List ConstantVal) (i : Nat) (env : Env),
+      (ConLeche.consBlockInds p₁ isRec cvs i env).rules = env.rules
+  | [], _, _ => rfl
+  | _ :: rest, i, _ => consBlockInds_rules (p₁ := p₁) (isRec := isRec) rest (i + 1) _
+
+theorem consBlockRecsT_rules {q : BlockShape} :
+    ∀ (m : Nat) (out : List (ConstantVal × ConLeche.TargetMajor × List Expr)) (env : Env),
+      (ConLeche.consBlockRecsT q m out env).rules = env.rules
+  | _, [], _ => rfl
+  | m, _ :: rest, _ => consBlockRecsT_rules (q := q) (m + 1) rest _
 
 theorem consBlockCtors_tables (nP : Nat) :
     ∀ (L : List (Name × List (ConstantVal × Nat))) (env : Env),
@@ -188,7 +216,7 @@ theorem consBlockInds_consts {p₁ : BlockShape} {isRec : Bool} :
   | [], _, _ => ⟨[], rfl, fun _ h => nomatch h⟩
   | cv :: rest, i, env => by
     obtain ⟨new, hnew, hall⟩ := consBlockInds_consts (p₁ := p₁) (isRec := isRec) rest (i + 1)
-      ⟨.indInfo cv (ConLeche.blockCapsAt p₁ i isRec) :: env.consts, env.tables⟩
+      ⟨.indInfo cv (ConLeche.blockCapsAt p₁ i isRec) :: env.consts, env.tables, env.rules⟩
     refine ⟨new ++ [.indInfo cv (ConLeche.blockCapsAt p₁ i isRec)], ?_, fun c hc => ?_⟩
     · show (ConLeche.consBlockInds p₁ isRec rest (i + 1) _).consts = _
       rw [hnew]; simp
@@ -211,7 +239,7 @@ theorem consBlockRecsT_consts {q : BlockShape} :
     obtain ⟨new, hnew, hall⟩ := consBlockRecsT_consts (q := q)
       (m + 1) rest ⟨.recInfo cv (q.majorIdxAt m) (q.rulePrefixAt m)
         (ConLeche.recKExpected q M) (ConLeche.generatedRules (q.rulePrefixAt m) M rhss)
-          :: env.consts, env.tables⟩
+          :: env.consts, env.tables, env.rules⟩
     refine ⟨new ++ [.recInfo cv (q.majorIdxAt m) (q.rulePrefixAt m)
         (ConLeche.recKExpected q M) (ConLeche.generatedRules (q.rulePrefixAt m) M rhss)],
       ?_, fun c hc => ?_⟩

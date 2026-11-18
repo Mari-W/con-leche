@@ -662,18 +662,18 @@ theorem denote_substConst0 {acval : Name → (Name → Nat) → Term}
     (hv : denote acval env ψ 0 v = some (A ψ))
     (hvf : v.hasFvar = false) :
     ∀ (d : Nat) (e : Expr), shallowE e = true →
-      denote (acvalWith acval c A) ⟨c₀ :: env.consts, env.tables⟩ ψ d e
+      denote (acvalWith acval c A) ⟨c₀ :: env.consts, env.tables, env.rules⟩ ψ d e
         = denote acval env ψ d (Expr.substConst0 c v e) := by
   intro d e
   induction e with
   | sort u =>
     intro _
-    show denote (acvalWith acval c A) ⟨c₀ :: env.consts, env.tables⟩ ψ d (.sort u)
+    show denote (acvalWith acval c A) ⟨c₀ :: env.consts, env.tables, env.rules⟩ ψ d (.sort u)
       = denote acval env ψ d (.sort u)
     rw [denote_sort, denote_sort]
   | fvar idx ty =>
     intro _
-    show denote (acvalWith acval c A) ⟨c₀ :: env.consts, env.tables⟩ ψ d
+    show denote (acvalWith acval c A) ⟨c₀ :: env.consts, env.tables, env.rules⟩ ψ d
         (.fvar idx ty) = denote acval env ψ d (.fvar idx ty)
     rw [denote_fvar, denote_fvar]
   | const n us =>
@@ -684,9 +684,9 @@ theorem denote_substConst0 {acval : Name → (Name → Nat) → Term}
       · subst hus
         rw [show Expr.substConst0 n v (.const n []) = v from by
           rw [Expr.substConst0, ite_eq_left ⟨rfl, rfl⟩]]
-        have hfc : (⟨c₀ :: env.consts, env.tables⟩ : Env).find? n = some c₀ := by
+        have hfc : (⟨c₀ :: env.consts, env.tables, env.rules⟩ : Env).find? n = some c₀ := by
           rw [ConLeche.Env.find?_cons, ite_eq_left hname]
-        have h1 : denote (acvalWith acval n A) ⟨c₀ :: env.consts, env.tables⟩ ψ d
+        have h1 : denote (acvalWith acval n A) ⟨c₀ :: env.consts, env.tables, env.rules⟩ ψ d
             (.const n []) = some (acvalWith acval n A n ψ) :=
           denote_levelless_const hfc hlp
         rw [h1, show acvalWith acval n A n = A from acvalWith_self]
@@ -694,14 +694,14 @@ theorem denote_substConst0 {acval : Name → (Name → Nat) → Term}
       · rw [show Expr.substConst0 n v (.const n us) = .const n us from
           by rw [Expr.substConst0, ite_eq_right (fun h => hus h.2)]]
         rw [denote, denote]
-        rw [show (⟨c₀ :: env.consts, env.tables⟩ : Env).find? n = some c₀ from by
+        rw [show (⟨c₀ :: env.consts, env.tables, env.rules⟩ : Env).find? n = some c₀ from by
           rw [ConLeche.Env.find?_cons, ite_eq_left hname], hfresh]
         dsimp only
         rw [ite_eq_right (by rw [hlp]; simpa using hus)]
     · rw [show Expr.substConst0 c v (.const n us) = .const n us from by
         rw [Expr.substConst0, ite_eq_right (fun h => hn h.1)]]
       rw [denote, denote]
-      rw [show (⟨c₀ :: env.consts, env.tables⟩ : Env).find? n = env.find? n from by
+      rw [show (⟨c₀ :: env.consts, env.tables, env.rules⟩ : Env).find? n = env.find? n from by
         rw [ConLeche.Env.find?_cons,
           ite_eq_right (fun hh => hn (hh.symm.trans hname))]]
       cases hf : env.find? n with
@@ -801,12 +801,12 @@ extension — its shape is env-free, and its `Bool`-codomain storedness
 conjunct is descended separately by the caller). -/
 theorem natOpStoredOk_descend {c₀ : ConstantInfo} {n : Name}
     (hne : n ≠ c₀.name)
-    (hok : ConLeche.natOpStoredOk ⟨c₀ :: env.consts, env.tables⟩ n = true) :
+    (hok : ConLeche.natOpStoredOk ⟨c₀ :: env.consts, env.tables, env.rules⟩ n = true) :
     ∃ cvn vn hn, env.find? n = some (.defnInfo cvn vn hn) ∧
       cvn.levelParams = [] ∧
-      ConLeche.natOpTyPinned ⟨c₀ :: env.consts, env.tables⟩ n cvn.type = true := by
+      ConLeche.natOpTyPinned ⟨c₀ :: env.consts, env.tables, env.rules⟩ n cvn.type = true := by
   unfold ConLeche.natOpStoredOk at hok
-  cases hf2 : (⟨c₀ :: env.consts, env.tables⟩ : Env).find? n with
+  cases hf2 : (⟨c₀ :: env.consts, env.tables, env.rules⟩ : Env).find? n with
   | none => rw [hf2] at hok; exact nomatch hok
   | some ci =>
     rw [hf2] at hok
@@ -891,17 +891,17 @@ theorem natOps_entry_cons (mp : EnvModelM V env) {φ : Name → Nat}
     (hprev : NatOps mp.base2 φ)
     {c₀ : ConstantInfo} {A : (Name → Nat) → Term}
     (hfresh : env.find? c₀.name = none)
-    (m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables⟩)
+    (m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables, env.rules⟩)
     (hac : m₂.acval = acvalWith mp.base2.acval c₀.name A)
     {c : Name} (hcN : c ∈ ConLeche.natOpNames) (hne : c ≠ c₀.name)
     {cv' : ConstantVal} {v' : Expr} {hint' : ReducibilityHint}
-    (hf₂ : (⟨c₀ :: env.consts, env.tables⟩ : Env).find? c
+    (hf₂ : (⟨c₀ :: env.consts, env.tables, env.rules⟩ : Env).find? c
       = some (.defnInfo cv' v' hint')) :
-    natOpGuard (⟨c₀ :: env.consts, env.tables⟩ : Env) c = true ∧
-    ConLeche.natOpTyPinned (⟨c₀ :: env.consts, env.tables⟩ : Env) c cv'.type = true ∧
+    natOpGuard (⟨c₀ :: env.consts, env.tables, env.rules⟩ : Env) c = true ∧
+    ConLeche.natOpTyPinned (⟨c₀ :: env.consts, env.tables, env.rules⟩ : Env) c cv'.type = true ∧
     ∀ eq ∈ ConLeche.natOpEquations 0 c, ∃ L R,
-      denote m₂.acval ⟨c₀ :: env.consts, env.tables⟩ φ 2 eq.1 = some L ∧
-      denote m₂.acval ⟨c₀ :: env.consts, env.tables⟩ φ 2 eq.2 = some R ∧
+      denote m₂.acval ⟨c₀ :: env.consts, env.tables, env.rules⟩ φ 2 eq.1 = some L ∧
+      denote m₂.acval ⟨c₀ :: env.consts, env.tables, env.rules⟩ φ 2 eq.2 = some R ∧
       ∀ (ρ : Nat → V) (x y : V),
         x ∈ˢ interp V ρ (m₂.acval ConLeche.natName φ) →
         y ∈ˢ interp V ρ (m₂.acval ConLeche.natName φ) →
@@ -952,7 +952,7 @@ theorem natOps_cons_fresh (mp : EnvModelM V env) {φ : Name → Nat}
     (hfresh : env.find? c₀.name = none)
     (hnothead : (∀ cv v hint, c₀ ≠ .defnInfo cv v hint) ∨
       c₀.name ∉ ConLeche.natOpNames)
-    (m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables⟩)
+    (m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables, env.rules⟩)
     (hac : m₂.acval = acvalWith mp.base2.acval c₀.name A) :
     NatOps m₂ φ := by
   intro c hcN cv' v' hint' hf₂
@@ -974,7 +974,7 @@ theorem natSelfHead_install (mp : EnvModelM V env) {φ : Name → Nat}
     {lps : List Name} {type' value' : Expr} {hint : ReducibilityHint}
     (hfresh : env.find? c = none)
     (hpin : ConLeche.natOpTyPinned
-      (⟨.defnInfo ⟨c, lps, type'⟩ value' hint :: env.consts, env.tables⟩ : Env)
+      (⟨.defnInfo ⟨c, lps, type'⟩ value' hint :: env.consts, env.tables, env.rules⟩ : Env)
       c type' = true)
     (hs : natLitSupported env = true)
     {Ta : (Name → Nat) → Term}
@@ -1078,11 +1078,11 @@ theorem natOps_install (mp : EnvModelM V env) {φ : Name → Nat}
     (hlpcv : lps = [])
     (hs : natLitSupported env = true)
     (hg2 : natOpGuard
-      (⟨.defnInfo ⟨c, lps, type'⟩ value' hint :: env.consts, env.tables⟩ : Env) c
+      (⟨.defnInfo ⟨c, lps, type'⟩ value' hint :: env.consts, env.tables, env.rules⟩ : Env) c
       = true)
     (hdepsOk : (ConLeche.natOpDeps c).all
       (ConLeche.natOpStoredOk
-        (⟨.defnInfo ⟨c, lps, type'⟩ value' hint :: env.consts, env.tables⟩ : Env))
+        (⟨.defnInfo ⟨c, lps, type'⟩ value' hint :: env.consts, env.tables, env.rules⟩ : Env))
       = true)
     (hruns : NatEqsRun F env
       ((ConLeche.natOpEquations 0 c).map fun eq =>
@@ -1103,7 +1103,7 @@ theorem natOps_install (mp : EnvModelM V env) {φ : Name → Nat}
       ∃ ciB, env.find? ConLeche.boolName = some ciB ∧
         ciB.toConstantVal.levelParams = [])
     (m₂ : EnvModel V
-      ⟨.defnInfo ⟨c, lps, type'⟩ value' hint :: env.consts, env.tables⟩)
+      ⟨.defnInfo ⟨c, lps, type'⟩ value' hint :: env.consts, env.tables, env.rules⟩)
     (hac : m₂.acval
       = acvalWith mp.base2.acval c A) :
     NatOps m₂ φ := by
@@ -1131,7 +1131,7 @@ theorem natOps_install (mp : EnvModelM V env) {φ : Name → Nat}
     ConLeche.Verify.natOpGuard_stored hg2
   have tr : ∀ {n : Name}, n ≠ cq →
       ConLeche.Verify.storedNoLevels
-        (⟨.defnInfo ⟨cq, lps, type'⟩ value' hint :: env.consts, env.tables⟩ : Env) n →
+        (⟨.defnInfo ⟨cq, lps, type'⟩ value' hint :: env.consts, env.tables, env.rules⟩ : Env) n →
       ConLeche.Verify.storedNoLevels env n := fun hne h =>
     ConLeche.Verify.storedNoLevels_of_cons
       (ci := .defnInfo ⟨cq, lps, type'⟩ value' hint) rfl hne h
@@ -1170,7 +1170,7 @@ theorem natOps_install (mp : EnvModelM V env) {φ : Name → Nat}
       denote mp.base2.acval env φ 2 (Expr.substConst0 cq value' e)
         = some ea →
       denote m₂.acval
-          ⟨.defnInfo ⟨cq, lps, type'⟩ value' hint :: env.consts, env.tables⟩ φ 2 e
+          ⟨.defnInfo ⟨cq, lps, type'⟩ value' hint :: env.consts, env.tables, env.rules⟩ φ 2 e
         = some ea := by
     intro e hsh ea h
     rw [hac, denote_substConst0 (c₀ := .defnInfo ⟨cq, lps, type'⟩
@@ -1229,10 +1229,10 @@ theorem natOps_install (mp : EnvModelM V env) {φ : Name → Nat}
       (∀ ρ : Nat → V, Sat V (natCtx2 mp.base2 φ) ρ →
         WellDenoted V ρ ra ∧ interp V ρ ra ∈ˢ S ρ) →
       ∃ L R, denote m₂.acval
-          ⟨.defnInfo ⟨cq, lps, type'⟩ value' hint :: env.consts, env.tables⟩ φ 2
+          ⟨.defnInfo ⟨cq, lps, type'⟩ value' hint :: env.consts, env.tables, env.rules⟩ φ 2
           e1 = some L ∧
         denote m₂.acval
-          ⟨.defnInfo ⟨cq, lps, type'⟩ value' hint :: env.consts, env.tables⟩ φ 2
+          ⟨.defnInfo ⟨cq, lps, type'⟩ value' hint :: env.consts, env.tables, env.rules⟩ φ 2
           e2 = some R ∧
         ∀ (ρ : Nat → V) (x y : V),
           x ∈ˢ interp V ρ (m₂.acval ConLeche.natName φ) →

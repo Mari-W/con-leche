@@ -25,7 +25,17 @@ namespace ConLeche
   simp [FBase.find?]
 
 /-- `mkFEnv` has the empty base layer. -/
-@[simp] theorem mkFEnv_base (env : Env) : (mkFEnv env).base = {} := rfl
+@[simp] theorem mkFEnv_base (env : Env) : (mkFEnv env).base = { rls := mkRlsGo env.rules } := rfl
+
+/-- A base layer carrying only rules answers no constant. -/
+@[simp] theorem FBase.find?_rls (r : Std.HashMap Name (List Name)) (n : Name) :
+    ({ rls := r } : FBase).find? n = none := by
+  simp [FBase.find?]
+
+/-- A base layer carrying only rules answers no table. -/
+@[simp] theorem FBase.findTable?_rls (r : Std.HashMap Name (List Name)) (T : Name) :
+    ({ rls := r } : FBase).findTable? T = none := by
+  simp [FBase.findTable?]
 
 /-- The index's specification: `List.find?` (the build inserts from the back, so the newest constant
 of a name wins). -/
@@ -44,9 +54,43 @@ theorem mkFEnv_find? (env : Env) (n : Name) :
   rw [FEnv.lookup_eq]
   show (match (mkIdxGo env.consts)[n]? with
         | some ci => some ci
-        | none => ({} : FBase).find? n) = _
-  rw [mkIdxGo_getElem?, FBase.find?_empty, Env.find?]
+        | none => ({ rls := mkRlsGo env.rules } : FBase).find? n) = _
+  rw [mkIdxGo_getElem?, FBase.find?_rls, Env.find?]
   cases env.consts.find? (·.name == n) <;> rfl
+
+/-! ## The rule map agrees with `Env.rulesFor` -/
+
+/-- The rule map's specification: the rules of a head, newest first. -/
+theorem mkRlsGo_getD (c : Name) : ∀ rs : List (Name × Name),
+    (mkRlsGo rs).getD c [] = rs.filterMap fun r => if r.1 == c then some r.2 else none
+  | [] => by simp [mkRlsGo]
+  | (c', t) :: rs => by
+    show ((mkRlsGo rs).insert c' (t :: (mkRlsGo rs).getD c' [])).getD c [] = _
+    rw [Std.HashMap.getD_insert, List.filterMap_cons]
+    by_cases hc : c' == c
+    · have : c' = c := by simpa using hc
+      subst this
+      simp [mkRlsGo_getD c' rs]
+    · simp [hc, mkRlsGo_getD c rs]
+
+/-- The per-entry-call rule map computes `Env.rulesFor`. -/
+theorem mkFEnv_rulesFor (env : Env) (c : Name) : (mkFEnv env).rulesFor c = env.rulesFor c := by
+  unfold FEnv.rulesFor Env.rulesFor
+  rw [mkFEnv_base]
+  show ((mkRlsGo env.rules).getD c []).filter _ = _
+  rw [mkRlsGo_getD]
+  simp only [mkFEnv_find?]
+  induction env.rules with
+  | nil => rfl
+  | cons r rs ih =>
+    rw [List.filterMap_cons, List.filterMap_cons]
+    by_cases hc : r.1 == c
+    · simp only [hc, ↓reduceIte, Bool.true_and, List.filter_cons]
+      cases (env.find? r.2).isSome <;> simp_all
+    · simp_all
+
+theorem mkFEnv_rulesFor_fun (env : Env) : (mkFEnv env).rulesFor = env.rulesFor :=
+  funext (mkFEnv_rulesFor env)
 
 /-! ## The table map agrees with `Env.findTable?` -/
 
@@ -69,15 +113,16 @@ theorem mkFEnv_rawTable? (env : Env) (T : Name) :
     (mkFEnv env).rawTable? T = env.tables.find? (·.structName == T) := by
   show (match (mkTblsGo env.tables)[T]? with
     | some t => some t
-    | none => ({} : FBase).findTable? T) = _
-  rw [mkTblsGo_getElem?, FBase.findTable?_empty]
+    | none => ({ rls := mkRlsGo env.rules } : FBase).findTable? T) = _
+  rw [mkTblsGo_getElem?, FBase.findTable?_rls]
   cases env.tables.find? (·.structName == T) <;> rfl
 
 /-- **The index's table lookup is the environment's** (both gate on the
 structure's constant). -/
 theorem mkFEnv_findTable? (env : Env) (T : Name) :
     (mkFEnv env).findTable? T = env.findTable? T := by
-  unfold FEnv.findTable? Env.findTable?
+  rw [FEnv.findTable?_of_chk rfl]
+  unfold Env.findTable?
   rw [mkFEnv_find?, mkFEnv_rawTable?]
 
 /-- The indexed projection lookup computes `Env.findProj?`. -/

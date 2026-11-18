@@ -218,7 +218,9 @@ about a name the kernel fabricates:
 * the literal-support names (`Nat`, `String` and its constructor form's
   constants) are no members when the literal support is on;
 * the `Bool` constructors are no members when `Nat.beq`/`Nat.ble` are
-  stored (literal acceleration produces them). -/
+  stored (literal acceleration produces them);
+* stored theorems are no members (a rewrite rule's right side comes from
+  its theorem's type). -/
 @[expose] def WhnfNamesFree (env : Env) (names : List Name) : Prop :=
   (∀ n ci, env.find? n = some ci → n ∉ names →
     ci.toConstantVal.type.occDeep names = false) ∧
@@ -232,7 +234,43 @@ about a name the kernel fabricates:
   (strLitStored env = true →
     stringName ∉ names ∧ stringOfListName ∉ names ∧ listNilName ∉ names ∧
       listConsName ∉ names ∧ charName ∉ names ∧ charOfNatName ∉ names) ∧
-  boolTrueName ∉ names ∧ boolFalseName ∉ names
+  boolTrueName ∉ names ∧ boolFalseName ∉ names ∧
+  (∀ n cv, env.find? n = some (.thmInfo cv) → n ∉ names)
+
+/-- The application subterms of a member-free term are member-free. -/
+theorem appSubterms_occDeep {names : List Name} :
+    ∀ (e : Expr), e.occDeep names = false → ∀ x ∈ appSubterms e, x.occDeep names = false := by
+  intro e
+  induction e with
+  | app f a ihf iha =>
+    intro h x hx
+    have h' := h
+    simp only [Expr.occDeep, Bool.or_eq_false_iff] at h'
+    simp only [appSubterms, List.mem_cons, List.mem_append] at hx
+    rcases hx with rfl | hx | hx
+    · exact h
+    · exact ihf h'.1 x hx
+    · exact iha h'.2 x hx
+  | _ =>
+    intro h x hx
+    simp only [appSubterms, List.mem_singleton] at hx
+    exact hx ▸ h
+
+/-- Peeling a member-free telescope along member-free arguments leaves a member-free residual. -/
+theorem piResidual_occDeep {names : List Name} :
+    ∀ {as : List Expr} {t res : Expr}, piResidual t as = some res →
+      t.occDeep names = false → (∀ x ∈ as, x.occDeep names = false) → res.occDeep names = false
+  | [], t, res, h, ht, _ => by
+    simp only [piResidual, Option.some.injEq] at h
+    exact h ▸ ht
+  | a :: as, t, res, h, ht, has => by
+    cases t with
+    | forallE ty b =>
+      simp only [Expr.occDeep, Bool.or_eq_false_iff] at ht
+      exact piResidual_occDeep (as := as) (t := b.instantiate1 a) h
+        (Expr.occDeep_instantiate1 (has a List.mem_cons_self) b 0 ht.2)
+        (fun x hx => has x (List.mem_cons_of_mem _ hx))
+    | _ => simp [piResidual] at h
 
 /-! ## Literals -/
 
@@ -629,31 +667,42 @@ theorem whnfPres_occDeep {env : Env} {names : List Name} (hN : WhnfNamesFree env
             Expr.occDeep_getAppArgs ihLoop
             (fun s hs => strLitToConstructor_occDeep hN hs s) hr h2)
     · -- whnf: the loop's own step budget
-      have hloop : ∀ (n : Nat) {d : Nat} {e e' : Expr},
-          whnfLoop (pureFns mode false env fuel) env d n e = .ok e' →
+      have hloop : ∀ (n fires : Nat) {d : Nat} {e e' : Expr},
+          whnfLoop (pureFns mode false env fuel) env d n fires e = .ok e' →
           e.occDeep names = false → e'.occDeep names = false := by
         intro n
         induction n with
-        | zero => intro _ _ _ h _; exact nomatch h
+        | zero => intro _ _ _ _ h _; exact nomatch h
         | succ n ihN =>
-          intro d e e' h he
+          intro fires d e e' h he
           obtain ⟨e₁, hwc, hcase⟩ := whnfStep_inv h
           have h1 := ihCore hwc he
-          rcases hcase with ⟨e₂, hrn, hfin⟩ | ⟨-, e₂, hu, hcont⟩ | ⟨-, -, rfl⟩
+          rcases hcase with ⟨e₂, hrn, hfin⟩ | ⟨-, t, e₂, hrw, hcont⟩ | ⟨-, -, e₂, hu, hcont⟩ |
+            ⟨-, -, -, rfl⟩
           · have h₂ : e₂.occDeep names = false := by
               rcases reduceNat_inv_bool hrn with ⟨k, rfl⟩ | ⟨bn, rfl, hbn⟩
               · rfl
-              · obtain ⟨ht, hf⟩ := hN.2.2.2.2.2.2.2
+              · obtain ⟨ht, hf, -⟩ := hN.2.2.2.2.2.2.2
                 rcases hbn with rfl | rfl
                 · exact Expr.occDeep_const ht
                 · exact Expr.occDeep_const hf
             rcases hfin with ⟨-, rfl⟩ | hcont
             · exact h₂
-            · exact ihN hcont h₂
-          · exact ihN hcont (unfoldDefinition_occDeep hN hu h1)
+            · exact ihN _ hcont h₂
+          · obtain ⟨cv, args, us, u, A, c, ls, hf, hres, -, -, hsub, -⟩ :=
+              rewriteAttempt_inv (rewriteStep_inv hrw)
+            have hT := hN.1 t _ hf (hN.2.2.2.2.2.2.2.2.2 t cv hf)
+            have hR := piResidual_occDeep hres
+              (by rw [Expr.occDeep_instantiateLevelParams]; exact hT)
+              (fun x hx => appSubterms_occDeep e₁ h1 x (hsub x hx))
+            simp only [Expr.occDeep, Bool.or_eq_false_iff] at hR
+            cases fires with
+            | zero => exact nomatch hcont
+            | succ f => exact ihN _ hcont hR.2
+          · exact ihN _ hcont (unfoldDefinition_occDeep hN hu h1)
           · exact h1
       intro d e e' h he
-      exact hloop whnfLoopFuel h he
+      exact hloop whnfLoopFuel ruleFireBudget h he
     · -- inferTypeCore
       intro d e t h he
       cases e with
@@ -1394,6 +1443,6 @@ theorem whnfNamesFree_formers {env envI : Env} (hwf : EnvWF env)
     rw [htyO] at hrO
     simp only [Expr.constsResolve, Bool.and_eq_true] at hrO
     exact ⟨hold _ hrO.2, hO', hNil', hCons', hold _ hrO.1.2, hCO'⟩
-  · exact hBool
+  · exact ⟨hBool.1, hBool.2, fun n cv hf => hnotInd n _ hf fun _ _ h => nomatch h⟩
 
 end ConLeche

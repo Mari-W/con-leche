@@ -2,6 +2,7 @@ module
 
 public import ConLeche.Verify.EnvBound
 import ConLeche.Kernel.DeclCheck
+import ConLeche.Verify.EnvWF
 
 public section
 
@@ -31,34 +32,39 @@ theorem mkFEnv_env (env : Env) : (mkFEnv env).env = env := rfl
 variable {mode : CheckMode}
 variable {pins : List NatOpPinSet}
 
-theorem constsResolveF_eq (env : Env) :
-    ∀ (e : Expr), e.constsResolveF (mkFEnv env) = e.constsResolve env
+/-- The index's resolution guard reads its lookups alone. -/
+theorem constsResolveF_of_find {fe : FEnv} {env : Env} (h : fe.find? = env.find?) :
+    ∀ (e : Expr), e.constsResolveF fe = e.constsResolve env
   | .bvar _ | .sort _ => rfl
   | .lit (.natVal _) => by
-    simp only [Expr.constsResolveF, Expr.constsResolve, mkFEnv_find?]
+    simp only [Expr.constsResolveF, Expr.constsResolve, h]
   | .lit (.strVal _) => by
-    simp only [Expr.constsResolveF, Expr.constsResolve, mkFEnv_find?]
+    simp only [Expr.constsResolveF, Expr.constsResolve, h]
   | .const n _ => by
-    simp only [Expr.constsResolveF, Expr.constsResolve, mkFEnv_find?]
+    simp only [Expr.constsResolveF, Expr.constsResolve, h]
   | .fvar _ ty => by
     simp only [Expr.constsResolveF, Expr.constsResolve,
-      constsResolveF_eq env ty]
+      constsResolveF_of_find h ty]
   | .app f a => by
     simp only [Expr.constsResolveF, Expr.constsResolve,
-      constsResolveF_eq env f, constsResolveF_eq env a]
+      constsResolveF_of_find h f, constsResolveF_of_find h a]
   | .lam ty body => by
     simp only [Expr.constsResolveF, Expr.constsResolve,
-      constsResolveF_eq env ty, constsResolveF_eq env body]
+      constsResolveF_of_find h ty, constsResolveF_of_find h body]
   | .forallE ty body => by
     simp only [Expr.constsResolveF, Expr.constsResolve,
-      constsResolveF_eq env ty, constsResolveF_eq env body]
+      constsResolveF_of_find h ty, constsResolveF_of_find h body]
   | .letE ty val body => by
     simp only [Expr.constsResolveF, Expr.constsResolve,
-      constsResolveF_eq env ty, constsResolveF_eq env val,
-      constsResolveF_eq env body]
+      constsResolveF_of_find h ty, constsResolveF_of_find h val,
+      constsResolveF_of_find h body]
   | .proj s _ e => by
-    simp only [Expr.constsResolveF, Expr.constsResolve, mkFEnv_find?,
-      constsResolveF_eq env e]
+    simp only [Expr.constsResolveF, Expr.constsResolve, h,
+      constsResolveF_of_find h e]
+
+theorem constsResolveF_eq (env : Env) :
+    ∀ (e : Expr), e.constsResolveF (mkFEnv env) = e.constsResolve env :=
+  constsResolveF_of_find (funext (mkFEnv_find? env))
 
 theorem natOpCodF_eq (env : Env) (c : Name) (e : Expr) :
     natOpCodF (mkFEnv env) c e = natOpCod env c e := by
@@ -206,7 +212,107 @@ it.  The monadic `_push` equations that consume it are stated at the
 executing monad, in `ConLeche/Verify/Cached/BridgeCSDecl.lean`. -/
 
 theorem push_mkFEnv (env : Env) (ci : ConstantInfo) :
-    (mkFEnv env).push ci = mkFEnv ⟨ci :: env.consts, env.tables⟩ :=
+    (mkFEnv env).push ci = mkFEnv ⟨ci :: env.consts, env.tables, env.rules⟩ :=
   FEnv.ext_parts rfl rfl rfl rfl rfl
+
+/-! ## The views below a block under `mkFEnv` -/
+
+/-- A cut is the constants past the name's first entry. -/
+theorem Env.suffixAfter_eq_findIdx (n : Name) :
+    ∀ cs : List ConstantInfo, Env.suffixAfter cs n =
+      match cs.findIdx? (·.name == n) with
+      | some j => cs.drop (j + 1)
+      | none => []
+  | [] => rfl
+  | c :: cs => by
+    rw [Env.suffixAfter_cons, List.findIdx?_cons]
+    by_cases h : c.name = n
+    · simp [h]
+    · have hb : (c.name == n) = false := by simpa using h
+      simp only [h, ↓reduceIte, hb, Bool.false_eq_true, Env.suffixAfter_eq_findIdx n cs]
+      cases cs.findIdx? (·.name == n) <;> rfl
+
+/-- An index without an overlay looks up its map, then its base. -/
+theorem FEnv.find?_ofParts_nil (e : Env) (i : Std.HashMap Name ConstantInfo) (b : FBase)
+    (t : Std.HashMap Name ProjTable) (n : Name) :
+    (FEnv.ofParts e i b [] t).find? n = match i[n]? with
+      | some ci => some ci
+      | none => b.find? n := by
+  show lookupIn i b n = _
+  exact lookupIn_eq i b n
+
+/-- A base with an empty map answers nothing. -/
+theorem FBase.find?_of_idx_empty {b : FBase} (h : b.idx = ∅) (n : Name) : b.find? n = none := by
+  simp [FBase.find?, h]
+
+/-- The index under the `k` newest constants of `mkFEnv` answers as the constants past them. -/
+theorem mkFEnv_dropTop_find (env : Env) (k : Nat) :
+    ((mkFEnv env).dropTop k).find? = fun m => (env.consts.drop k).find? (·.name == m) := by
+  funext m
+  unfold FEnv.dropTop
+  rw [show (mkFEnv env).env = env from rfl, mkFEnv_base]
+  split
+  · rw [FEnv.find?_ofParts_nil, mkIdxGo_getElem?]
+    cases (env.consts.drop k).find? (·.name == m) with
+    | none => exact FBase.find?_of_idx_empty rfl m
+    | some _ => rfl
+  · rename_i hk
+    rw [List.drop_eq_nil_of_le (by omega), FEnv.find?_ofParts_nil, Std.HashMap.getElem?_empty,
+      FBase.find?_of_idx_empty rfl]
+    rfl
+
+/-- The view below a name's entry under `mkFEnv` answers as the constants past it. -/
+theorem mkFEnv_below_find (env : Env) (n : Name) (k : Nat) :
+    ((mkFEnv env).below n k).find? =
+      fun m => ((Env.suffixAfter env.consts n).drop k).find? (·.name == m) := by
+  rw [Env.suffixAfter_eq_findIdx]
+  unfold FEnv.below
+  rw [show (mkFEnv env).env = env from rfl]
+  cases env.consts.findIdx? (·.name == n) with
+  | some j =>
+    simp only
+    rw [mkFEnv_dropTop_find, List.drop_drop]
+  | none =>
+    funext m
+    simp only
+    rw [FEnv.find?_ofParts_nil, Std.HashMap.getElem?_empty, FBase.find?_of_idx_empty rfl]
+    simp
+
+/-- **The view below a name's entry under `mkFEnv` answers the table lookups of the environment
+cut there.** -/
+theorem mkFEnv_below_findTable (env : Env) (n : Name) (k : Nat) :
+    ((mkFEnv env).below n k).findTable? =
+      (env.cutAt ((Env.suffixAfter env.consts n).drop k)).findTable? := by
+  funext T
+  have hf := mkFEnv_below_find env n k
+  have hraw : ((mkFEnv env).below n k).rawTable? T = env.tables.find? (·.structName == T) := by
+    unfold FEnv.below FEnv.dropTop
+    rw [show (mkFEnv env).env = env from rfl]
+    have : (mkFEnv env).rawTable? T = env.tables.find? (·.structName == T) := mkFEnv_rawTable? env T
+    split
+    · split <;> exact this
+    · exact this
+  have hchk : ((mkFEnv env).below n k).base.chk = true := by
+    unfold FEnv.below FEnv.dropTop
+    split
+    · split <;> rfl
+    · rfl
+  unfold FEnv.findTable? Env.findTable?
+  rw [hchk, hraw, hf]
+  simp only [↓reduceIte, Env.find?, Env.cutAt]
+  split
+  · rename_i hfd
+    simp only [hfd, ↓reduceIte]
+    rw [Env.liveTables_find]
+    cases ht : env.tables.find? (·.structName == T) with
+    | none => rfl
+    | some t =>
+      have hname : t.structName = T := by simpa using List.find?_some ht
+      simp only [Option.filter, Env.tableOkAt, hname, hfd, Bool.true_and]
+      rw [show (fun x => Expr.constsResolveF ((mkFEnv env).below n k) x)
+          = fun x => x.constsResolve ⟨(Env.suffixAfter env.consts n).drop k, [], []⟩ from
+        funext (constsResolveF_of_find (by rw [hf]; rfl))]
+  · rename_i hfd
+    simp only [hfd, Bool.false_eq_true, ↓reduceIte]
 
 end ConLeche

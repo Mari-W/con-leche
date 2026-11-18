@@ -879,6 +879,20 @@ FALLBACK = {
     ('ConLeche.Verify.Inductives.TargetAuxFire', 'ConLeche.Verify.Inductives.RecStage'),
     ('ConLeche.Verify.Cached.TargetRecC', 'ConLeche.Verify.Inductives.NestedRead'),
     ('ConLeche.Verify.Cached.GenRecC', 'ConLeche.Verify.Inductives.TargetAuxFire'),
+    # lane rewrite-rules: five re-exports the model calls demotable although
+    # `pub.tsv` lists each target in the module's public interface.  Each
+    # MEASURED by demoting it alone.  `ViewCongr`'s `Twin.famBelow` states
+    # `FEnv.BelowReads` (unknown constant, `ViewCongr.lean:141`); `CheckerF`'s
+    # statements name `Env`, `FEnv.find?`, `mkFEnv` (unknown identifier,
+    # `CheckerF.lean:26`); `NestContInv`'s whnfB lemmas take `EnvWF`
+    # (`NestContInv.lean:196`); `NestNfScope` and `PosDerivInv` take the new
+    # `WhnfScoped`/`WhnfBounded` hypotheses (`NestNfScope.lean:104`,
+    # `PosDerivInv.lean:173`).
+    ('ConLeche.Verify.Cached.ViewCongr', 'ConLeche.Verify.Cached.BlockOverlay'),
+    ('ConLeche.Verify.CheckerF', 'ConLeche.Verify.EnvBound'),
+    ('ConLeche.Verify.Inductives.NestContInv', 'ConLeche.Verify.EnvWF'),
+    ('ConLeche.Verify.Inductives.NestNfScope', 'ConLeche.Verify.Inductives.NestContInv'),
+    ('ConLeche.Verify.Inductives.PosDerivInv', 'ConLeche.Verify.Inductives.NestContInv'),
 }
 
 # `whitepaper/` (task #324) is its own lake library — the paper's Lean

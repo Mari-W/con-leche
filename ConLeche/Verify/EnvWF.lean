@@ -58,12 +58,12 @@ theorem Env.findTable?_of_isSome {env : Env} {T : Name} (hT : (env.find? T).isSo
 
 /-- A table install leaves the constant lookups alone. -/
 @[simp] theorem Env.find?_pushTable (env : Env) (t : ProjTable) :
-    Env.find? ⟨env.consts, t :: env.tables⟩ = env.find? := rfl
+    Env.find? ⟨env.consts, t :: env.tables, env.rules⟩ = env.find? := rfl
 
 /-- A table install answers its structure's name (where it is stored),
 and leaves every other table lookup alone. -/
 theorem Env.findTable?_pushTable (env : Env) (t : ProjTable) (T : Name) :
-    Env.findTable? ⟨env.consts, t :: env.tables⟩ T =
+    Env.findTable? ⟨env.consts, t :: env.tables, env.rules⟩ T =
       if t.structName = T ∧ (env.find? T).isSome = true then some t
       else env.findTable? T := by
   unfold Env.findTable?
@@ -238,6 +238,14 @@ theorem ruleWF_of_recRulesBindB {c : ConstantInfo} (h : recRulesBindB c = true) 
   simp only [Bool.and_eq_true, decide_eq_true_eq] at hg
   exact hg
 
+/-- **The cuts a family's telescope is read at** (`Env.famBelow`), from the constants `L`: `L`
+itself, and below the block of every family stored in a reached cut. -/
+inductive Env.Reach (L : List ConstantInfo) : List ConstantInfo → Prop
+  | top : Env.Reach L L
+  | step {cs : List ConstantInfo} {n : Name} {cv : ConstantVal} {caps : IndCaps} :
+      Env.Reach L cs → cs.find? (·.name == n) = some (.indInfo cv caps) →
+      Env.Reach L ((Env.suffixAfter cs n).drop caps.blockPos)
+
 /-- Every stored constant and every stored table is syntactically
 well-formed, every stored family's sort fact holds, and every stored constructor's family
 name is its type's. -/
@@ -252,6 +260,8 @@ structure EnvWF (env : Env) : Prop where
   ctors : ∀ c ∈ env.consts, CtorWF c
   /-- a stored recursor's rules' binders -/
   rules : ∀ c ∈ env.consts, RuleWF c
+  /-- every cut a family's telescope is read at holds what its constants refer to -/
+  below : ∀ cs, Env.Reach env.consts cs → ∀ c ∈ cs, ConstWF ⟨cs, [], []⟩ c
 
 /-- The table of a stored structure, off `EnvWF`. -/
 theorem EnvWF.table {env : Env} (henv : EnvWF env) {T : Name} {tbl : ProjTable}
@@ -302,8 +312,8 @@ theorem litShapeAt_of_reservedRec {cv : ConstantVal} (h : reservedRecName cv.nam
 
 /-- `find?` on a cons. -/
 theorem Env.find?_cons {c : ConstantInfo} {cs : List ConstantInfo} {ts : List ProjTable}
-    {n : Name} :
-    Env.find? ⟨c :: cs, ts⟩ n = if c.name = n then some c else Env.find? ⟨cs, ts⟩ n := by
+    {rs : List (Name × Name)} {n : Name} :
+    Env.find? ⟨c :: cs, ts, rs⟩ n = if c.name = n then some c else Env.find? ⟨cs, ts, rs⟩ n := by
   simp only [Env.find?, List.find?]
   split
   · next h => simp_all
@@ -311,14 +321,14 @@ theorem Env.find?_cons {c : ConstantInfo} {cs : List ConstantInfo} {ts : List Pr
 
 /-- A cons finds its own head. -/
 theorem Env.find?_cons_self (c : ConstantInfo) (env : Env) :
-    Env.find? ⟨c :: env.consts, env.tables⟩ c.name = some c := by
+    Env.find? ⟨c :: env.consts, env.tables, env.rules⟩ c.name = some c := by
   rw [Env.find?_cons, ite_eq_left rfl]
 
 /-- A cons of a *fresh* head does not find anything new. -/
 theorem Env.find?_cons_of_fresh {c : ConstantInfo} {env : Env}
     {n : Name} {ci : ConstantInfo} (hfresh : env.find? c.name = none)
     (h : env.find? n = some ci) :
-    Env.find? ⟨c :: env.consts, env.tables⟩ n = some ci := by
+    Env.find? ⟨c :: env.consts, env.tables, env.rules⟩ n = some ci := by
   rw [Env.find?_cons]
   split
   · next heq => rw [heq, h] at hfresh; exact nomatch hfresh
@@ -328,7 +338,7 @@ theorem Env.find?_cons_of_fresh {c : ConstantInfo} {env : Env}
 successful lookups. -/
 theorem Env.find?_cons_of_isSome {c : ConstantInfo} {env : Env} {n : Name}
     (hfresh : env.find? c.name = none) (h : (env.find? n).isSome = true) :
-    Env.find? ⟨c :: env.consts, env.tables⟩ n = env.find? n := by
+    Env.find? ⟨c :: env.consts, env.tables, env.rules⟩ n = env.find? n := by
   rw [Env.find?_cons]
   split
   · next heq => rw [← heq] at h; rw [hfresh] at h; simp at h
@@ -339,7 +349,7 @@ theorem Env.find?_cons_of_isSome {c : ConstantInfo} {env : Env} {n : Name}
 table waits for the fresh name. -/
 theorem EnvWF.findTable?_cons {env : Env} (henv : EnvWF env) {c : ConstantInfo}
     (hfresh : env.find? c.name = none) (T : Name) :
-    Env.findTable? ⟨c :: env.consts, env.tables⟩ T = env.findTable? T := by
+    Env.findTable? ⟨c :: env.consts, env.tables, env.rules⟩ T = env.findTable? T := by
   unfold Env.findTable?
   rw [Env.find?_cons]
   by_cases hT : c.name = T
@@ -356,7 +366,7 @@ theorem EnvWF.findTable?_cons {env : Env} (henv : EnvWF env) {c : ConstantInfo}
 
 theorem EnvWF.findProj?_cons {env : Env} (henv : EnvWF env) {c : ConstantInfo}
     (hfresh : env.find? c.name = none) (T : Name) (i : Nat) :
-    Env.findProj? ⟨c :: env.consts, env.tables⟩ T i = env.findProj? T i := by
+    Env.findProj? ⟨c :: env.consts, env.tables, env.rules⟩ T i = env.findProj? T i := by
   unfold Env.findProj?
   rw [henv.findTable?_cons hfresh]
 
@@ -442,7 +452,7 @@ theorem Expr.constsResolve_of_find {env env' : Env}
 /-- Resolution is monotone under environment extension. -/
 theorem Expr.constsResolve_mono {c : ConstantInfo} {env : Env} :
     ∀ {e : Expr}, e.constsResolve env = true →
-      e.constsResolve ⟨c :: env.consts, env.tables⟩ = true :=
+      e.constsResolve ⟨c :: env.consts, env.tables, env.rules⟩ = true :=
   Expr.constsResolve_of_find fun n h => by
     rw [Env.find?_cons]
     split <;> simp_all
@@ -507,41 +517,12 @@ theorem Expr.find?_isSome_of_piResult_getAppFn_const {env : Env} {e : Expr}
 /-- A constant push keeps a table well formed (its structure stays
 found, its bodies keep resolving). -/
 theorem TableWF.cons {c : ConstantInfo} {env : Env} {t : ProjTable} (h : TableWF env t) :
-    TableWF ⟨c :: env.consts, env.tables⟩ t := by
+    TableWF ⟨c :: env.consts, env.tables, env.rules⟩ t := by
   obtain ⟨h0, h1, h2⟩ := h
   refine ⟨?_, h1, fun i b hb => ?_⟩
   · rw [Env.find?_cons]; split <;> simp_all
   · obtain ⟨g1, g2, g3, g4⟩ := h2 i b hb
     exact ⟨g1, g2, Expr.constsResolve_mono g3, g4⟩
-
-/-- Extending with a fresh, well-formed constant preserves `EnvWF`. -/
-theorem EnvWF.cons {c : ConstantInfo} {env : Env} (hs : litShapeOk c = true)
-    (henv : EnvWF env)
-    (hc : ConstWF ⟨c :: env.consts, env.tables⟩ c)
-    (hi : IndWF c := by exact IndWF.of_not_ind (fun _ _ heq => nomatch heq))
-    (hk : CtorWF c := by exact CtorWF.of_not_ctor (fun _ _ _ _ heq => nomatch heq))
-    (hr : RuleWF c := by exact RuleWF.of_not_rec (fun _ _ _ _ _ heq => nomatch heq)) :
-    EnvWF ⟨c :: env.consts, env.tables⟩ := by
-  refine ⟨fun c' hc' => ?_,
-    fun c' hc' => (List.mem_cons.mp hc').elim (fun e => e ▸ hs) (henv.shapes c'),
-    fun t ht => (henv.tables t ht).cons,
-    fun c' hc' => (List.mem_cons.mp hc').elim (fun e => e ▸ hi) (henv.inds c'),
-    fun c' hc' => (List.mem_cons.mp hc').elim (fun e => e ▸ hk) (henv.ctors c'),
-    fun c' hc' => (List.mem_cons.mp hc').elim (fun e => e ▸ hr) (henv.rules c')⟩
-  rcases List.mem_cons.mp hc' with rfl | hmem
-  · exact hc
-  · obtain ⟨h1, h2, h3, h4, h5, h6⟩ := henv.consts c' hmem
-    refine ⟨h1, h2, Expr.constsResolve_mono h3, h4, fun cv value hint heq =>
-      let ⟨g1, g2, g3, g4⟩ := h5 cv value hint heq
-      ⟨g1, g2, Expr.constsResolve_mono g3, g4⟩, ?_⟩
-    intro cv mI rP isK rules heq r hr
-    obtain ⟨g1, g2, g3, g4, g5⟩ := h6 cv mI rP isK rules heq r hr
-    refine ⟨g1, g2, Expr.constsResolve_mono g3, g4, ?_⟩
-    intro lvls pins hfr
-    obtain ⟨n1, n2, n3, n4⟩ := g5 lvls pins hfr
-    exact ⟨n1, n2, fun pin hpin =>
-      let ⟨p1, p2, p3, p4⟩ := n3 pin hpin
-      ⟨p1, p2, Expr.constsResolve_mono p3, p4⟩, n4⟩
 
 /-- Resolution reads the environment only through `find?`. -/
 theorem Expr.constsResolve_eq_of_find {env env' : Env} (h : env'.find? = env.find?)
@@ -560,6 +541,147 @@ theorem ConstWF.of_find {env env' : Env} (h : env'.find? = env.find?) {c : Const
   unfold ConstWF at hc ⊢
   simp only [Expr.constsResolve_eq_of_find h]
   exact hc
+
+/-! ## The cuts a family's telescope is read at -/
+
+/-- The first entry of a name heading the constants is cut off with it alone. -/
+theorem Env.suffixAfter_cons (c : ConstantInfo) (cs : List ConstantInfo) (n : Name) :
+    Env.suffixAfter (c :: cs) n = if c.name = n then cs else Env.suffixAfter cs n := by
+  unfold Env.suffixAfter
+  by_cases h : c.name = n
+  · simp [h]
+  · simp [h]
+
+/-- A cut is a suffix of the constants. -/
+theorem Env.suffixAfter_suffix (n : Name) :
+    ∀ cs : List ConstantInfo, Env.suffixAfter cs n <:+ cs
+  | [] => by simp [Env.suffixAfter]
+  | c :: cs => by
+    rw [Env.suffixAfter_cons]
+    split
+    · exact List.suffix_cons c cs
+    · exact (Env.suffixAfter_suffix n cs).trans (List.suffix_cons c cs)
+
+/-- A reached cut is a suffix of the constants it starts from. -/
+theorem Env.Reach.suffix {L : List ConstantInfo} :
+    ∀ {cs : List ConstantInfo}, Env.Reach L cs → cs <:+ L
+  | _, .top => List.suffix_refl _
+  | _, .step h _ => ((List.drop_suffix _ _).trans (Env.suffixAfter_suffix _ _)).trans h.suffix
+
+/-- A cut reached from a reached cut is reached. -/
+theorem Env.Reach.trans {L cs : List ConstantInfo} (h : Env.Reach L cs) :
+    ∀ {cs' : List ConstantInfo}, Env.Reach cs cs' → Env.Reach L cs'
+  | _, .top => h
+  | _, .step h' hf => .step (h.trans h') hf
+
+/-- **The cuts after a constant's push**: the new constants, or a cut of the old ones, given that
+a family pushed reads below its block at a cut of the old ones. -/
+theorem Env.Reach.of_cons {L : List ConstantInfo} {c : ConstantInfo}
+    (hb : ∀ cv caps, c = .indInfo cv caps → Env.Reach L (L.drop caps.blockPos)) :
+    ∀ {cs : List ConstantInfo}, Env.Reach (c :: L) cs → cs = c :: L ∨ Env.Reach L cs
+  | _, .top => .inl rfl
+  | _, .step (cs := cs) (n := n) h hf => by
+    rcases Env.Reach.of_cons hb h with rfl | h'
+    · right
+      rw [Env.suffixAfter_cons]
+      rw [List.find?_cons] at hf
+      by_cases hn : c.name = n
+      · rw [ite_eq_left hn]
+        simp only [hn, beq_self_eq_true] at hf
+        exact hb _ _ (Option.some.inj hf)
+      · rw [ite_eq_right hn]
+        have hn' : (c.name == n) = false := by simpa using hn
+        rw [hn'] at hf
+        exact .step .top hf
+    · exact .inr (.step h' hf)
+
+/-- **The cuts after pushing constants none of which is a family**: the new constants, or a cut
+of the old ones. -/
+theorem Env.Reach.of_append {new L : List ConstantInfo}
+    (hnew : ∀ c ∈ new, ∀ cv caps, c ≠ .indInfo cv caps) :
+    ∀ {cs : List ConstantInfo}, Env.Reach (new ++ L) cs → cs = new ++ L ∨ Env.Reach L cs
+  | _, .top => .inl rfl
+  | _, .step (n := n) h hf => by
+    rcases Env.Reach.of_append hnew h with rfl | h'
+    · right
+      rw [List.find?_append] at hf
+      cases hn : new.find? (·.name == n) with
+      | some c =>
+        rw [hn] at hf
+        exact absurd (Option.some.inj hf) (hnew c (List.mem_of_find?_eq_some hn) _ _)
+      | none =>
+        rw [hn] at hf
+        have hnot : ∀ c ∈ new, c.name ≠ n := fun c hc he => by
+          have := List.find?_eq_none.mp hn c hc
+          simp [he] at this
+        have hsa : Env.suffixAfter (new ++ L) n = Env.suffixAfter L n := by
+          clear hn hf h
+          induction new with
+          | nil => rfl
+          | cons c new ih =>
+            rw [List.cons_append, Env.suffixAfter_cons, ite_eq_right (hnot c List.mem_cons_self)]
+            exact ih (fun c hc => hnew c (List.mem_cons_of_mem _ hc))
+              (fun c hc => hnot c (List.mem_cons_of_mem _ hc))
+        rw [hsa]
+        exact .step .top (by simpa using hf)
+    · exact .inr (.step h' hf)
+
+/-- A table answered at a cut is a stored one, live there. -/
+theorem Env.mem_liveTables {cs : List ConstantInfo} :
+    ∀ {ts : List ProjTable} {t : ProjTable}, t ∈ Env.liveTables cs ts →
+      t ∈ ts ∧ Env.tableOkAt cs t = true
+  | [], _, h => by simp [Env.liveTables] at h
+  | t' :: ts, t, h => by
+    simp only [Env.liveTables] at h
+    have hrest : t ∈ (Env.liveTables cs ts).filter (·.structName != t'.structName) →
+        t ∈ t' :: ts ∧ Env.tableOkAt cs t = true := fun hm => by
+      obtain ⟨hm, -⟩ := List.mem_filter.mp hm
+      obtain ⟨h1, h2⟩ := Env.mem_liveTables hm
+      exact ⟨List.mem_cons_of_mem _ h1, h2⟩
+    split at h
+    · rcases List.mem_cons.mp h with rfl | hm
+      · exact ⟨List.mem_cons_self, by assumption⟩
+      · exact hrest hm
+    · exact hrest h
+
+/-- Extending with a fresh, well-formed constant preserves `EnvWF`.  A family pushed reads below
+its block at a cut of the old constants (`hb`). -/
+theorem EnvWF.cons {c : ConstantInfo} {env : Env} (hs : litShapeOk c = true)
+    (henv : EnvWF env)
+    (hc : ConstWF ⟨c :: env.consts, env.tables, env.rules⟩ c)
+    (hi : IndWF c := by exact IndWF.of_not_ind (fun _ _ heq => nomatch heq))
+    (hk : CtorWF c := by exact CtorWF.of_not_ctor (fun _ _ _ _ heq => nomatch heq))
+    (hr : RuleWF c := by exact RuleWF.of_not_rec (fun _ _ _ _ _ heq => nomatch heq))
+    (hb : ∀ cv caps, c = .indInfo cv caps → Env.Reach env.consts (env.consts.drop caps.blockPos) := by
+      exact fun _ _ heq => nomatch heq) :
+    EnvWF ⟨c :: env.consts, env.tables, env.rules⟩ := by
+  have hcs : ∀ c' ∈ c :: env.consts, ConstWF ⟨c :: env.consts, env.tables, env.rules⟩ c' := by
+    intro c' hc'
+    rcases List.mem_cons.mp hc' with rfl | hmem
+    · exact hc
+    · obtain ⟨h1, h2, h3, h4, h5, h6⟩ := henv.consts c' hmem
+      refine ⟨h1, h2, Expr.constsResolve_mono h3, h4, fun cv value hint heq =>
+        let ⟨g1, g2, g3, g4⟩ := h5 cv value hint heq
+        ⟨g1, g2, Expr.constsResolve_mono g3, g4⟩, ?_⟩
+      intro cv mI rP isK rules heq r hr
+      obtain ⟨g1, g2, g3, g4, g5⟩ := h6 cv mI rP isK rules heq r hr
+      refine ⟨g1, g2, Expr.constsResolve_mono g3, g4, ?_⟩
+      intro lvls pins hfr
+      obtain ⟨n1, n2, n3, n4⟩ := g5 lvls pins hfr
+      exact ⟨n1, n2, fun pin hpin =>
+        let ⟨p1, p2, p3, p4⟩ := n3 pin hpin
+        ⟨p1, p2, Expr.constsResolve_mono p3, p4⟩, n4⟩
+  refine ⟨hcs,
+    fun c' hc' => (List.mem_cons.mp hc').elim (fun e => e ▸ hs) (henv.shapes c'),
+    fun t ht => (henv.tables t ht).cons,
+    fun c' hc' => (List.mem_cons.mp hc').elim (fun e => e ▸ hi) (henv.inds c'),
+    fun c' hc' => (List.mem_cons.mp hc').elim (fun e => e ▸ hk) (henv.ctors c'),
+    fun c' hc' => (List.mem_cons.mp hc').elim (fun e => e ▸ hr) (henv.rules c'), ?_⟩
+  intro cs hcut
+  rcases Env.Reach.of_cons hb hcut with rfl | hold
+  · intro c' hc'
+    exact ConstWF.of_find (env := ⟨c :: env.consts, env.tables, env.rules⟩) (env' := ⟨c :: env.consts, [], []⟩) rfl (hcs c' hc')
+  · exact henv.below cs hold
 
 theorem Expr.constsResolve_eq_of_isSome {env env' : Env}
     (h : ∀ n, (env'.find? n).isSome = (env.find? n).isSome) (e : Expr) :
@@ -599,20 +721,20 @@ theorem TableWF.of_find {env env' : Env} (h : env'.find? = env.find?) {t : ProjT
 constants read the environment only through `find?`, which a table
 install leaves alone. -/
 theorem EnvWF.pushTable {env : Env} {t : ProjTable} (henv : EnvWF env)
-    (ht : TableWF env t) : EnvWF ⟨env.consts, t :: env.tables⟩ :=
+    (ht : TableWF env t) : EnvWF ⟨env.consts, t :: env.tables, env.rules⟩ :=
   ⟨fun c hc => (henv.consts c hc).of_find (Env.find?_pushTable env t), henv.shapes, fun t' ht' => by
     rcases List.mem_cons.mp ht' with rfl | hmem
     · exact ht.of_find (Env.find?_pushTable env _)
     · exact (henv.tables t' hmem).of_find (Env.find?_pushTable env t), henv.inds, henv.ctors,
-    henv.rules⟩
+    henv.rules, henv.below⟩
 
 /-- **Tables pushed onto a well-formed environment, each well formed there, keep it well
 formed**: a table install changes no lookup. -/
 theorem EnvWF.pushTables {env : Env} (henv : EnvWF env) {Q : List ProjTable}
-    (hQ : ∀ t ∈ Q, TableWF env t) : EnvWF ⟨env.consts, Q ++ env.tables⟩ := by
-  have hf : Env.find? ⟨env.consts, Q ++ env.tables⟩ = env.find? := rfl
+    (hQ : ∀ t ∈ Q, TableWF env t) : EnvWF ⟨env.consts, Q ++ env.tables, env.rules⟩ := by
+  have hf : Env.find? ⟨env.consts, Q ++ env.tables, env.rules⟩ = env.find? := rfl
   refine ⟨fun c hc => (henv.consts c hc).of_find hf, henv.shapes, fun t ht => ?_, henv.inds,
-    henv.ctors, henv.rules⟩
+    henv.ctors, henv.rules, henv.below⟩
   rcases List.mem_append.mp ht with ht | ht
   · exact (hQ t ht).of_find hf
   · exact (henv.tables t ht).of_find hf
@@ -646,5 +768,123 @@ theorem EnvWF.ctorHead {env : Env} (henv : EnvWF env) {c : Name} {cv : ConstantV
     {nP nF : Nat} {T : Name} (h : env.find? c = some (.ctorInfo cv nP nF T)) :
     ∃ us, cv.type.piResult.getAppFn = .const T us :=
   henv.ctors _ (Env.find?_mem h) cv nP nF T rfl
+
+/-- **The table lookup at a cut**: the name's first table, where it is live there. -/
+theorem Env.liveTables_find (cs : List ConstantInfo) (T : Name) :
+    ∀ ts : List ProjTable, (Env.liveTables cs ts).find? (·.structName == T)
+      = (ts.find? (·.structName == T)).filter (Env.tableOkAt cs)
+  | [] => rfl
+  | t :: ts => by
+    have hrest : ∀ q : ProjTable → Bool,
+        ((Env.liveTables cs ts).filter (·.structName != t.structName)).find? q
+          = (Env.liveTables cs ts).find? (fun x => (x.structName != t.structName) && q x) := by
+      intro q
+      induction Env.liveTables cs ts with
+      | nil => rfl
+      | cons x xs ih =>
+        simp only [List.filter_cons]
+        by_cases hx : (x.structName != t.structName) = true
+        · simp only [hx, ↓reduceIte, List.find?_cons, Bool.true_and, ih]
+        · simp only [hx, Bool.false_eq_true, ↓reduceIte, List.find?_cons, Bool.false_and, ih]
+    simp only [Env.liveTables, List.find?_cons]
+    by_cases hT : t.structName = T
+    · subst hT
+      have hnone : ((Env.liveTables cs ts).filter (·.structName != t.structName)).find?
+          (·.structName == t.structName) = none := by
+        rw [hrest]
+        simp
+      split
+      · rename_i hok
+        simp [Option.filter, hok]
+      · rename_i hok
+        simp [Option.filter, hok, List.find?_eq_none]
+    · have hTb : (t.structName == T) = false := by simpa using hT
+      have hq : (fun x : ProjTable => (x.structName != t.structName) && (x.structName == T))
+          = (fun x => x.structName == T) := by
+        funext x
+        by_cases hx : x.structName = T
+        · simp [hx, Ne.symm hT]
+        · simp [hx]
+      simp only [hTb]
+      split
+      · rw [List.find?_cons, hTb]
+        simp only
+        rw [hrest, hq, Env.liveTables_find cs T ts]
+      · rw [hrest, hq, Env.liveTables_find cs T ts]
+
+/-! ## Well-formedness at a cut -/
+
+/-- **A reached cut of a well-formed environment is well formed**: its constants hold what they
+refer to (`EnvWF.below`), its tables are live there, and every cut it reaches is reached. -/
+theorem EnvWF.cut {env : Env} (henv : EnvWF env) {cs : List ConstantInfo}
+    (hr : Env.Reach env.consts cs) : EnvWF (env.cutAt cs) := by
+  have hsub : ∀ c ∈ cs, c ∈ env.consts := fun c hc => hr.suffix.subset hc
+  refine ⟨fun c hc => ConstWF.of_find (env := ⟨cs, [], []⟩) (env' := env.cutAt cs) rfl (henv.below cs hr c hc), fun c hc => henv.shapes c (hsub c hc),
+    fun t ht => ?_, fun c hc => henv.inds c (hsub c hc), fun c hc => henv.ctors c (hsub c hc),
+    fun c hc => henv.rules c (hsub c hc), fun cs' hr' => henv.below cs' (hr.trans hr')⟩
+  obtain ⟨htm, hok⟩ := Env.mem_liveTables ht
+  obtain ⟨-, h1, h2⟩ := henv.tables t htm
+  simp only [Env.tableOkAt, Bool.and_eq_true] at hok
+  refine ⟨hok.1, h1, fun i b hb => ?_⟩
+  obtain ⟨g1, g2, -, g4⟩ := h2 i b hb
+  have hres := (Array.all_eq_true_iff_forall_mem.mp hok.2) b (Array.mem_of_getElem? hb)
+  exact ⟨g1, g2, (Expr.constsResolve_eq_of_find (env := ⟨cs, [], []⟩) (env' := env.cutAt cs) rfl b).trans hres, g4⟩
+
+/-- **The environment a family's telescope is read at is well formed.** -/
+theorem EnvWF.famBelow {env env' : Env} (henv : EnvWF env) {n : Name}
+    (h : env.famBelow n = some env') : EnvWF env' := by
+  unfold Env.famBelow at h
+  split at h
+  · rename_i cv caps hf
+    obtain rfl := Option.some.inj h
+    exact henv.cut (.step .top hf)
+  · exact nomatch h
+
+/-- **Well-formedness after pushing constants none of which is a family**, from the six
+clauses at the new environment: the cuts a telescope is read at are the old ones. -/
+theorem EnvWF.of_append {env E : Env} {new : List ConstantInfo} (henv : EnvWF env)
+    (hsplit : E.consts = new ++ env.consts) (hnew : ∀ c ∈ new, ∀ cv caps, c ≠ .indInfo cv caps)
+    (hc : ∀ c ∈ E.consts, ConstWF E c) (hs : ∀ c ∈ E.consts, litShapeOk c = true)
+    (ht : ∀ t ∈ E.tables, TableWF E t) (hi : ∀ c ∈ E.consts, IndWF c)
+    (hk : ∀ c ∈ E.consts, CtorWF c) (hr : ∀ c ∈ E.consts, RuleWF c) : EnvWF E := by
+  refine ⟨hc, hs, ht, hi, hk, hr, fun cs hcs => ?_⟩
+  rw [hsplit] at hcs
+  rcases Env.Reach.of_append hnew hcs with rfl | h
+  · intro c hc'
+    exact ConstWF.of_find (env := E) (env' := ⟨new ++ env.consts, [], []⟩)
+      (by funext n; show (new ++ env.consts).find? _ = E.consts.find? _; rw [hsplit])
+      (hc c (hsplit ▸ hc'))
+  · exact henv.below cs h
+
+/-! ## Cuts across pushes under fresh names -/
+
+/-- Constants pushed under other names leave the cut past a name alone. -/
+theorem Env.suffixAfter_append_of_ne {n : Name} :
+    ∀ {new : List ConstantInfo} (cs : List ConstantInfo), (∀ c ∈ new, c.name ≠ n) →
+      Env.suffixAfter (new ++ cs) n = Env.suffixAfter cs n
+  | [], _, _ => rfl
+  | c :: new, cs, h => by
+    rw [List.cons_append, Env.suffixAfter_cons, ite_eq_right (h c List.mem_cons_self)]
+    exact Env.suffixAfter_append_of_ne cs (fun c' hc' => h c' (List.mem_cons_of_mem _ hc'))
+
+/-- Tables of structures absent from a cut leave its tables alone. -/
+theorem Env.liveTables_append_dead {cs : List ConstantInfo} :
+    ∀ {newT : List ProjTable} (ts : List ProjTable),
+      (∀ t ∈ newT, cs.find? (·.name == t.structName) = none) →
+      Env.liveTables cs (newT ++ ts) = Env.liveTables cs ts
+  | [], _, _ => rfl
+  | t :: newT, ts, h => by
+    have ht : Env.tableOkAt cs t = false := by
+      simp [Env.tableOkAt, h t List.mem_cons_self]
+    rw [List.cons_append, Env.liveTables, ite_eq_right (by simp [ht]),
+      Env.liveTables_append_dead ts (fun t' ht' => h t' (List.mem_cons_of_mem _ ht'))]
+    refine List.filter_eq_self.mpr fun t' ht' => ?_
+    obtain ⟨-, hok⟩ := Env.mem_liveTables ht'
+    simp only [Env.tableOkAt, Bool.and_eq_true] at hok
+    have hn := h t List.mem_cons_self
+    simp only [bne_iff_ne, ne_eq]
+    intro he
+    rw [he, hn] at hok
+    exact nomatch hok.1
 
 end ConLeche

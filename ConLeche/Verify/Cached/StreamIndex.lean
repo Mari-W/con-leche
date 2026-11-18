@@ -4,6 +4,8 @@ public import ConLeche.Cached.StreamIndex
 public import ConLeche.Verify.Cached.ViewCongr
 public import ConLeche.Verify.Cached.PushChain
 import ConLeche.Verify.Cached.WalkersC
+import ConLeche.Verify.CheckerF
+import ConLeche.Verify.EnvWF
 
 /-!
 # Every job passing is an accept of the fold
@@ -194,6 +196,8 @@ structure IndexSpec (ds : List Declaration) (I : StreamIndex) : Prop where
   size : I.firsts.size = ds.length
   idx : ∀ n, I.base.idx[n]? = firstOcc n 0 (recsConsts ds)
   tbls : ∀ T, I.base.tbls[T]? = firstTbl T (recsTables 0 ds)
+  chk : I.base.chk = false
+  rls : I.base.rls = {}
 
 theorem IndexSpec.add {ds : List Declaration} {I : StreamIndex} (h : IndexSpec ds I)
     (pd : Declaration) : IndexSpec (ds ++ [pd]) (I.add pd) := by
@@ -220,6 +224,8 @@ theorem IndexSpec.add {ds : List Declaration} {I : StreamIndex} (h : IndexSpec d
     simp only [StreamIndex.add, hsz, declTablesC_eq]
     rw [ht T, recsTables_snoc]
     simp
+  · exact h.chk
+  · exact h.rls
 
 theorem buildIndex_spec (ds : Array Declaration) : IndexSpec ds.toList (buildIndex ds) := by
   unfold buildIndex
@@ -227,7 +233,7 @@ theorem buildIndex_spec (ds : Array Declaration) : IndexSpec ds.toList (buildInd
   suffices ∀ (l acc : List Declaration) (I : StreamIndex), IndexSpec acc I →
       IndexSpec (acc ++ l) (l.foldl StreamIndex.add I) from
     by simpa using this ds.toList [] {} ⟨rfl, by simp, rfl, by simp [recsConsts, firstOcc],
-      by simp [recsTables, firstTbl]⟩
+      by simp [recsTables, firstTbl], rfl, rfl⟩
   intro l
   induction l with
   | nil => intro acc I h; simpa using h
@@ -305,6 +311,15 @@ theorem streamEnv_tables (ds : List Declaration) (env : Env) :
     rw [ih]
     simp [Env.pushDelta]
 
+theorem streamEnv_rules (ds : List Declaration) (env : Env) :
+    (streamEnv ds env).rules = env.rules := by
+  induction ds generalizing env with
+  | nil => rfl
+  | cons pd ds ih =>
+    simp only [streamEnv, List.foldl_cons] at ih ⊢
+    rw [ih]
+    simp [Env.pushDelta]
+
 /-! ## Tables are named after a record's constants -/
 
 theorem blockTables_sublist (p : BlockShape) :
@@ -367,7 +382,7 @@ theorem view_counter {pre rest : List Declaration} {I : StreamIndex}
 
 theorem view_eq {pre rest : List Declaration} {I : StreamIndex}
     (hI : IndexSpec (pre ++ rest) I) :
-    I.freeze.view pre.length = FEnv.ofParts ⟨[], []⟩ {}
+    I.freeze.view pre.length = FEnv.ofParts ⟨[], [], []⟩ {}
       { I.base with below := (recsConsts pre).length, belowRec := pre.length } [] {} := by
   refine FEnv.ext_parts rfl rfl ?_ rfl rfl
   show { I.base with below := I.firsts.getD pre.length I.next, belowRec := pre.length } = _
@@ -423,6 +438,87 @@ theorem view_rawTable {pre rest : List Declaration} {I : StreamIndex}
       simp only
       rw [ite_eq_right (by simp only at this; omega)]
 
+/-- **A view of the frozen layer at a counter `b` answers the first `b` constants of the
+stream.** -/
+theorem view_base_find {pre rest : List Declaration} {I : StreamIndex}
+    (hI : IndexSpec (pre ++ rest) I) (b r : Nat) (c : Bool)
+    (hle : b ≤ (recsConsts pre).length) (m : Name) :
+    FBase.find? { I.base with below := b, belowRec := r, chk := c } m
+      = ((recsConsts pre).take b).find? (·.name == m) := by
+  unfold FBase.find?
+  simp only
+  rw [hI.idx m]
+  have hsplit : recsConsts (pre ++ rest)
+      = (recsConsts pre).take b ++ ((recsConsts pre).drop b ++ recsConsts rest) := by
+    rw [show recsConsts (pre ++ rest) = recsConsts pre ++ recsConsts rest by simp [recsConsts],
+      ← List.append_assoc, List.take_append_drop]
+  have hlen : ((recsConsts pre).take b).length = b := by simp; omega
+  rw [hsplit, firstOcc_append, Nat.zero_add, hlen]
+  rw [← firstOcc_map m ((recsConsts pre).take b) 0]
+  cases hp : firstOcc m 0 ((recsConsts pre).take b) with
+  | some p =>
+    obtain ⟨c, ci⟩ := p
+    have := (firstOcc_ge hp).2
+    simp only [Option.or, Option.map_some]
+    rw [ite_eq_left (by omega)]
+  | none =>
+    simp only [Option.or, Option.map_none]
+    cases hr : firstOcc m b ((recsConsts pre).drop b ++ recsConsts rest) with
+    | none => rfl
+    | some p =>
+      obtain ⟨c, ci⟩ := p
+      have := (firstOcc_ge hr).1
+      simp only
+      rw [ite_eq_right (by omega)]
+
+/-- A name's first entry splits the list there. -/
+theorem firstOcc_split {n : Name} :
+    ∀ {L : List ConstantInfo} {c₀ c : Nat} {x : ConstantInfo}, firstOcc n c₀ L = some (c, x) →
+      L = L.take (c - c₀) ++ x :: L.drop (c - c₀ + 1) ∧ x.name = n ∧ c₀ ≤ c ∧
+        ∀ y ∈ L.take (c - c₀), y.name ≠ n
+  | [], _, _, _, h => by simp [firstOcc] at h
+  | a :: L, c₀, c, x, h => by
+    simp only [firstOcc] at h
+    split at h
+    · rename_i ha
+      obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj h)
+      simp [ha]
+    · rename_i ha
+      obtain ⟨h1, h2, h3, h4⟩ := firstOcc_split h
+      have hc : c - c₀ = (c - (c₀ + 1)) + 1 := by omega
+      refine ⟨?_, h2, by omega, ?_⟩
+      · rw [hc, List.take_succ_cons, List.drop_succ_cons, List.cons_append, ← h1]
+      · rw [hc, List.take_succ_cons]
+        intro y hy
+        rcases List.mem_cons.mp hy with rfl | hy
+        · exact ha
+        · exact h4 y hy
+
+/-- The constants past a name's only entry, in a reversed list. -/
+theorem suffixAfter_reverse {n : Name} {L : List ConstantInfo} (hnd : (L.map (·.name)).Nodup)
+    {c : Nat} {x : ConstantInfo} (h : firstOcc n 0 L = some (c, x)) :
+    Env.suffixAfter L.reverse n = (L.take c).reverse := by
+  obtain ⟨h1, h2, -, -⟩ := firstOcc_split h
+  simp only [Nat.sub_zero] at h1
+  have hB : ∀ y ∈ L.drop (c + 1), y.name ≠ n := by
+    intro y hy he
+    rw [h1, List.map_append, List.map_cons] at hnd
+    have := (List.nodup_append.mp hnd).2.1
+    rw [List.nodup_cons] at this
+    exact this.1 (by rw [h2, ← he]; exact List.mem_map_of_mem hy)
+  conv => lhs; rw [h1]
+  rw [List.reverse_append, List.reverse_cons, List.append_assoc, List.singleton_append]
+  have : ∀ P : List ConstantInfo, (∀ y ∈ P, y.name ≠ n) →
+      Env.suffixAfter (P ++ x :: (L.take c).reverse) n = (L.take c).reverse := by
+    intro P
+    induction P with
+    | nil => intro _; rw [List.nil_append, Env.suffixAfter_cons, ite_eq_left h2]
+    | cons y P ih =>
+      intro hP
+      rw [List.cons_append, Env.suffixAfter_cons, ite_eq_right (hP y List.mem_cons_self)]
+      exact ih (fun z hz => hP z (List.mem_cons_of_mem _ hz))
+  rw [this _ (fun y hy => hB y (List.mem_reverse.mp hy))]
+
 /-- **The view of a position is a twin of the fold's index there**, the names so far being
 distinct. -/
 theorem viewTwin {pre rest : List Declaration} {I : StreamIndex} (hI : IndexSpec (pre ++ rest) I)
@@ -433,7 +529,20 @@ theorem viewTwin {pre rest : List Declaration} {I : StreamIndex} (hI : IndexSpec
   have htabs : (streamEnv pre).tables = (pre.flatMap declTables).reverse := by
     simpa [Env.empty] using streamEnv_tables pre Env.empty
   subst hfe
-  refine ⟨?_, ?_, rfl, rfl⟩
+  have hview := view_eq hI
+  have hve : (I.freeze.view pre.length).env = ⟨[], [], []⟩ := rfl
+  have hvb : (I.freeze.view pre.length).base
+      = { I.base with below := (recsConsts pre).length, belowRec := pre.length } := by
+    rw [hview]; rfl
+  have hfind_take : ∀ b, b ≤ (recsConsts pre).length → ∀ m,
+      ((recsConsts pre).take b).find? (·.name == m)
+        = ((recsConsts pre).reverse.drop ((recsConsts pre).length - b)).find? (·.name == m) := by
+    intro b hb m
+    rw [List.drop_reverse, show (recsConsts pre).length - ((recsConsts pre).length - b) = b by omega]
+    exact (find?_reverse_of_nodup (fun ci : ConstantInfo => ci.name) m
+      ((List.take_sublist _ _).map _ |>.nodup hnd)).symm
+  refine ⟨?_, ?_, rfl, rfl, rfl, by rw [hview]; rfl, fun k => ?_, fun n k => ?_, rfl,
+    by rw [hview]; exact hI.chk, ?_⟩
   · funext n
     rw [mkFEnv_find?, view_find hI, firstOcc_map]
     unfold Env.find?
@@ -442,6 +551,83 @@ theorem viewTwin {pre rest : List Declaration} {I : StreamIndex} (hI : IndexSpec
   · funext T
     rw [mkFEnv_rawTable?, view_rawTable hI, firstTbl_map, recsTables_snd, htabs]
     exact find?_reverse_of_nodup (fun t : ProjTable => t.structName) T ((recsTables_sublist pre).nodup hnd)
+  · -- under the `k` newest constants: the first `|R| - k` of the stream
+    rw [mkFEnv_dropTop_find, hcons]
+    funext m
+    unfold FEnv.dropTop
+    rw [hve, hvb]
+    by_cases hk0 : k = 0
+    · subst hk0
+      simp only [List.length_nil, Nat.le_refl, ↓reduceIte, List.drop_zero]
+      rw [FEnv.find?_ofParts_nil, show mkIdxGo ([] : List ConstantInfo) = ∅ from rfl,
+        Std.HashMap.getElem?_empty]
+      simp only
+      rw [view_base_find hI _ _ _ (Nat.le_refl _), hfind_take _ (Nat.le_refl _), Nat.sub_self]
+      rfl
+    · rw [ite_eq_right (by simp; omega), FEnv.find?_ofParts_nil, Std.HashMap.getElem?_empty]
+      simp only [List.length_nil, Nat.sub_zero]
+      rw [view_base_find hI _ _ _ (Nat.sub_le _ _)]
+      by_cases hk : k ≤ (recsConsts pre).length
+      · rw [hfind_take _ (Nat.sub_le _ _), show (recsConsts pre).length -
+          ((recsConsts pre).length - k) = k by omega]
+      · rw [List.drop_eq_nil_of_le (by simp; omega), show (recsConsts pre).length - k = 0 by omega]
+        rfl
+  · -- below a name's entry: the stream's constants before it, less `k`
+    rw [mkFEnv_below_find, hcons]
+    funext m
+    unfold FEnv.below
+    rw [hve, hvb]
+    simp only [List.findIdx?_nil]
+    rw [FEnv.find?_ofParts_nil, Std.HashMap.getElem?_empty]
+    simp only
+    have hidx : I.base.idx[n]? = (firstOcc n 0 (recsConsts pre)).or
+        (firstOcc n (recsConsts pre).length (recsConsts rest)) := by
+      rw [hI.idx n, show recsConsts (pre ++ rest) = recsConsts pre ++ recsConsts rest by
+        simp [recsConsts], firstOcc_append, Nat.zero_add]
+    cases hp : firstOcc n 0 (recsConsts pre) with
+    | some p =>
+      obtain ⟨c, x⟩ := p
+      have hc := (firstOcc_ge hp).2
+      have hcR : c < (recsConsts pre).length := by omega
+      rw [hidx, hp]
+      simp only [Option.some_or, hcR, ↓reduceIte]
+      rw [view_base_find hI _ _ _ (Nat.le_trans (Nat.sub_le c k) (Nat.le_of_lt hcR)),
+        suffixAfter_reverse hnd hp, List.drop_reverse,
+        List.length_take, find?_reverse_of_nodup (fun ci : ConstantInfo => ci.name) m
+          ((List.take_sublist _ _).map _ |>.nodup ((List.take_sublist _ _).map _ |>.nodup hnd)),
+        List.take_take]
+      congr 2
+      have : min c (recsConsts pre).length = c := Nat.min_eq_left (Nat.le_of_lt hcR)
+      rw [this]
+      exact Nat.min_eq_left (Nat.sub_le c k)
+    | none =>
+      have hnot : Env.suffixAfter (recsConsts pre).reverse n = [] := by
+        rw [Env.suffixAfter_eq_findIdx]
+        have : (recsConsts pre).reverse.findIdx? (·.name == n) = none := by
+          rw [List.findIdx?_eq_none_iff]
+          intro y hy
+          have := firstOcc_map n (recsConsts pre) 0
+          rw [hp] at this
+          have hf := (List.find?_eq_none.mp this.symm) y (List.mem_reverse.mp hy)
+          simpa using hf
+        rw [this]
+      rw [hnot, hidx, hp, Option.none_or]
+      cases hr : firstOcc n (recsConsts pre).length (recsConsts rest) with
+      | none =>
+        simp only
+        rw [view_base_find hI _ _ _ (Nat.zero_le _)]
+        simp
+      | some p =>
+        obtain ⟨c, x⟩ := p
+        have hge := (firstOcc_ge hr).1
+        have hnlt : ¬ c < (recsConsts pre).length := by omega
+        simp only [hnlt, ↓reduceIte]
+        rw [view_base_find hI _ _ _ (Nat.zero_le _)]
+        simp
+  · rw [hvb]
+    show mkRlsGo (streamEnv pre).rules = I.base.rls
+    rw [hI.rls, streamEnv_rules]
+    rfl
 
 /-! ## The jobs and the fold -/
 

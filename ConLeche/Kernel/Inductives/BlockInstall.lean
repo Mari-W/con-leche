@@ -76,10 +76,12 @@ def blockCapsAt (p : BlockShape) (mi : Nat) (isRec : Bool) : IndCaps :=
       nparams := p.nP
       nIdx := nIdx
       ctors := [c.1.name]
-      neverZero := (formerZ (p.members.getD mi default).declared).isNever }
+      neverZero := (formerZ (p.members.getD mi default).declared).isNever
+      blockPos := mi }
   | cs, nIdx => { all := p.memberNames, nparams := p.nP, nIdx := nIdx,
                   ctors := cs.map (·.1.name),
-                  neverZero := (formerZ (p.members.getD mi default).declared).isNever }
+                  neverZero := (formerZ (p.members.getD mi default).declared).isNever
+                  blockPos := mi }
 
 /-- Does some binder domain of the SYNTACTIC `∀`-telescope of `e`
 mention one of `names`?  No reduction: the walk stops at the first
@@ -170,7 +172,7 @@ def consBlockInds (p₁ : BlockShape) (isRec : Bool) :
     List ConstantVal → Nat → Env → Env
   | [], _, env => env
   | cvTa :: rest, i, env =>
-    consBlockInds p₁ isRec rest (i + 1) ⟨.indInfo cvTa (blockCapsAt p₁ i isRec) :: env.consts, env.tables⟩
+    consBlockInds p₁ isRec rest (i + 1) ⟨.indInfo cvTa (blockCapsAt p₁ i isRec) :: env.consts, env.tables, env.rules⟩
 
 /-- **Stage 1**: the k type formers, checked, agreed and consed —
 official's `declare_inductive_types`, which puts every former in the
@@ -320,7 +322,7 @@ def consBlockRecs (p : BlockShape) :
     consBlockRecs p (m + 1) rest
       ⟨.recInfo cvRa (p.majorIdxAt m) (p.rulePrefixAt m)
         false (sumRules ctorList rhss)
-        :: env.consts, env.tables⟩
+        :: env.consts, env.tables, env.rules⟩
 
 /-! ### The recursor stage as CHECKING
 
@@ -337,6 +339,6 @@ def consBlockRecsBare (p : BlockShape) : Nat → List (ConstantVal × Nat) → E
   | _, [], env => env
   | m, (cvRa, _nIdx) :: rest, env =>
     consBlockRecsBare p (m + 1) rest
-      ⟨.recInfo cvRa (p.majorIdxAt m) (p.rulePrefixAt m) false [] :: env.consts, env.tables⟩
+      ⟨.recInfo cvRa (p.majorIdxAt m) (p.rulePrefixAt m) false [] :: env.consts, env.tables, env.rules⟩
 
 end ConLeche

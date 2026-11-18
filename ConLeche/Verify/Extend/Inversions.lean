@@ -139,7 +139,7 @@ theorem checkConstantVal_opName_false {env : Env} {cv : ConstantVal}
 task #148 T6: both lanes' basis-block bridges invert the same fold). -/
 theorem installBasisDecl_inv {env env₁ : Env} {ci : ConstantInfo}
     (h : installBasisDecl (m := CheckM) env ci = .ok env₁) :
-    env.find? ci.name = none ∧ env₁ = ⟨ci :: env.consts, env.tables⟩ := by
+    env.find? ci.name = none ∧ env₁ = ⟨ci :: env.consts, env.tables, env.rules⟩ := by
   unfold installBasisDecl at h
   revert h
   cases hf : env.find? ci.name with

@@ -92,10 +92,10 @@ theorem quotMkLeafVal (hM : env.find? quotMkName = some (quotMkA.atLps [x])) (ψ
 theorem denote_quotLeaf {c₀ : ConstantInfo} (ψ : Name → Nat)
     (hne : ¬ c₀.name = quotName)
     (hQ : env.find? quotName = some (quotA.atLps [q])) (d : Nat) (l : Level) :
-    denote (acvalWith m.acval c₀.name A) ⟨c₀ :: env.consts, env.tables⟩ ψ d
+    denote (acvalWith m.acval c₀.name A) ⟨c₀ :: env.consts, env.tables, env.rules⟩ ψ d
         (.const quotName [l])
       = some (Term.const .quot [l.eval ψ]) := by
-  have hf' : (⟨c₀ :: env.consts, env.tables⟩ : Env).find? quotName = some (quotA.atLps [q]) := by
+  have hf' : (⟨c₀ :: env.consts, env.tables, env.rules⟩ : Env).find? quotName = some (quotA.atLps [q]) := by
     rw [ConLeche.Env.find?_cons, ite_eq_right hne]; exact hQ
   rw [denote_const hf' (by rfl), acvalWith_ne (fun h => hne h.symm), quotLeafVal hQ]
   show some (Term.const .quot [Level.substFn ψ [q] [l] q]) = _
@@ -105,10 +105,10 @@ theorem denote_quotLeaf {c₀ : ConstantInfo} (ψ : Name → Nat)
 theorem denote_quotMkLeaf {c₀ : ConstantInfo} (ψ : Name → Nat)
     (hne : ¬ c₀.name = quotMkName)
     (hM : env.find? quotMkName = some (quotMkA.atLps [x])) (d : Nat) (l : Level) :
-    denote (acvalWith m.acval c₀.name A) ⟨c₀ :: env.consts, env.tables⟩ ψ d
+    denote (acvalWith m.acval c₀.name A) ⟨c₀ :: env.consts, env.tables, env.rules⟩ ψ d
         (.const quotMkName [l])
       = some (Term.const .quotMk [l.eval ψ]) := by
-  have hf' : (⟨c₀ :: env.consts, env.tables⟩ : Env).find? quotMkName = some (quotMkA.atLps [x]) := by
+  have hf' : (⟨c₀ :: env.consts, env.tables, env.rules⟩ : Env).find? quotMkName = some (quotMkA.atLps [x]) := by
     rw [ConLeche.Env.find?_cons, ite_eq_right hne]; exact hM
   rw [denote_const hf' (by rfl), acvalWith_ne (fun h => hne h.symm), quotMkLeafVal hM]
   show some (Term.const .quotMk [Level.substFn ψ [x] [l] x]) = _
@@ -124,7 +124,7 @@ def quotRelTy : Term :=
 /-- **`Quot`'s type reading.** -/
 theorem denote_quotA_type
     {acval : Name → (Name → Nat) → Term} (ψ : Name → Nat) :
-    denote acval ⟨quotA :: env.consts, env.tables⟩ ψ 0 quotA.toConstantVal.type
+    denote acval ⟨quotA :: env.consts, env.tables, env.rules⟩ ψ 0 quotA.toConstantVal.type
       = some (.pi (.sort (ψ uN))
           (.pi (quotRelTy) (.sort (ψ uN)))) := by
   simp [quotA, ConstantInfo.toConstantVal, denote_forallE,
@@ -152,11 +152,11 @@ read it as their fired constructor's telescope (`TVja`). -/
 theorem denote_quotMkTy {c₀ : ConstantInfo} (ψ : Name → Nat)
     (hne : ¬ c₀.name = quotName)
     (hQ : env.find? quotName = some (quotA.atLps [q])) :
-    denote (acvalWith m.acval c₀.name A) ⟨c₀ :: env.consts, env.tables⟩ ψ 0
+    denote (acvalWith m.acval c₀.name A) ⟨c₀ :: env.consts, env.tables, env.rules⟩ ψ 0
         quotMkA.toConstantVal.type
       = some (quotMkTy (ψ uN)) := by
   have hQc : ∀ d : Nat,
-      denote (acvalWith m.acval c₀.name A) ⟨c₀ :: env.consts, env.tables⟩ ψ d
+      denote (acvalWith m.acval c₀.name A) ⟨c₀ :: env.consts, env.tables, env.rules⟩ ψ d
         (Expr.const quotName
           [Level.param (Name.str Name.anonymous "u")])
         = some (Term.const .quot
@@ -172,11 +172,11 @@ theorem denote_quotMkTy {c₀ : ConstantInfo} (ψ : Name → Nat)
 theorem denote_quotMkTyAt {c₀ : ConstantInfo} (ψ : Name → Nat)
     (hne : ¬ c₀.name = quotName)
     (hQ : env.find? quotName = some (quotA.atLps [q])) :
-    denote (acvalWith m.acval c₀.name A) ⟨c₀ :: env.consts, env.tables⟩ ψ 0
+    denote (acvalWith m.acval c₀.name A) ⟨c₀ :: env.consts, env.tables, env.rules⟩ ψ 0
         (quotMkA.atLps [x]).toConstantVal.type
       = some (quotMkTy (ψ x)) := by
   have hQc : ∀ d : Nat,
-      denote (acvalWith m.acval c₀.name A) ⟨c₀ :: env.consts, env.tables⟩ ψ d
+      denote (acvalWith m.acval c₀.name A) ⟨c₀ :: env.consts, env.tables, env.rules⟩ ψ d
         (Expr.const quotName [Level.param x])
         = some (Term.const .quot [ψ x]) := fun d =>
     denote_quotLeaf (m := m) (A := A) (c₀ := c₀) ψ hne hQ d (Level.param x)
@@ -192,7 +192,7 @@ theorem denote_quotMkTyAt {c₀ : ConstantInfo} (ψ : Name → Nat)
 theorem denote_quotMkA_type (ψ : Name → Nat)
     (hQ : env.find? quotName = some (quotA.atLps [q])) :
     denote (acvalWith m.acval quotMkA.name A)
-        ⟨quotMkA :: env.consts, env.tables⟩ ψ 0 quotMkA.toConstantVal.type
+        ⟨quotMkA :: env.consts, env.tables, env.rules⟩ ψ 0 quotMkA.toConstantVal.type
       = some (quotMkTy (ψ uN)) :=
   denote_quotMkTy (m := m) (A := A) ψ (by decide) hQ
 
@@ -216,8 +216,8 @@ theorem IsTy_relSpace (Aset : V) : IsTy (relSpace V Aset) := IsTy_piV
 /-- **`Quot`, installed at the P tier.** -/
 theorem extendQuot (mp : EnvModelM V env)
     (hfresh : env.find? quotName = none)
-    (hwf : EnvWF ⟨quotA :: env.consts, env.tables⟩) {ex : List Name} :
-    CoverTo mp ex ⟨quotA :: env.consts, env.tables⟩ ex := by
+    (hwf : EnvWF ⟨quotA :: env.consts, env.tables, env.rules⟩) {ex : List Name} :
+    CoverTo mp ex ⟨quotA :: env.consts, env.tables, env.rules⟩ ex := by
   refine coverTo_cons hfresh (fun _ _ _ => rfl) (declStep_preserves_of_basis_cons mp
     (A := fun ψ => Term.const .quot [ψ uN]) hfresh (by decide)
     (fun _ _ _ h => nomatch h)
@@ -249,8 +249,8 @@ theorem extendQuot (mp : EnvModelM V env)
 theorem extendQuotMk (mp : EnvModelM V env)
     (hQ : env.find? quotName = some (quotA.atLps [q]))
     (hfresh : env.find? quotMkName = none)
-    (hwf : EnvWF ⟨quotMkA :: env.consts, env.tables⟩) {ex : List Name} :
-    CoverTo mp ex ⟨quotMkA :: env.consts, env.tables⟩ ex := by
+    (hwf : EnvWF ⟨quotMkA :: env.consts, env.tables, env.rules⟩) {ex : List Name} :
+    CoverTo mp ex ⟨quotMkA :: env.consts, env.tables, env.rules⟩ ex := by
   have hty := fun ψ =>
     denote_quotMkA_type (m := mp.base2)
       (A := fun ψ => Term.const .quotMk [ψ uN]) ψ hQ
@@ -517,17 +517,17 @@ theorem denote_quotIndA_type (ψ : Name → Nat)
     (hQ : env.find? quotName = some (quotA.atLps [q]))
     (hM : env.find? quotMkName = some (quotMkA.atLps [x])) :
     denote (acvalWith m.acval quotIndA.name A)
-        ⟨quotIndA :: env.consts, env.tables⟩ ψ 0 quotIndA.toConstantVal.type
+        ⟨quotIndA :: env.consts, env.tables, env.rules⟩ ψ 0 quotIndA.toConstantVal.type
       = some (quotIndTy (ψ uN)) := by
   have hQc : ∀ d : Nat,
       denote (acvalWith m.acval quotIndA.name A)
-        ⟨quotIndA :: env.consts, env.tables⟩ ψ d (.const quotName [.param uN])
+        ⟨quotIndA :: env.consts, env.tables, env.rules⟩ ψ d (.const quotName [.param uN])
         = some (Term.const .quot [ψ uN]) := fun d =>
     denote_quotLeaf (m := m) (A := A) ψ (by decide) hQ d
       (Level.param uN)
   have hMc : ∀ d : Nat,
       denote (acvalWith m.acval quotIndA.name A)
-        ⟨quotIndA :: env.consts, env.tables⟩ ψ d (.const quotMkName [.param uN])
+        ⟨quotIndA :: env.consts, env.tables, env.rules⟩ ψ d (.const quotMkName [.param uN])
         = some (Term.const .quotMk [ψ uN]) := fun d =>
     denote_quotMkLeaf (m := m) (A := A) ψ (by decide) hM d
       (Level.param uN)
@@ -718,17 +718,17 @@ theorem denote_quotInd_rhs (ψ : Name → Nat)
     (hQ : env.find? quotName = some (quotA.atLps [q]))
     (hM : env.find? quotMkName = some (quotMkA.atLps [x])) :
     denote (acvalWith m.acval quotIndA.name A)
-        ⟨quotIndA :: env.consts, env.tables⟩ ψ 0 quotIndRule.rhs
+        ⟨quotIndA :: env.consts, env.tables, env.rules⟩ ψ 0 quotIndRule.rhs
       = some (quotIndRa (ψ uN)) := by
   have hQc : ∀ d : Nat,
       denote (acvalWith m.acval quotIndA.name A)
-        ⟨quotIndA :: env.consts, env.tables⟩ ψ d (.const quotName [.param uN])
+        ⟨quotIndA :: env.consts, env.tables, env.rules⟩ ψ d (.const quotName [.param uN])
         = some (Term.const .quot [ψ uN]) := fun d =>
     denote_quotLeaf (m := m) (A := A) ψ (by decide) hQ d
       (Level.param uN)
   have hMc : ∀ d : Nat,
       denote (acvalWith m.acval quotIndA.name A)
-        ⟨quotIndA :: env.consts, env.tables⟩ ψ d (.const quotMkName [.param uN])
+        ⟨quotIndA :: env.consts, env.tables, env.rules⟩ ψ d (.const quotMkName [.param uN])
         = some (Term.const .quotMk [ψ uN]) := fun d =>
     denote_quotMkLeaf (m := m) (A := A) ψ (by decide) hM d
       (Level.param uN)
@@ -882,7 +882,7 @@ and (P) from the major's domain (`quotRuleExtra_of`); (T) from the
 class's representative (`quotRuleT_of`); no indices, a `.plain` rule,
 so (U) is the trivial index pin. -/
 theorem quotIndExtra {m : EnvModel V env}
-    (m₂ : EnvModel V ⟨quotIndA :: env.consts, env.tables⟩)
+    (m₂ : EnvModel V ⟨quotIndA :: env.consts, env.tables, env.rules⟩)
     (hQ : env.find? quotName = some (quotA.atLps [q]))
     (hM : env.find? quotMkName = some (quotMkA.atLps [x]))
     (hac : m₂.acval = acvalWith m.acval quotIndA.name
@@ -894,7 +894,7 @@ theorem quotIndExtra {m : EnvModel V env}
   obtain ⟨ψ, hψ⟩ : ∃ ψ : Name → Nat,
       ψ = Level.substFn φ quotIndA.toConstantVal.levelParams us :=
     ⟨_, rfl⟩
-  have hTyRead : denote m₂.acval ⟨quotIndA :: env.consts, env.tables⟩ φ 0
+  have hTyRead : denote m₂.acval ⟨quotIndA :: env.consts, env.tables, env.rules⟩ φ 0
       (quotIndA.toConstantVal.type.instantiateLevelParams
         quotIndA.toConstantVal.levelParams us)
       = some (quotIndTy (ψ uN)) := by
@@ -902,10 +902,10 @@ theorem quotIndExtra {m : EnvModel V env}
       denote_quotIndA_type (m := m) _ hQ hM, ← hψ]
   obtain rfl : TVa = _ :=
     (Option.some.inj (hTyRead.symm.trans hTVa)).symm
-  have hM' : (⟨quotIndA :: env.consts, env.tables⟩ : Env).find? quotMkName
+  have hM' : (⟨quotIndA :: env.consts, env.tables, env.rules⟩ : Env).find? quotMkName
       = some (quotMkA.atLps [x]) := by
     rw [ConLeche.Env.find?_cons, ite_eq_right (by decide)]; exact hM
-  have hQ' : (⟨quotIndA :: env.consts, env.tables⟩ : Env).find? quotName
+  have hQ' : (⟨quotIndA :: env.consts, env.tables, env.rules⟩ : Env).find? quotName
       = some (quotA.atLps [q]) := by
     rw [ConLeche.Env.find?_cons, ite_eq_right (by decide)]; exact hQ
   refine ⟨fun h => (nomatch h), fun cvj cnP cnF iT hfj => ?_⟩
@@ -937,7 +937,7 @@ theorem quotIndExtra {m : EnvModel V env}
       acvalWith_ne (by decide)]
     exact quotMkLeafVal hM _
   have hCtorRead : ∀ usj : List Level,
-      denote m₂.acval ⟨quotIndA :: env.consts, env.tables⟩ φ 0
+      denote m₂.acval ⟨quotIndA :: env.consts, env.tables, env.rules⟩ φ 0
         ((quotMkA.atLps [x]).toConstantVal.type.instantiateLevelParams
           [x] usj)
       = some (quotMkTy
@@ -1016,7 +1016,7 @@ the transport is five `WellDenoted_app_pt` steps whose domains come
 straight off the two telescope fits — no domain has to be
 identified. -/
 theorem quotIndLaw {m : EnvModel V env}
-    (m₂ : EnvModel V ⟨quotIndA :: env.consts, env.tables⟩)
+    (m₂ : EnvModel V ⟨quotIndA :: env.consts, env.tables, env.rules⟩)
     (hQ : env.find? quotName = some (quotA.atLps [q]))
     (hM : env.find? quotMkName = some (quotMkA.atLps [x]))
     (hac : m₂.acval = acvalWith m.acval quotIndA.name
@@ -1029,7 +1029,7 @@ theorem quotIndLaw {m : EnvModel V env}
   obtain ⟨ψ, hψ⟩ : ∃ ψ : Name → Nat,
       ψ = Level.substFn φ quotIndA.toConstantVal.levelParams us :=
     ⟨_, rfl⟩
-  have hRa : denote m₂.acval ⟨quotIndA :: env.consts, env.tables⟩ φ 0
+  have hRa : denote m₂.acval ⟨quotIndA :: env.consts, env.tables, env.rules⟩ φ 0
       (quotIndRule.rhs.instantiateLevelParams
         quotIndA.toConstantVal.levelParams us)
       = some (quotIndRa (ψ uN)) := by
@@ -1041,7 +1041,7 @@ theorem quotIndLaw {m : EnvModel V env}
   intro cvj cnP cnF iT hfj usj ρ xs ys TVa TVja restR restC hxs hys husj
     hlev _ hpin hTVa hTVja hfitR hfitC
   -- the fired constructor is `Quot.mk`, stored in the prefix
-  have hM' : (⟨quotIndA :: env.consts, env.tables⟩ : Env).find? quotMkName
+  have hM' : (⟨quotIndA :: env.consts, env.tables, env.rules⟩ : Env).find? quotMkName
       = some (quotMkA.atLps [x]) := by
     rw [ConLeche.Env.find?_cons, ite_eq_right (by decide)]; exact hM
   rw [show RecRule.ctor quotIndRule = quotMkName from rfl, hM'] at hfj
@@ -1055,7 +1055,7 @@ theorem quotIndLaw {m : EnvModel V env}
   obtain ⟨y1, y2, y3, rfl⟩ : ∃ p q r, ys = [p, q, r] := by
     match ys, hys with
     | [p, q, r], _ => exact ⟨p, q, r, rfl⟩
-  have hTyRead : denote m₂.acval ⟨quotIndA :: env.consts, env.tables⟩ φ 0
+  have hTyRead : denote m₂.acval ⟨quotIndA :: env.consts, env.tables, env.rules⟩ φ 0
       (quotIndA.toConstantVal.type.instantiateLevelParams
         quotIndA.toConstantVal.levelParams us)
       = some (quotIndTy (ψ uN)) := by
@@ -1063,7 +1063,7 @@ theorem quotIndLaw {m : EnvModel V env}
       denote_quotIndA_type (m := m) _ hQ hM, ← hψ]
   obtain rfl : TVa = _ :=
     (Option.some.inj (hTyRead.symm.trans hTVa)).symm
-  have hCtorRead : denote m₂.acval ⟨quotIndA :: env.consts, env.tables⟩ φ 0
+  have hCtorRead : denote m₂.acval ⟨quotIndA :: env.consts, env.tables, env.rules⟩ φ 0
       ((quotMkA.atLps [x]).toConstantVal.type.instantiateLevelParams
         [x] usj)
       = some (quotMkTy
@@ -1110,8 +1110,8 @@ theorem extendQuotInd (mp : EnvModelM V env)
     (hQ : env.find? quotName = some (quotA.atLps [q]))
     (hM : env.find? quotMkName = some (quotMkA.atLps [x]))
     (hfresh : env.find? quotIndA.name = none)
-    (hwf : EnvWF ⟨quotIndA :: env.consts, env.tables⟩) {ex : List Name} :
-    CoverTo mp ex ⟨quotIndA :: env.consts, env.tables⟩ ex := by
+    (hwf : EnvWF ⟨quotIndA :: env.consts, env.tables, env.rules⟩) {ex : List Name} :
+    CoverTo mp ex ⟨quotIndA :: env.consts, env.tables, env.rules⟩ ex := by
   have hty := fun ψ =>
     denote_quotIndA_type (m := mp.base2)
       (A := fun ψ => Term.const .quotInd [ψ uN]) ψ hQ hM
@@ -1170,11 +1170,11 @@ prefix's own, by `acvalWith_ne`. -/
 theorem denote_eqLeaf {c₀ : ConstantInfo} (ψ : Name → Nat) (l : Level)
     (hne : ¬ c₀.name = eqName)
     (hE : EqStored env) (d : Nat) :
-    denote (acvalWith m.acval c₀.name A) ⟨c₀ :: env.consts, env.tables⟩ ψ d
+    denote (acvalWith m.acval c₀.name A) ⟨c₀ :: env.consts, env.tables, env.rules⟩ ψ d
         (.const eqName [l])
       = some (m.acval eqName (Level.substFn ψ [eqLp env] [l])) := by
   obtain ⟨ci, hf, hl⟩ := hE
-  have hf' : (⟨c₀ :: env.consts, env.tables⟩ : Env).find? eqName = some ci := by
+  have hf' : (⟨c₀ :: env.consts, env.tables, env.rules⟩ : Env).find? eqName = some ci := by
     rw [ConLeche.Env.find?_cons, ite_eq_right hne]; exact hf
   rw [denote_const hf' (by rw [hl]; rfl), acvalWith_ne (fun h => hne h.symm), hl]
 
@@ -1232,23 +1232,23 @@ theorem denote_quotSoundA_type (ψ : Name → Nat)
     (hM : env.find? quotMkName = some (quotMkA.atLps [x]))
     (hE : EqStored env) :
     denote (acvalWith m.acval quotSoundA.name A)
-        ⟨quotSoundA :: env.consts, env.tables⟩ ψ 0 quotSoundA.toConstantVal.type
+        ⟨quotSoundA :: env.consts, env.tables, env.rules⟩ ψ 0 quotSoundA.toConstantVal.type
       = some (quotSoundTy (m.acval eqName (Level.substFn ψ [eqLp env] [Level.param uN])) (ψ uN)) := by
   have hQc : ∀ d : Nat,
       denote (acvalWith m.acval quotSoundA.name A)
-        ⟨quotSoundA :: env.consts, env.tables⟩ ψ d (.const quotName [.param uN])
+        ⟨quotSoundA :: env.consts, env.tables, env.rules⟩ ψ d (.const quotName [.param uN])
         = some (Term.const .quot [ψ uN]) := fun d =>
     denote_quotLeaf (m := m) (A := A) ψ (by decide) hQ d
       (Level.param uN)
   have hMc : ∀ d : Nat,
       denote (acvalWith m.acval quotSoundA.name A)
-        ⟨quotSoundA :: env.consts, env.tables⟩ ψ d (.const quotMkName [.param uN])
+        ⟨quotSoundA :: env.consts, env.tables, env.rules⟩ ψ d (.const quotMkName [.param uN])
         = some (Term.const .quotMk [ψ uN]) := fun d =>
     denote_quotMkLeaf (m := m) (A := A) ψ (by decide) hM d
       (Level.param uN)
   have hEc : ∀ d : Nat,
       denote (acvalWith m.acval quotSoundA.name A)
-        ⟨quotSoundA :: env.consts, env.tables⟩ ψ d (.const eqName [.param uN])
+        ⟨quotSoundA :: env.consts, env.tables, env.rules⟩ ψ d (.const eqName [.param uN])
         = some (m.acval eqName (Level.substFn ψ [eqLp env] [Level.param uN])) := fun d =>
     denote_eqLeaf (m := m) (A := A) ψ (Level.param uN) (by decide) hE d
   rw [show quotSoundA.toConstantVal.type
@@ -1501,8 +1501,8 @@ theorem extendQuotSound (mp : EnvModelM V env)
     (hM : env.find? quotMkName = some (quotMkA.atLps [x]))
     (hE : EqStored env)
     (hfresh : env.find? quotSoundA.name = none)
-    (hwf : EnvWF ⟨quotSoundA :: env.consts, env.tables⟩) {ex : List Name} :
-    CoverTo mp ex ⟨quotSoundA :: env.consts, env.tables⟩ ex := by
+    (hwf : EnvWF ⟨quotSoundA :: env.consts, env.tables, env.rules⟩) {ex : List Name} :
+    CoverTo mp ex ⟨quotSoundA :: env.consts, env.tables, env.rules⟩ ex := by
   have hty := fun ψ =>
     denote_quotSoundA_type (m := mp.base2)
       (A := fun ψ => Term.const .quotSound [ψ uN]) ψ hQ hM hE
@@ -1854,19 +1854,19 @@ theorem denote_quotLiftA_type (ψ : Name → Nat)
     (hQ : env.find? quotName = some (quotA.atLps [q]))
     (hE : EqStored env) :
     denote (acvalWith m.acval quotLiftA.name A)
-        ⟨quotLiftA :: env.consts, env.tables⟩ ψ 0 quotLiftA.toConstantVal.type
+        ⟨quotLiftA :: env.consts, env.tables, env.rules⟩ ψ 0 quotLiftA.toConstantVal.type
       = some (quotLiftTy
           (m.acval eqName (Level.substFn ψ [eqLp env] [Level.param vN]))
           (ψ uN) (ψ vN)) := by
   have hQc : ∀ d : Nat,
       denote (acvalWith m.acval quotLiftA.name A)
-        ⟨quotLiftA :: env.consts, env.tables⟩ ψ d (.const quotName [.param uN])
+        ⟨quotLiftA :: env.consts, env.tables, env.rules⟩ ψ d (.const quotName [.param uN])
         = some (Term.const .quot [ψ uN]) := fun d =>
     denote_quotLeaf (m := m) (A := A) ψ (by decide) hQ d
       (Level.param uN)
   have hEc : ∀ d : Nat,
       denote (acvalWith m.acval quotLiftA.name A)
-        ⟨quotLiftA :: env.consts, env.tables⟩ ψ d (.const eqName [.param vN])
+        ⟨quotLiftA :: env.consts, env.tables, env.rules⟩ ψ d (.const eqName [.param vN])
         = some (m.acval eqName
             (Level.substFn ψ [eqLp env] [Level.param vN])) := fun d =>
     denote_eqLeaf (m := m) (A := A) ψ (Level.param vN) (by decide)
@@ -1909,13 +1909,13 @@ def quotLiftRa (E : Term) (u v : Nat) : Term :=
 theorem denote_quotLift_rhs (ψ : Name → Nat)
     (hE : EqStored env) :
     denote (acvalWith m.acval quotLiftA.name A)
-        ⟨quotLiftA :: env.consts, env.tables⟩ ψ 0 quotLiftRule.rhs
+        ⟨quotLiftA :: env.consts, env.tables, env.rules⟩ ψ 0 quotLiftRule.rhs
       = some (quotLiftRa
           (m.acval eqName (Level.substFn ψ [eqLp env] [Level.param vN]))
           (ψ uN) (ψ vN)) := by
   have hEc : ∀ d : Nat,
       denote (acvalWith m.acval quotLiftA.name A)
-        ⟨quotLiftA :: env.consts, env.tables⟩ ψ d (.const eqName [.param vN])
+        ⟨quotLiftA :: env.consts, env.tables, env.rules⟩ ψ d (.const eqName [.param vN])
         = some (m.acval eqName
             (Level.substFn ψ [eqLp env] [Level.param vN])) := fun d =>
     denote_eqLeaf (m := m) (A := A) ψ (Level.param vN) (by decide)
@@ -2158,7 +2158,7 @@ theorem quotLiftRa_app {E : Term} {u v : Nat}
 /-- **`Quot.lift`'s ι facts**: as `quotIndExtra`, the major's
 domain read off the sixth binder. -/
 theorem quotLiftExtra {m : EnvModel V env}
-    (m₂ : EnvModel V ⟨quotLiftA :: env.consts, env.tables⟩)
+    (m₂ : EnvModel V ⟨quotLiftA :: env.consts, env.tables, env.rules⟩)
     (hQ : env.find? quotName = some (quotA.atLps [q]))
     (hM : env.find? quotMkName = some (quotMkA.atLps [x]))
     (hE : EqStored env)
@@ -2171,7 +2171,7 @@ theorem quotLiftExtra {m : EnvModel V env}
   obtain ⟨ψ, hψ⟩ : ∃ ψ : Name → Nat,
       ψ = Level.substFn φ quotLiftA.toConstantVal.levelParams us :=
     ⟨_, rfl⟩
-  have hTyRead : denote m₂.acval ⟨quotLiftA :: env.consts, env.tables⟩ φ 0
+  have hTyRead : denote m₂.acval ⟨quotLiftA :: env.consts, env.tables, env.rules⟩ φ 0
       (quotLiftA.toConstantVal.type.instantiateLevelParams
         quotLiftA.toConstantVal.levelParams us)
       = some (quotLiftTy
@@ -2181,10 +2181,10 @@ theorem quotLiftExtra {m : EnvModel V env}
       denote_quotLiftA_type (m := m) _ hQ hE]
   obtain rfl : TVa = _ :=
     (Option.some.inj (hTyRead.symm.trans hTVa)).symm
-  have hM' : (⟨quotLiftA :: env.consts, env.tables⟩ : Env).find? quotMkName
+  have hM' : (⟨quotLiftA :: env.consts, env.tables, env.rules⟩ : Env).find? quotMkName
       = some (quotMkA.atLps [x]) := by
     rw [ConLeche.Env.find?_cons, ite_eq_right (by decide)]; exact hM
-  have hQ' : (⟨quotLiftA :: env.consts, env.tables⟩ : Env).find? quotName
+  have hQ' : (⟨quotLiftA :: env.consts, env.tables, env.rules⟩ : Env).find? quotName
       = some (quotA.atLps [q]) := by
     rw [ConLeche.Env.find?_cons, ite_eq_right (by decide)]; exact hQ
   refine ⟨fun h => (nomatch h), fun cvj cnP cnF iT hfj => ?_⟩
@@ -2216,7 +2216,7 @@ theorem quotLiftExtra {m : EnvModel V env}
       acvalWith_ne (by decide)]
     exact quotMkLeafVal hM _
   have hCtorRead : ∀ usj : List Level,
-      denote m₂.acval ⟨quotLiftA :: env.consts, env.tables⟩ φ 0
+      denote m₂.acval ⟨quotLiftA :: env.consts, env.tables, env.rules⟩ φ 0
         ((quotMkA.atLps [x]).toConstantVal.type.instantiateLevelParams
           [x] usj)
       = some (quotMkTy
@@ -2299,7 +2299,7 @@ at exactly the `cons` environment its space lemma is stated at; the
 fired equality is `quotLiftV_fired` against `quotLiftRa_app`; the
 transport is six `WellDenoted_app_fibre` steps over `quotLiftRaSpace`. -/
 theorem quotLiftLaw {m : EnvModel V env}
-    (m₂ : EnvModel V ⟨quotLiftA :: env.consts, env.tables⟩)
+    (m₂ : EnvModel V ⟨quotLiftA :: env.consts, env.tables, env.rules⟩)
     (hQ : env.find? quotName = some (quotA.atLps [q]))
     (hM : env.find? quotMkName = some (quotMkA.atLps [x]))
     (hE : EqStored env) (heq : EqLaw m)
@@ -2318,7 +2318,7 @@ theorem quotLiftLaw {m : EnvModel V env}
   obtain ⟨hval0, hgr0⟩ :=
     EqLaw.at heq hE (Level.substFn ψ [eqLp env] [Level.param vN])
   rw [hEuN] at hval0 hgr0
-  have hRa : denote m₂.acval ⟨quotLiftA :: env.consts, env.tables⟩ φ 0
+  have hRa : denote m₂.acval ⟨quotLiftA :: env.consts, env.tables, env.rules⟩ φ 0
       (quotLiftRule.rhs.instantiateLevelParams
         quotLiftA.toConstantVal.levelParams us)
       = some (quotLiftRa
@@ -2332,7 +2332,7 @@ theorem quotLiftLaw {m : EnvModel V env}
     exact nomatch h
   intro cvj cnP cnF iT hfj usj ρ xs ys TVa TVja restR restC hxs hys husj
     hlev _ hpin hTVa hTVja hfitR hfitC
-  have hM' : (⟨quotLiftA :: env.consts, env.tables⟩ : Env).find? quotMkName
+  have hM' : (⟨quotLiftA :: env.consts, env.tables, env.rules⟩ : Env).find? quotMkName
       = some (quotMkA.atLps [x]) := by
     rw [ConLeche.Env.find?_cons, ite_eq_right (by decide)]; exact hM
   rw [show RecRule.ctor quotLiftRule = quotMkName from rfl, hM'] at hfj
@@ -2356,7 +2356,7 @@ theorem quotLiftLaw {m : EnvModel V env}
       us (.param uN)] x = _
     rw [substFn_one, Level.subst, Level.eval_subst_go]
   -- the two readings, identified
-  have hTyRead : denote m₂.acval ⟨quotLiftA :: env.consts, env.tables⟩ φ 0
+  have hTyRead : denote m₂.acval ⟨quotLiftA :: env.consts, env.tables, env.rules⟩ φ 0
       (quotLiftA.toConstantVal.type.instantiateLevelParams
         quotLiftA.toConstantVal.levelParams us)
       = some (quotLiftTy
@@ -2366,7 +2366,7 @@ theorem quotLiftLaw {m : EnvModel V env}
       denote_quotLiftA_type (m := m) _ hQ hE]
   obtain rfl : TVa = _ :=
     (Option.some.inj (hTyRead.symm.trans hTVa)).symm
-  have hCtorRead : denote m₂.acval ⟨quotLiftA :: env.consts, env.tables⟩ φ 0
+  have hCtorRead : denote m₂.acval ⟨quotLiftA :: env.consts, env.tables, env.rules⟩ φ 0
       ((quotMkA.atLps [x]).toConstantVal.type.instantiateLevelParams
         [x] usj)
       = some (quotMkTy
@@ -2490,8 +2490,8 @@ theorem extendQuotLift (mp : EnvModelM V env)
     (hM : env.find? quotMkName = some (quotMkA.atLps [x]))
     (hE : EqStored env)
     (hfresh : env.find? quotLiftA.name = none)
-    (hwf : EnvWF ⟨quotLiftA :: env.consts, env.tables⟩) {ex : List Name} :
-    CoverTo mp ex ⟨quotLiftA :: env.consts, env.tables⟩ ex := by
+    (hwf : EnvWF ⟨quotLiftA :: env.consts, env.tables, env.rules⟩) {ex : List Name} :
+    CoverTo mp ex ⟨quotLiftA :: env.consts, env.tables, env.rules⟩ ex := by
   have hty := fun ψ =>
     denote_quotLiftA_type (m := mp.base2)
       (A := fun ψ => Term.const .quotLift [ψ uN, ψ vN]) ψ hQ hE
@@ -2569,27 +2569,28 @@ names. -/
 theorem declQuotPB {k : ConLeche.QuotKind} (mp : EnvModelM V env)
     (hp : ConLeche.quotPredsOk env.find? k = true)
     (hfr : (env.find? (ConLeche.quotPin k).name).isNone = true) :
-    CoverStep mp ⟨ConLeche.quotPin k :: env.consts, env.tables⟩ := by
+    CoverStep mp ⟨ConLeche.quotPin k :: env.consts, env.tables, env.rules⟩ := by
   have hcons : ∀ {c₀ : ConstantInfo} {n : Name} {ci : ConstantInfo}, ¬ c₀.name = n →
-      env.find? n = some ci → (⟨c₀ :: env.consts, env.tables⟩ : Env).find? n = some ci :=
+      env.find? n = some ci → (⟨c₀ :: env.consts, env.tables, env.rules⟩ : Env).find? n = some ci :=
     fun hne hf => by rw [ConLeche.Env.find?_cons, ite_eq_right hne]; exact hf
   cases k with
   | type =>
     have hf1 : env.find? quotA.name = none := Option.isNone_iff_eq_none.mp hfr
-    have hwf1 : EnvWF ⟨quotA :: env.consts, env.tables⟩ :=
+    have hwf1 : EnvWF ⟨quotA :: env.consts, env.tables, env.rules⟩ :=
       EnvWF.cons (by decide) mp.base2.wf ⟨rfl, rfl, rfl, rfl,
         (fun _ _ _ heq => nomatch heq), (fun _ _ _ _ _ heq => nomatch heq)⟩
           (by intro _ _ h hn; cases h; exact nomatch hn)
+          (hb := fun _ _ h => by cases h; exact .top)
     exact extendQuot mp hf1 hwf1
   | ctor =>
     obtain ⟨q, hQ⟩ := quotStored_of mp hp
     have hf2 : env.find? quotMkA.name = none := Option.isNone_iff_eq_none.mp hfr
-    have hwf2 : EnvWF ⟨quotMkA :: env.consts, env.tables⟩ := by
+    have hwf2 : EnvWF ⟨quotMkA :: env.consts, env.tables, env.rules⟩ := by
       refine EnvWF.cons (by decide) mp.base2.wf ⟨rfl, rfl, ?_, rfl,
         (fun _ _ _ heq => nomatch heq), (fun _ _ _ _ _ heq => nomatch heq)⟩
         (hk := CtorWF.of_head rfl)
       show Expr.constsResolve _ quotMkA.toConstantVal.type = true
-      have hf : (⟨quotMkA :: env.consts, env.tables⟩ : Env).find? quotName = some (quotA.atLps [q]) :=
+      have hf : (⟨quotMkA :: env.consts, env.tables, env.rules⟩ : Env).find? quotName = some (quotA.atLps [q]) :=
         hcons (by decide) hQ
       rw [show quotMkA.toConstantVal.type
         = Expr.forallE (.sort (.param uN))
@@ -2609,10 +2610,10 @@ theorem declQuotPB {k : ConLeche.QuotKind} (mp : EnvModelM V env)
     obtain ⟨x, hM⟩ := quotMkStored_of mp hMs
     obtain ⟨ciE, hfE0, hlE⟩ := hE
     have hf3 : env.find? quotLiftA.name = none := Option.isNone_iff_eq_none.mp hfr
-    have hwf3 : EnvWF ⟨quotLiftA :: env.consts, env.tables⟩ := by
-      have hfQ : (⟨quotLiftA :: env.consts, env.tables⟩ : Env).find? quotName = some (quotA.atLps [q]) :=
+    have hwf3 : EnvWF ⟨quotLiftA :: env.consts, env.tables, env.rules⟩ := by
+      have hfQ : (⟨quotLiftA :: env.consts, env.tables, env.rules⟩ : Env).find? quotName = some (quotA.atLps [q]) :=
         hcons (by decide) hQ
-      have hfE : (⟨quotLiftA :: env.consts, env.tables⟩ : Env).find? eqName = some ciE :=
+      have hfE : (⟨quotLiftA :: env.consts, env.tables, env.rules⟩ : Env).find? eqName = some ciE :=
         hcons (by decide) hfE0
       refine EnvWF.cons (by decide) mp.base2.wf ⟨rfl, rfl, ?_, rfl,
         (fun _ _ _ heq => nomatch heq), ?_⟩ (hr := ruleWF_of_recRulesBindB (by decide))
@@ -2657,10 +2658,10 @@ theorem declQuotPB {k : ConLeche.QuotKind} (mp : EnvModelM V env)
     obtain ⟨q, hQ⟩ := quotStored_of mp hp.1
     obtain ⟨x, hM⟩ := quotMkStored_of mp hp.2
     have hf4 : env.find? quotIndA.name = none := Option.isNone_iff_eq_none.mp hfr
-    have hwf4 : EnvWF ⟨quotIndA :: env.consts, env.tables⟩ := by
-      have hfQ : (⟨quotIndA :: env.consts, env.tables⟩ : Env).find? quotName = some (quotA.atLps [q]) :=
+    have hwf4 : EnvWF ⟨quotIndA :: env.consts, env.tables, env.rules⟩ := by
+      have hfQ : (⟨quotIndA :: env.consts, env.tables, env.rules⟩ : Env).find? quotName = some (quotA.atLps [q]) :=
         hcons (by decide) hQ
-      have hfM : (⟨quotIndA :: env.consts, env.tables⟩ : Env).find? quotMkName = some (quotMkA.atLps [x]) :=
+      have hfM : (⟨quotIndA :: env.consts, env.tables, env.rules⟩ : Env).find? quotMkName = some (quotMkA.atLps [x]) :=
         hcons (by decide) hM
       refine EnvWF.cons (by decide) mp.base2.wf ⟨rfl, rfl, ?_, rfl,
         (fun _ _ _ heq => nomatch heq), ?_⟩ (hr := ruleWF_of_recRulesBindB (by decide))
@@ -2704,12 +2705,12 @@ theorem declQuotPB {k : ConLeche.QuotKind} (mp : EnvModelM V env)
     obtain ⟨x, hM⟩ := quotMkStored_of mp hMs
     obtain ⟨ciE, hfE0, hlE⟩ := hE
     have hf5 : env.find? quotSoundA.name = none := Option.isNone_iff_eq_none.mp hfr
-    have hwf5 : EnvWF ⟨quotSoundA :: env.consts, env.tables⟩ := by
-      have hfQ : (⟨quotSoundA :: env.consts, env.tables⟩ : Env).find? quotName = some (quotA.atLps [q]) :=
+    have hwf5 : EnvWF ⟨quotSoundA :: env.consts, env.tables, env.rules⟩ := by
+      have hfQ : (⟨quotSoundA :: env.consts, env.tables, env.rules⟩ : Env).find? quotName = some (quotA.atLps [q]) :=
         hcons (by decide) hQ
-      have hfM : (⟨quotSoundA :: env.consts, env.tables⟩ : Env).find? quotMkName = some (quotMkA.atLps [x]) :=
+      have hfM : (⟨quotSoundA :: env.consts, env.tables, env.rules⟩ : Env).find? quotMkName = some (quotMkA.atLps [x]) :=
         hcons (by decide) hM
-      have hfE : (⟨quotSoundA :: env.consts, env.tables⟩ : Env).find? eqName = some ciE :=
+      have hfE : (⟨quotSoundA :: env.consts, env.tables, env.rules⟩ : Env).find? eqName = some ciE :=
         hcons (by decide) hfE0
       refine EnvWF.cons (by decide) mp.base2.wf ⟨rfl, rfl, ?_, rfl,
         (fun _ _ _ heq => nomatch heq), (fun _ _ _ _ _ heq => nomatch heq)⟩

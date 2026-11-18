@@ -147,6 +147,7 @@ def sharedOpsC (fe : FEnv) : CheckerOps CheckCM where
   isDefEq _ d a b := opB mode fe d a b
   ensureSort _ d e := opS mode fe d e
   whnf _ d e := opW mode fe d e
+  whnfB _ n d e := whnfBC mode fe n d e
 
 
 /-! ## Thin phase drivers (one `CState` per declaration)

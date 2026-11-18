@@ -229,8 +229,8 @@ theorem nestContainer_consBlockCtors {envI : Env} {nP : Nat}
     exact ⟨g, hg, a, ha, rfl⟩
   have hEq : ConLeche.consBlockCtors nP groups envI
       = ⟨(groups.flatMap fun g => g.2.map fun c =>
-          ConstantInfo.ctorInfo c.1 nP c.2 g.1).reverse ++ envI.consts, envI.tables⟩ :=
-    by rw [← consBlockCtors_consts, ← consBlockCtors_tables]
+          ConstantInfo.ctorInfo c.1 nP c.2 g.1).reverse ++ envI.consts, envI.tables, envI.rules⟩ :=
+    by rw [← consBlockCtors_consts, ← consBlockCtors_tables, ← consBlockCtors_rules]
   -- a lookup above the constructors: a new constructor (fresh below), or the old one
   have hlook : ∀ n, (ConLeche.consBlockCtors nP groups envI).find? n
       = ((groups.flatMap fun g => g.2.map fun c =>

@@ -150,7 +150,7 @@ theorem BlockTablesCore.pushTable {env : Env} {m' : EnvModel V env} {d : BlockDa
     {A : Nat → (Name → Nat) → Term}
     (h : BlockTablesCore m' d lps formersAll p₁ isRec A)
     {tbl : ProjTable} (hT : env.findTable? tbl.structName = none)
-    (mC : EnvModel V ⟨env.consts, tbl :: env.tables⟩)
+    (mC : EnvModel V ⟨env.consts, tbl :: env.tables, env.rules⟩)
     (hac : mC.acval = m'.acval) :
     BlockTablesCore mC d lps formersAll p₁ isRec A := by
   obtain ⟨hform, hctor⟩ := h
@@ -158,12 +158,12 @@ theorem BlockTablesCore.pushTable {env : Env} {m' : EnvModel V env} {d : BlockDa
   · obtain ⟨hfind, hres, hleaf, hFD⟩ := hform c cvTb hc
     obtain ⟨cvS, hfS, hD⟩ := hfind
     refine ⟨⟨cvS, hfS, hD.pushTable hT mC hac⟩, Expr.constsResolve_of_find (env := env)
-      (env' := ⟨env.consts, tbl :: env.tables⟩) (fun _ h => h) hres,
+      (env' := ⟨env.consts, tbl :: env.tables, env.rules⟩) (fun _ h => h) hres,
       fun ψ => by rw [hac]; exact hleaf ψ,
       hFD.pushTable hT (constsBound_of_constsResolve _ hres) mC hac⟩
   · obtain ⟨hfind, hlps, hres, hread, hleaf⟩ := hctor c j ctor hj
     refine ⟨hfind, hlps, Expr.constsResolve_of_find (env := env)
-      (env' := ⟨env.consts, tbl :: env.tables⟩) (fun _ h => h) hres,
+      (env' := ⟨env.consts, tbl :: env.tables, env.rules⟩) (fun _ h => h) hres,
       fun ψ => ?_, fun ψ => by rw [hac]; exact hleaf ψ⟩
     rw [hac]
     exact denote_pushTable_mono hT ψ 0 (constsBound_of_constsResolve _ hres) (hread ψ)
@@ -171,9 +171,9 @@ theorem BlockTablesCore.pushTable {env : Env} {m' : EnvModel V env} {d : BlockDa
 
 /-- A table installed leaves every other structure's table where it was. -/
 theorem findTable?_cons_ne {env : Env} {t : ProjTable} {T : Name} (hne : t.structName ≠ T) :
-    (⟨env.consts, t :: env.tables⟩ : Env).findTable? T = env.findTable? T := by
+    (⟨env.consts, t :: env.tables, env.rules⟩ : Env).findTable? T = env.findTable? T := by
   unfold Env.findTable?
-  have hf : (⟨env.consts, t :: env.tables⟩ : Env).find? T = env.find? T := rfl
+  have hf : (⟨env.consts, t :: env.tables, env.rules⟩ : Env).find? T = env.find? T := rfl
   rw [hf]
   split
   · simp [hne]
@@ -311,7 +311,7 @@ theorem stageBlockTables {F : Nat} {d : BlockData V} {lps : List Name}
     rw [← hb] at hcore'
     have hEnv : env.pushDelta []
         (⟨ms.declared.name, q.lps, q.nP, ctor.1.name, ctor.2, bodies⟩ :: Qr) =
-        (⟨env.consts, tbl :: env.tables⟩ : Env).pushDelta [] Qr := by
+        (⟨env.consts, tbl :: env.tables, env.rules⟩ : Env).pushDelta [] Qr := by
       rw [hdecl, hqlps, hqnP, hTn]
       simp [Env.pushDelta, tbl]
     rw [hEnv]

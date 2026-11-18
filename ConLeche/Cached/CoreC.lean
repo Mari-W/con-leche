@@ -1346,30 +1346,79 @@ def inferSpineIOI (eager : Bool) (lv : Nat) (depth : Nat) :
       | _ => throw (.invalid "function expected")
 termination_by _ _ args => (lv, 36, args.length, 0)
 
+/-- Twin of `rewriteAttempt`: the theorem's type at the levels through the per-declaration memo
+(`constTyAtM`), its residual by `piResidualM`, every check the specification's. -/
+def rewriteAttemptI (eager : Bool) (lv : Nat) (depth : Nat) (e : Expr) (thm : Name) :
+    CheckCM (Option Expr) := do
+  match fe.find? thm with
+  | some (.thmInfo cv) =>
+    match ruleArgs cv e with
+    | some (args, us) => do
+      let T ← constTyAtM fe thm thm us
+      match (← piResidualM T args).bind eqSpine? with
+      | some (eqn, u, A, l, rhs) =>
+        if RuleGate cv us args e eqn l rhs then
+          if ← iotaCertsFullI eager lv depth T args then
+            if (← inferI eager lv false depth A) = .sort u then
+              if (← inferI eager lv false depth e) = A then
+                if (← inferI eager lv false depth rhs) = A then pure (some rhs) else pure none
+              else pure none
+            else pure none
+          else pure none
+        else pure none
+      | none => pure none
+    | none => pure none
+  | _ => pure none
+termination_by (lv, 37, 0, 0)
+
+/-- Twin of `rewriteRules`. -/
+def rewriteRulesI (eager : Bool) (lv : Nat) (depth : Nat) (e : Expr) :
+    List Name → CheckCM (Option (Name × Expr))
+  | [] => pure none
+  | t :: ts => do
+    match ← rewriteAttemptI eager lv depth e t with
+    | some e₂ => pure (some (t, e₂))
+    | none => rewriteRulesI eager lv depth e ts
+termination_by ts => (lv, 37, 0, ts.length + 1)
+
+/-- Twin of `rewriteStep`: the rules through the index (`FEnv.rulesFor`). -/
+def rewriteStepI (eager : Bool) (lv : Nat) (depth : Nat) (e : Expr) :
+    CheckCM (Option (Name × Expr)) :=
+  match e.getAppFn with
+  | .const c _ => rewriteRulesI eager lv depth e (fe.rulesFor c)
+  | _ => pure none
+termination_by (lv, 37, 1, 0)
+
 /-- Twin of `whnfLoop`, each step `whnfStep`'s: the continuation of a
 step is the loop's own tail call, which the compiler turns into a jump,
 so a δ chain of any length runs in constant native stack (task #342 R2:
 a non-terminating δ chain — Coquand's paradox — runs until the external
 timeout instead of overflowing the stack). -/
 def whnfLoopI (eager : Bool) (lv : Nat) (depth : Nat) :
-    Nat → Expr → CheckCM Expr
-  | 0, _ => throw (.internal "fuel exhausted: whnf loop")
-  | n + 1, e => do
+    Nat → Nat → Expr → CheckCM Expr
+  | 0, _, _ => throw (.internal "fuel exhausted: whnf loop")
+  | n + 1, fires, e => do
     let e₁ ← whnfCoreI eager lv false depth e
     match ← reduceNatI eager lv depth e₁ with
     -- a computed literal is the answer (official `whnf`: `if (auto v =
     -- reduce_nat(t)) return *v;`); a `Bool` constructor goes on (see
     -- `whnfStep`)
-    | some e₂ => if e₂.isLit then pure e₂ else whnfLoopI eager lv depth n e₂
+    | some e₂ => if e₂.isLit then pure e₂ else whnfLoopI eager lv depth n fires e₂
     | none =>
-      match ← unfoldDefinitionI fe e₁ with
-      | some e₂ => whnfLoopI eager lv depth n e₂
-      | none => pure e₁
-termination_by n _ => (lv, 37, n, 0)
+      match ← rewriteStepI eager lv depth e₁ with
+      | some (t, e₂) =>
+        match fires with
+        | 0 => throw (ruleBudgetError t)
+        | f + 1 => whnfLoopI eager lv depth n f e₂
+      | none =>
+        match ← unfoldDefinitionI fe e₁ with
+        | some e₂ => whnfLoopI eager lv depth n fires e₂
+        | none => pure e₁
+termination_by n _ _ => (lv, 37, n + 1, 0)
 
 /-- Twin of `whnfBody`. -/
 def whnfBodyI (eager : Bool) (lv : Nat) : Nat → Expr → CheckCM Expr :=
-  fun depth e => whnfLoopI eager lv depth whnfLoopFuel e
+  fun depth e => whnfLoopI eager lv depth whnfLoopFuel ruleFireBudget e
 termination_by (lv, 38, 0, 0)
 
 /-- Twin of `ensureSort` (returns the level; no readback needed). -/

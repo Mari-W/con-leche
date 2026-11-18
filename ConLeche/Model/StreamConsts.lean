@@ -167,7 +167,7 @@ theorem checkDecl_declares {env env₂ : Env} {F : Nat}
     · exact absurd hq hqs
     obtain ⟨-, type', -, hcvr, hdisj⟩ := hrun
     obtain ⟨-, -, -, -, hann, -, -, -⟩ := hcvr
-    have henv₂ : env₂ = ⟨.axiomInfo ⟨cv.name, cv.levelParams, type'⟩ :: env.consts, env.tables⟩ := by
+    have henv₂ : env₂ = ⟨.axiomInfo ⟨cv.name, cv.levelParams, type'⟩ :: env.consts, env.tables, env.rules⟩ := by
       rcases hdisj with ⟨-, he⟩ | ⟨-, -, he⟩ | ⟨-, -, he⟩ |
         ⟨-, -, -, -, -, -, htol', -⟩
       · exact he

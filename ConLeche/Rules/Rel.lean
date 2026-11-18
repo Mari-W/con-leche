@@ -171,6 +171,32 @@ inductive Red (env : Env) : Nat → Expr → Expr → Prop where
       Red env d b wb → rawNatLit? wb = some n₂ →
       natOpResult c n₁ n₂ = some r →
       Red env d (.app (.app (.const c []) a) b) r
+  /-- **A user rewrite rule** (planned site: `whnfStep`, next to
+  `reduceNat`): a stored theorem `h : ∀ xs, @Eq A l r` at levels `us`,
+  its telescope applied to `args` under the full-grade certificate,
+  rewrites the left side to the right side, both instantiated at `args`.
+  The left side has a constant head, so a ∀ or a sort never rewrites
+  (`Red.rigid`), every argument is a subterm of the left side's
+  application tree (where a first-order matcher finds it), and the right
+  side has no free-variable leaf the left side lacks.  The full-grade
+  inference types both sides at `A` and `A` at `Sort u`, syntactically:
+  the theorem's type alone does not type its `Eq` spine in the model
+  (over an empty `A` the spine reads as the point and says nothing of
+  the sides), so the use site pays for it.  Any stored theorem qualifies
+  here: which theorems the checker registers as rules is the checker's
+  business. -/
+  | rewrite {d : Nat} {h : Name} {cv : ConstantVal} {us : List Level}
+      {args : List Expr} {u : Level} {A l r : Expr} {c : Name} {ls : List Level} :
+      env.find? h = some (.thmInfo cv) →
+      us.length = cv.levelParams.length →
+      CertsF env d (cv.type.instantiateLevelParams cv.levelParams us) args →
+      piResidual (cv.type.instantiateLevelParams cv.levelParams us) args
+        = some (.app (.app (.app (.const eqName [u]) A) l) r) →
+      l.getAppFn = .const c ls →
+      (∀ x ∈ args, x ∈ appSubterms l) →
+      (∀ x ∈ r.fvarLeaves, x ∈ l.fvarLeaves) →
+      Infer env .full d A (.sort u) → Infer env .full d l A → Infer env .full d r A →
+      Red env d l r
   /-- **The structural projection** `proj_i (ctor p⃗ x⃗) ↦ x_i`
   (`whnfCoreBody`'s `.proj` clause, `Kernel/Core.lean`), driven by
   the projection table, with the

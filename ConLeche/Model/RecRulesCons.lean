@@ -336,7 +336,7 @@ theorem recRules_cons_fresh (mp : EnvModelM V env)
     (hfresh : env.find? c₀.name = none)
     (hnotrec : ∀ cv mI rP isK rules, c₀ = .recInfo cv mI rP isK rules →
       rules = [])
-    (m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables⟩)
+    (m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables, env.rules⟩)
     (hac : m₂.acval = acvalWith mp.base2.acval c₀.name A)
     (φ : Name → Nat) : RecRules m₂ φ := by
   intro n cv mI rP isK rules hf rl hmem
@@ -366,7 +366,7 @@ theorem recRules_cons_rec (mp : EnvModelM V env)
     {cv₀ : ConstantVal} {mI₀ rP₀ : Nat} {isK₀ : Bool} {rules₀ : List RecRule}
     (hfresh : env.find? c₀.name = none)
     (hkind : c₀ = .recInfo cv₀ mI₀ rP₀ isK₀ rules₀)
-    (m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables⟩)
+    (m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables, env.rules⟩)
     (hac : m₂.acval = acvalWith mp.base2.acval c₀.name A)
     (φ : Name → Nat)
     (hnew : ∀ rl ∈ rules₀, RecRuleLaw m₂ φ c₀.name cv₀ mI₀ rP₀ isK₀ rl) :
@@ -471,7 +471,7 @@ prefix one (a constant's install adds no table), and its law crosses. -/
 theorem towerOk_cons_fresh (mp : EnvModelM V env)
     {c₀ : ConstantInfo} {A : (Name → Nat) → Term}
     (hfresh : env.find? c₀.name = none)
-    (m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables⟩)
+    (m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables, env.rules⟩)
     (hac : m₂.acval = acvalWith mp.base2.acval c₀.name A)
     (φ : Name → Nat) : TowerOk m₂ φ := by
   -- every table and entry is a prefix one: a constant's install adds no table

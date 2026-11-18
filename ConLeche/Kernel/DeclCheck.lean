@@ -27,29 +27,6 @@ namespace ConLeche
 
 variable (mode : CheckMode)
 
-/-- Indexed `Expr.constsResolve` (same clauses, lookups through the
-index). -/
-def Expr.constsResolveF (fe : FEnv) : Expr → Bool
-  | .bvar _ | .sort _ => true
-  | .lit (.natVal _) =>
-    (fe.find? natName).isSome && (fe.find? natZeroName).isSome &&
-      (fe.find? natSuccName).isSome
-  | .lit (.strVal _) =>
-    (fe.find? natName).isSome && (fe.find? natZeroName).isSome &&
-      (fe.find? natSuccName).isSome && (fe.find? stringName).isSome &&
-      (fe.find? stringOfListName).isSome && (fe.find? listName).isSome &&
-      (fe.find? listNilName).isSome && (fe.find? listConsName).isSome &&
-      (fe.find? charName).isSome && (fe.find? charOfNatName).isSome
-  | .const n _ => (fe.find? n).isSome
-  | .fvar _ ty => ty.constsResolveF fe
-  | .app f a => f.constsResolveF fe && a.constsResolveF fe
-  | .lam ty body | .forallE ty body =>
-    ty.constsResolveF fe && body.constsResolveF fe
-  | .letE ty val body =>
-    ty.constsResolveF fe && val.constsResolveF fe &&
-      body.constsResolveF fe
-  | .proj s _ e => (fe.find? s).isSome && e.constsResolveF fe
-
 /-! ## Indexed guard twins (same result as the `Env` versions under
 `mkFEnv`; agreement lemmas in `ConLeche/Verify/CheckerF.lean`) -/
 

@@ -40,11 +40,11 @@ theorem ConstantValRun.envWF_cons {F : Nat} {env : Env} {cv : ConstantVal} {type
     (hnd : ∀ cv' v h, c ≠ .defnInfo cv' v h) (hnr : ∀ cv' mI rP isK rules, c ≠ .recInfo cv' mI rP isK rules)
     (hni : ∀ cv' caps, c ≠ .indInfo cv' caps)
     (hnc : ∀ cv' nP nF T, c ≠ .ctorInfo cv' nP nF T) :
-    EnvWF ⟨c :: env.consts, env.tables⟩ := by
+    EnvWF ⟨c :: env.consts, env.tables, env.rules⟩ := by
   obtain ⟨-, -, hlbt, hitf, hann, htp, htr, -, hshape⟩ := hcv
   obtain ⟨htf', hbt'⟩ := stored_syntax hann hitf hlbt
   refine EnvWF.cons (hshape _ (by rw [hc, hann])) henv ?_ (IndWF.of_not_ind hni)
-    (CtorWF.of_not_ctor hnc) (RuleWF.of_not_rec hnr)
+    (CtorWF.of_not_ctor hnc) (RuleWF.of_not_rec hnr) (fun cv' caps heq => absurd heq (hni cv' caps))
   refine ⟨?_, ?_, ?_, ?_, fun cv' v h heq => absurd heq (hnd cv' v h),
     fun cv' mI rP isK rules heq => absurd heq (hnr cv' mI rP isK rules)⟩ <;> rw [hc]
   · exact htf'
@@ -55,14 +55,14 @@ theorem ConstantValRun.envWF_cons {F : Nat} {env : Env} {cv : ConstantVal} {type
 /-- **An axiom's or an opaque constant's record**, stored as an axiom. -/
 theorem ConstantValRun.envWF_axiom {F : Nat} {env : Env} {cv : ConstantVal} {type' : Expr}
     (henv : EnvWF env) (hcv : ConstantValRun F env cv type') :
-    EnvWF ⟨.axiomInfo ⟨cv.name, cv.levelParams, type'⟩ :: env.consts, env.tables⟩ :=
+    EnvWF ⟨.axiomInfo ⟨cv.name, cv.levelParams, type'⟩ :: env.consts, env.tables, env.rules⟩ :=
   hcv.envWF_cons henv rfl (fun _ _ _ heq => nomatch heq) (fun _ _ _ _ _ heq => nomatch heq)
     (fun _ _ heq => nomatch heq) (fun _ _ _ _ heq => nomatch heq)
 
 /-- **A theorem's record**, stored by its statement. -/
 theorem ConstantValRun.envWF_thm {F : Nat} {env : Env} {cv : ConstantVal} {type' : Expr}
     (henv : EnvWF env) (hcv : ConstantValRun F env cv type') :
-    EnvWF ⟨.thmInfo ⟨cv.name, cv.levelParams, type'⟩ :: env.consts, env.tables⟩ :=
+    EnvWF ⟨.thmInfo ⟨cv.name, cv.levelParams, type'⟩ :: env.consts, env.tables, env.rules⟩ :=
   hcv.envWF_cons henv rfl (fun _ _ _ heq => nomatch heq) (fun _ _ _ _ _ heq => nomatch heq)
     (fun _ _ heq => nomatch heq) (fun _ _ _ _ heq => nomatch heq)
 
@@ -72,7 +72,7 @@ theorem ConstantValRun.envWF_defn {F : Nat} {env : Env} {cv : ConstantVal} {valu
     {type' value' : Expr} (hint : ReducibilityHint)
     (henv : EnvWF env) (hcv : ConstantValRun F env cv type')
     (hv : ValueFrontRun F env cv value type' value') :
-    EnvWF ⟨.defnInfo ⟨cv.name, cv.levelParams, type'⟩ value' hint :: env.consts, env.tables⟩ := by
+    EnvWF ⟨.defnInfo ⟨cv.name, cv.levelParams, type'⟩ value' hint :: env.consts, env.tables, env.rules⟩ := by
   obtain ⟨-, -, hlbt, hitf, hann, htp, htr, -, hshape⟩ := hcv
   obtain ⟨htf', hbt'⟩ := stored_syntax hann hitf hlbt
   obtain ⟨hlbv, hivf, hvann, hvp, hvr, -⟩ := hv
@@ -99,7 +99,7 @@ def quotNeeds (k : QuotKind) : List Name :=
 
 /-- A stub environment storing exactly `quotNeeds k`. -/
 def quotStub (k : QuotKind) : Env :=
-  ⟨(quotNeeds k).map fun n => .axiomInfo ⟨n, [], .sort .zero⟩, []⟩
+  ⟨(quotNeeds k).map fun n => .axiomInfo ⟨n, [], .sort .zero⟩, [], []⟩
 
 /-- The stub stores only the needed names. -/
 theorem quotStub_find {k : QuotKind} {n : Name} (h : ((quotStub k).find? n).isSome = true) :
@@ -207,6 +207,22 @@ theorem quotPin_facts (k : QuotKind) :
     recRulesBindB (quotPin k) = true := by
   cases k <;> exact ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide⟩
 
+/-- A constant is no family recorded past formers of its block. -/
+private def blockPosZero : ConstantInfo → Bool
+  | .indInfo _ caps => caps.blockPos == 0
+  | _ => true
+
+private theorem quotPin_blockPosZero (k : QuotKind) : blockPosZero (quotPin k) = true := by
+  cases k <;> decide
+
+/-- A quotient record's family is the first of its block. -/
+theorem quotAt_blockPos {k : QuotKind} {cv cv' : ConstantVal} {caps : IndCaps}
+    (h : quotAt k cv = .indInfo cv' caps) : caps.blockPos = 0 := by
+  have hz := quotPin_blockPosZero k
+  unfold quotAt ConstantInfo.atLps at h
+  revert hz h
+  cases quotPin k <;> intro hz h <;> simp_all [blockPosZero]
+
 /-- **A quotient record's install keeps well-formedness.** -/
 theorem declQuotRun_envWF {env env₂ : Env} {k : QuotKind} {cv : ConstantVal}
     (henv : EnvWF env) (h : DeclQuotRun env k cv env₂) : EnvWF env₂ := by
@@ -221,7 +237,7 @@ theorem declQuotRun_envWF {env env₂ : Env} {k : QuotKind} {cv : ConstantVal}
       simp only [quotPredsOk, Bool.and_eq_true] at hp <;>
       rcases hn with rfl | rfl | rfl | rfl <;> simp_all
   have hdom : ∀ n, ((quotStub k).find? n).isSome = true →
-      (Env.find? ⟨quotAt k cv :: env.consts, env.tables⟩ n).isSome = true := by
+      (Env.find? ⟨quotAt k cv :: env.consts, env.tables, env.rules⟩ n).isSome = true := by
     intro n hn
     rw [Env.find?_cons]
     by_cases hs : (quotAt k cv).name = n
@@ -246,6 +262,7 @@ theorem declQuotRun_envWF {env env₂ : Env} {k : QuotKind} {cv : ConstantVal}
       obtain ⟨rfl, -, -, rfl⟩ := h
       exact ⟨_, rfl⟩)
     (ruleWF_atLps _ f7)
+    (fun _ caps h => by rw [quotAt_blockPos h]; exact .top)
 
 /-! ## The step and the folds -/
 
@@ -298,7 +315,8 @@ theorem checkDecl_envWF {F : Nat} {env env₂ : Env} {d : Declaration} (henv : E
 /-- The empty environment is well formed. -/
 theorem EnvWF.empty : EnvWF Env.empty :=
   ⟨fun _ hc => (nomatch hc), fun _ hc => (nomatch hc), fun _ ht => (nomatch ht),
-    fun _ hc => (nomatch hc), fun _ hc => (nomatch hc), fun _ hc => (nomatch hc)⟩
+    fun _ hc => (nomatch hc), fun _ hc => (nomatch hc), fun _ hc => (nomatch hc),
+    fun _ hr _ hc => nomatch hr.suffix.subset hc⟩
 
 /-- **The pure fold keeps the environment well formed**, from any well-formed start. -/
 theorem foldlM_checkDecl_envWF {F : Nat} :

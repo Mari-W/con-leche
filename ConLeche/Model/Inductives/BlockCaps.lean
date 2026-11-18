@@ -45,14 +45,16 @@ theorem blockCapsAt_cases (p₁ : BlockShape) (mi : Nat) (isRec : Bool) :
           nparams := p₁.nP
           nIdx := (p₁.members.getD mi default).nIdx
           ctors := [c.1.name]
-          neverZero := (formerZ (p₁.members.getD mi default).declared).isNever }) ∨
+          neverZero := (formerZ (p₁.members.getD mi default).declared).isNever
+          blockPos := mi }) ∨
     ConLeche.blockCapsAt p₁ mi isRec =
       {
         all := p₁.memberNames
         nparams := p₁.nP
         nIdx := (p₁.members.getD mi default).nIdx
         ctors := (p₁.members.getD mi default).ctors.map fun c => c.1.name
-        neverZero := (formerZ (p₁.members.getD mi default).declared).isNever } := by
+        neverZero := (formerZ (p₁.members.getD mi default).declared).isNever
+        blockPos := mi } := by
   unfold ConLeche.blockCapsAt
   split
   · next a b hc => exact Or.inl ⟨b, hc, rfl⟩

@@ -114,7 +114,7 @@ def checkDeclKind (ops : CheckerOps m) (pins : List NatOpPinSet) (env : Env)
     else do
       checkConstantVal ops env cv
       if stdAxiomOk env cv then
-        pure ⟨.axiomInfo cv :: env.consts, env.tables⟩
+        pure ⟨.axiomInfo cv :: env.consts, env.tables, env.rules⟩
       else if cv.name = trustCompilerName then
         -- `Lean.trustCompiler : True` is trivially realizable (task
         -- #95): installed exactly like a checked `opaque` with witness
@@ -123,7 +123,7 @@ def checkDeclKind (ops : CheckerOps m) (pins : List NatOpPinSet) (env : Env)
         -- checked for that value, and the model interprets the constant
         -- by `True.intro`'s interpretation.
         if trustCompilerOk env cv then
-          pure ⟨.axiomInfo cv :: env.consts, env.tables⟩
+          pure ⟨.axiomInfo cv :: env.consts, env.tables, env.rules⟩
         else throw (.notImplemented
           s!"unsupported Lean.trustCompiler shape ({cv.name})")
       else if cv.name = ofReduceNatName ∨ cv.name = ofReduceBoolName then
@@ -132,7 +132,7 @@ def checkDeclKind (ops : CheckerOps m) (pins : List NatOpPinSet) (env : Env)
         -- reduce opaque, `∀ a b, reduce a = b → a = b` interprets to an
         -- inhabited proposition (the hypothesis *is* the conclusion).
         if ofReduceAxOk env cv then
-          pure ⟨.axiomInfo cv :: env.consts, env.tables⟩
+          pure ⟨.axiomInfo cv :: env.consts, env.tables, env.rules⟩
         else throw (.notImplemented
           s!"unsupported compiler-trust axiom environment ({cv.name})")
       else if cv.name = propextName ∨ cv.name = choiceName then

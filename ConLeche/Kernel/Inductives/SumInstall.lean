@@ -122,7 +122,7 @@ constructor check (`checkSumCtor`'s result shape) has established that its decla
 concludes in `T`. -/
 def consSumCtors (nP : Nat) (T : Name) : List (ConstantVal × Nat) → Env → Env
   | [], env => env
-  | c :: cs, env => consSumCtors nP T cs ⟨.ctorInfo c.1 nP c.2 T :: env.consts, env.tables⟩
+  | c :: cs, env => consSumCtors nP T cs ⟨.ctorInfo c.1 nP c.2 T :: env.consts, env.tables, env.rules⟩
 
 /-- The stored rules: constructor `j`'s with the generated right-hand
 side `j`, `.plain` (the major is the family at the recursor's

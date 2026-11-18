@@ -81,7 +81,7 @@ theorem blockCtorsLoop
     (Inv : ∀ {env' : Env}, EnvModel V env' → Prop)
     (hInv : ∀ {env' : Env} (m' : EnvModel V env') (ctor : ConstantVal × Nat)
       (A : (Name → Nat) → Term)
-      (mC : EnvModel V ⟨.ctorInfo ctor.1 nP ctor.2 T :: env'.consts, env'.tables⟩),
+      (mC : EnvModel V ⟨.ctorInfo ctor.1 nP ctor.2 T :: env'.consts, env'.tables, env'.rules⟩),
       ctor ∈ ctorList → env'.find? ctor.1.name = none →
       mC.acval = acvalWith m'.acval ctor.1.name A → Inv m' → Inv mC)
     -- the block's capability record and the former's leaf

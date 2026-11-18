@@ -450,11 +450,11 @@ theorem blockFormerPass (mp : EnvModelM V env) {F : Nat} {p₀ : BlockShape} {is
       exact nodup_getElem_ne hnd hjl hjl' hjj)
     hF.nresOf hF.opOf
     hAbelowOf hAparamsOf hAokOf hAmemOf
-    (fun _ _ hj _ henv hres => ConLeche.checkBlockInds_cons_envWF hdecl hInd hj henv hres)
+    (fun _ _ hj _ henv hres hh => ConLeche.checkBlockInds_cons_envWF hdecl hInd hj henv hres hh)
     (p₀.members.map (·.declared)) 0 env mp (fun j => by rw [Nat.zero_add]) (Nat.zero_add _)
     hF.resolveOf (fun j cvTa _ hj => hF.freshOf j cvTa hj)
     hF.fdOf hF.declOf
-    (fun j _ _ hlt _ _ => absurd hlt (Nat.not_lt_zero _))
+    (fun j _ _ hlt _ _ => absurd hlt (Nat.not_lt_zero _)) (by simpa using ConLeche.Env.Reach.top)
   obtain ⟨mp', hFD', hDS', hc', hag'⟩ := hcons
   refine ⟨mp', hFD', hDS', hc', fun n hn => hag' n fun cvS hcvS => ?_⟩
   obtain ⟨j, hj⟩ := List.getElem?_of_mem hcvS
@@ -468,7 +468,7 @@ theorem blockFormerPass (mp : EnvModelM V env) {F : Nat} {p₀ : BlockShape} {is
 
 /-- A name absent from a cons is absent from the base. -/
 theorem find?_none_of_consB {c : ConstantInfo} {env : Env} {n : Name}
-    (h : Env.find? ⟨c :: env.consts, env.tables⟩ n = none) : env.find? n = none := by
+    (h : Env.find? ⟨c :: env.consts, env.tables, env.rules⟩ n = none) : env.find? n = none := by
   rw [ConLeche.Env.find?_cons] at h
   split at h
   · exact nomatch h

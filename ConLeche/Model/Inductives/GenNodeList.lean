@@ -322,8 +322,7 @@ theorem genOutsideClass_reachedNode {envC envI : Env} (hwf : ConLeche.EnvWF envI
             ConLeche.PosNodeOk (fueledOps .verified F) envI (pp.nestCtx fvsP envI.find?) t ∧
             NodeMajor F envC pp (pp.formers.map (·.type))
               (pp.nestCtx fvsP envI.find?) (tgtMajor out c) t := by
-  have hwsc : ∀ dep e w, (fueledOps .verified F).whnf envI dep e = .ok w → Expr.WScoped dep e →
-      Expr.WScoped dep w := fun dep e w hw hws => ConLeche.whnf_WScoped hwf F hw hws
+  have hwsc : ConLeche.WhnfScoped (fueledOps .verified F) envI := ConLeche.whnfScoped_fueledOps hwf F
   obtain ⟨cvTa0, fvsP, rest, holes, h1, h2, h3, hder⟩ :=
     ConLeche.checkBlockPositivity_deriv hwsc hpos
   have hctx : NestCtxOk (pp.nestCtx fvsP envI.find?) :=

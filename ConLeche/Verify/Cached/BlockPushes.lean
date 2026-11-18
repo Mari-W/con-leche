@@ -229,20 +229,20 @@ theorem consBlockInds_consts' (p₁ : BlockShape) (isRec : Bool) :
     ∀ (cvs : List ConstantVal) (i : Nat) (env : Env),
       consBlockInds p₁ isRec cvs i env =
         ⟨((cvs.zipIdx i).map fun x => ConstantInfo.indInfo x.1 (blockCapsAt p₁ x.2 isRec)).reverse
-          ++ env.consts, env.tables⟩
+          ++ env.consts, env.tables, env.rules⟩
   | [], _, _ => rfl
   | cv :: cvs, i, env => by
-    show consBlockInds p₁ isRec cvs (i + 1) ⟨_ :: env.consts, env.tables⟩ = _
+    show consBlockInds p₁ isRec cvs (i + 1) ⟨_ :: env.consts, env.tables, env.rules⟩ = _
     rw [consBlockInds_consts' p₁ isRec cvs (i + 1)]
     simp [List.zipIdx_cons]
 
 theorem consSumCtors_eq (nP : Nat) (T : Name) :
     ∀ (cs : List (ConstantVal × Nat)) (env : Env),
       consSumCtors nP T cs env =
-        ⟨(cs.map fun c => ConstantInfo.ctorInfo c.1 nP c.2 T).reverse ++ env.consts, env.tables⟩
+        ⟨(cs.map fun c => ConstantInfo.ctorInfo c.1 nP c.2 T).reverse ++ env.consts, env.tables, env.rules⟩
   | [], _ => rfl
   | c :: cs, env => by
-    show consSumCtors nP T cs ⟨_ :: env.consts, env.tables⟩ = _
+    show consSumCtors nP T cs ⟨_ :: env.consts, env.tables, env.rules⟩ = _
     rw [consSumCtors_eq nP T cs]
     simp
 
@@ -250,7 +250,7 @@ theorem consBlockCtors_eq (nP : Nat) :
     ∀ (L : List (Name × List (ConstantVal × Nat))) (env : Env),
       consBlockCtors nP L env =
         ⟨(L.flatMap fun g => g.2.map fun c => ConstantInfo.ctorInfo c.1 nP c.2 g.1).reverse ++
-          env.consts, env.tables⟩
+          env.consts, env.tables, env.rules⟩
   | [], _ => rfl
   | (T, l) :: L, env => by
     show consBlockCtors nP L (consSumCtors nP T l env) = _
@@ -260,10 +260,10 @@ theorem consBlockCtors_eq (nP : Nat) :
 theorem consBlockRecsT_eq_infos (q : BlockShape) :
     ∀ (out : List (ConstantVal × TargetMajor × List Expr)) (m : Nat) (env : Env),
       consBlockRecsT q m out env =
-        ⟨(blockRecInfosTF q m out).reverse ++ env.consts, env.tables⟩
+        ⟨(blockRecInfosTF q m out).reverse ++ env.consts, env.tables, env.rules⟩
   | [], _, _ => rfl
   | (cv, M, rhss) :: rest, m, env => by
-    show consBlockRecsT q (m + 1) rest ⟨_ :: env.consts, env.tables⟩ = _
+    show consBlockRecsT q (m + 1) rest ⟨_ :: env.consts, env.tables, env.rules⟩ = _
     rw [consBlockRecsT_eq_infos q rest (m + 1)]
     simp [blockRecInfosTF]
 

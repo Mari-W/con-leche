@@ -741,8 +741,7 @@ theorem checkBlockPositivity_derivM {env : Env} (hwf : ConLeche.EnvWF env) {F : 
       ConLeche.CtorsRecRoot (fueledOps .verified F) env (p.nestCtx fvsP env.find?) holes
         pos.ctorNfs.toList p.memberCtors := by
   obtain ⟨cvTa0, fvsP, rest, holes, h1, h2, h3, h⟩ :=
-    ConLeche.checkBlockPositivity_deriv (fun dep e w hw hws => ConLeche.whnf_WScoped hwf F hw hws)
-      hrun
+    ConLeche.checkBlockPositivity_deriv (ConLeche.whnfScoped_fueledOps hwf F) hrun
   obtain ⟨cvTa0', fvsP', rest', holes', h1', h2', h3', hall⟩ :=
     ConLeche.checkBlockPositivity_inv_gen hrun hlpsC
   rw [h1] at h1'

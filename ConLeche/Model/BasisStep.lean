@@ -81,16 +81,16 @@ theorem declStep_preserves_of_basis_cons (mp : EnvModelM V env)
     (htyReads : ∀ ψ : Name → Nat,
       ∃ ta : Term,
         denote (acvalWith mp.base2.acval c₀.name A)
-          ⟨c₀ :: env.consts, env.tables⟩ ψ 0 c₀.toConstantVal.type = some ta)
+          ⟨c₀ :: env.consts, env.tables, env.rules⟩ ψ 0 c₀.toConstantVal.type = some ta)
     (htyOk : ∀ (ψ : Name → Nat) (ta : Term),
       denote (acvalWith mp.base2.acval c₀.name A)
-          ⟨c₀ :: env.consts, env.tables⟩ ψ 0 c₀.toConstantVal.type = some ta →
+          ⟨c₀ :: env.consts, env.tables, env.rules⟩ ψ 0 c₀.toConstantVal.type = some ta →
       ∀ ρ : Nat → V, WellDenotedTy V ρ ta)
     (hmemNew : ∀ (ψ : Name → Nat) (ta : Term),
       denote (acvalWith mp.base2.acval c₀.name A)
-          ⟨c₀ :: env.consts, env.tables⟩ ψ 0 c₀.toConstantVal.type = some ta →
+          ⟨c₀ :: env.consts, env.tables, env.rules⟩ ψ 0 c₀.toConstantVal.type = some ta →
       ∀ ρ : Nat → V, interp V ρ (A ψ) ∈ˢ interp V ρ ta) :
-    ∃ mp' : EnvModelM V ⟨c₀ :: env.consts, env.tables⟩,
+    ∃ mp' : EnvModelM V ⟨c₀ :: env.consts, env.tables, env.rules⟩,
       mp'.base2.acval = acvalWith mp.base2.acval c₀.name A := by
   refine declStep_preserves_of_cons mp (c₀ := c₀) (A := A) hfresh
     (by intro hn; rw [hop] at hn; exact nomatch hn) hh hAparams hAok htyReads htyOk hmemNew
@@ -143,19 +143,19 @@ theorem declStep_preserves_of_basis_rec_cons (mp : EnvModelM V env)
     (htyReads : ∀ ψ : Name → Nat,
       ∃ ta : Term,
         denote (acvalWith mp.base2.acval c₀.name A)
-          ⟨c₀ :: env.consts, env.tables⟩ ψ 0 c₀.toConstantVal.type = some ta)
+          ⟨c₀ :: env.consts, env.tables, env.rules⟩ ψ 0 c₀.toConstantVal.type = some ta)
     (htyOk : ∀ (ψ : Name → Nat) (ta : Term),
       denote (acvalWith mp.base2.acval c₀.name A)
-          ⟨c₀ :: env.consts, env.tables⟩ ψ 0 c₀.toConstantVal.type = some ta →
+          ⟨c₀ :: env.consts, env.tables, env.rules⟩ ψ 0 c₀.toConstantVal.type = some ta →
       ∀ ρ : Nat → V, WellDenotedTy V ρ ta)
     (hmemNew : ∀ (ψ : Name → Nat) (ta : Term),
       denote (acvalWith mp.base2.acval c₀.name A)
-          ⟨c₀ :: env.consts, env.tables⟩ ψ 0 c₀.toConstantVal.type = some ta →
+          ⟨c₀ :: env.consts, env.tables, env.rules⟩ ψ 0 c₀.toConstantVal.type = some ta →
       ∀ ρ : Nat → V, interp V ρ (A ψ) ∈ˢ interp V ρ ta)
-    (hrec : ∀ m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables⟩,
+    (hrec : ∀ m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables, env.rules⟩,
       m₂.acval = acvalWith mp.base2.acval c₀.name A →
       ∀ φ : Name → Nat, RecRules m₂ φ) :
-    ∃ mp' : EnvModelM V ⟨c₀ :: env.consts, env.tables⟩,
+    ∃ mp' : EnvModelM V ⟨c₀ :: env.consts, env.tables, env.rules⟩,
       mp'.base2.acval = acvalWith mp.base2.acval c₀.name A := by
   refine declStep_preserves_of_cons mp (c₀ := c₀) (A := A) hfresh
     (by intro hn; rw [hop] at hn; exact nomatch hn) hh hAparams hAok htyReads htyOk hmemNew
@@ -198,18 +198,18 @@ theorem declStep_preserves_of_basis_cons_eqrow (mp : EnvModelM V env)
     (htyReads : ∀ ψ : Name → Nat,
       ∃ ta : Term,
         denote (acvalWith mp.base2.acval c₀.name A)
-          ⟨c₀ :: env.consts, env.tables⟩ ψ 0 c₀.toConstantVal.type = some ta)
+          ⟨c₀ :: env.consts, env.tables, env.rules⟩ ψ 0 c₀.toConstantVal.type = some ta)
     (htyOk : ∀ (ψ : Name → Nat) (ta : Term),
       denote (acvalWith mp.base2.acval c₀.name A)
-          ⟨c₀ :: env.consts, env.tables⟩ ψ 0 c₀.toConstantVal.type = some ta →
+          ⟨c₀ :: env.consts, env.tables, env.rules⟩ ψ 0 c₀.toConstantVal.type = some ta →
       ∀ ρ : Nat → V, WellDenotedTy V ρ ta)
     (hmemNew : ∀ (ψ : Name → Nat) (ta : Term),
       denote (acvalWith mp.base2.acval c₀.name A)
-          ⟨c₀ :: env.consts, env.tables⟩ ψ 0 c₀.toConstantVal.type = some ta →
+          ⟨c₀ :: env.consts, env.tables, env.rules⟩ ψ 0 c₀.toConstantVal.type = some ta →
       ∀ ρ : Nat → V, interp V ρ (A ψ) ∈ˢ interp V ρ ta)
-    (heq : ∀ m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables⟩,
+    (heq : ∀ m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables, env.rules⟩,
       m₂.acval = acvalWith mp.base2.acval c₀.name A → EqLaw m₂) :
-    ∃ mp' : EnvModelM V ⟨c₀ :: env.consts, env.tables⟩,
+    ∃ mp' : EnvModelM V ⟨c₀ :: env.consts, env.tables, env.rules⟩,
       mp'.base2.acval = acvalWith mp.base2.acval c₀.name A := by
   refine declStep_preserves_of_cons mp (c₀ := c₀) (A := A) hfresh
     (by intro hn; rw [hop] at hn; exact nomatch hn) hh hAparams hAok htyReads htyOk hmemNew
@@ -248,22 +248,22 @@ theorem declStep_preserves_of_basis_cons_gen (mp : EnvModelM V env)
     (htyReads : ∀ ψ : Name → Nat,
       ∃ ta : Term,
         denote (acvalWith mp.base2.acval c₀.name A)
-          ⟨c₀ :: env.consts, env.tables⟩ ψ 0 c₀.toConstantVal.type = some ta)
+          ⟨c₀ :: env.consts, env.tables, env.rules⟩ ψ 0 c₀.toConstantVal.type = some ta)
     (htyOk : ∀ (ψ : Name → Nat) (ta : Term),
       denote (acvalWith mp.base2.acval c₀.name A)
-          ⟨c₀ :: env.consts, env.tables⟩ ψ 0 c₀.toConstantVal.type = some ta →
+          ⟨c₀ :: env.consts, env.tables, env.rules⟩ ψ 0 c₀.toConstantVal.type = some ta →
       ∀ ρ : Nat → V, WellDenotedTy V ρ ta)
     (hmemNew : ∀ (ψ : Name → Nat) (ta : Term),
       denote (acvalWith mp.base2.acval c₀.name A)
-          ⟨c₀ :: env.consts, env.tables⟩ ψ 0 c₀.toConstantVal.type = some ta →
+          ⟨c₀ :: env.consts, env.tables, env.rules⟩ ψ 0 c₀.toConstantVal.type = some ta →
       ∀ ρ : Nat → V, interp V ρ (A ψ) ∈ˢ interp V ρ ta)
-    (hnh : ∀ m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables⟩,
+    (hnh : ∀ m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables, env.rules⟩,
       m₂.acval = acvalWith mp.base2.acval c₀.name A →
       ∀ φ : Name → Nat, NatHeads m₂ φ)
-    (hrec : ∀ m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables⟩,
+    (hrec : ∀ m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables, env.rules⟩,
       m₂.acval = acvalWith mp.base2.acval c₀.name A →
       ∀ φ : Name → Nat, RecRules m₂ φ) :
-    ∃ mp' : EnvModelM V ⟨c₀ :: env.consts, env.tables⟩,
+    ∃ mp' : EnvModelM V ⟨c₀ :: env.consts, env.tables, env.rules⟩,
       mp'.base2.acval = acvalWith mp.base2.acval c₀.name A := by
   refine declStep_preserves_of_cons mp (c₀ := c₀) (A := A) hfresh
     (by intro hn; rw [hop] at hn; exact nomatch hn) hh hAparams hAok htyReads htyOk hmemNew

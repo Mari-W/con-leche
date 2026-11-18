@@ -4,7 +4,7 @@ public import ConLeche.Kernel.Inductives.BlockInstall
 public import ConLeche.Verify.Inductives.PositivityInv
 public import ConLeche.Verify.Inductives.PosDerivFun
 public import ConLeche.Verify.Inductives.NestScope
-import ConLeche.Verify.Inductives.NestContInv
+public import ConLeche.Verify.Inductives.NestContInv
 public import ConLeche.Verify.Inductives.HoleImg
 import ConLeche.Kernel.Inductives.RecCheck
 import ConLeche.Verify.Cached.Erase
@@ -170,14 +170,14 @@ theorem grpHoles_hole {hi : Nat} {grp : List (Name × Expr)} {x : Expr}
 /-- The container's type former at the key (its hole's type) is well
 scoped where the key's parameters are. -/
 theorem nestInstType_wscoped (hc : NestCtxOk ctx) {ops : CheckerOps CheckM} {env : Env}
-    (hwsc : ∀ dep e w, ops.whnf env dep e = .ok w → WScoped dep e → WScoped dep w)
+    (hwsc : WhnfScoped ops env)
     {hi d : Nat} {key : NestKey} {nI : Nat} {cty : Expr}
     (h : nestInstType (m := CheckM) ctx ops env hi key = .ok (nI, cty))
     (hds : ∀ x ∈ key.ds, WScoped d x) : WScoped d cty := by
   obtain ⟨cvC, caps, tyC, hf, hfam, hF⟩ := nestInstType_inv h
   refine wscoped_instPisWith hds (WScoped.of_not_hasFvar ?_) hF.inst
   rw [ConLeche.Expr.hasFvar_instantiateLevelParams]
-  exact familyTelescope_hasFvar hwsc hfam (hc.1 _ _ hf)
+  exact familyTelescope_hasFvar (hwsc.2 cvC.name) hfam (hc.1 _ _ hf)
 
 /-- The pure group listing's constructors come from its containers. -/
 theorem groupCtors_mem {nPc : Nat} :
@@ -510,7 +510,7 @@ theorem mem_nestFrameMates {C c : Name} (h : c ∈ nestFrameMates ctx C) :
 /-- **A container frame, derived**: the state invariant is kept and the
 frame is derived (the group's facts are the `frame` rule's). -/
 theorem nestFrame_deriv (hctx : NestCtxOk ctx)
-    (hwsc : ∀ dep e w, ops.whnf env dep e = .ok w → WScoped dep e → WScoped dep w) (hrec : RunDeriv ops env ctx rec)
+    (hwsc : WhnfScoped ops env) (hrec : RunDeriv ops env ctx rec)
     {prog : List NestHole} {hi : Nat} {us : List Level} {ds : List Expr}
     (hhi : ctx.hiAt prog.length = hi) (hsc : ProgScoped ctx prog)
     (hds : ∀ x ∈ ds, WScoped hi x) {grp : List (Name × Expr)} {st st' : NestState}
@@ -592,7 +592,7 @@ theorem nestAcceptGroup_mem {us : List Level} {ds : List Expr} :
 current frames, the container at the frame's head, the container's
 whole recorded block its group. -/
 theorem nestContNew_deriv (hctx : NestCtxOk ctx)
-    (hwsc : ∀ dep e w, ops.whnf env dep e = .ok w → WScoped dep e → WScoped dep w) (hrec : RunDeriv ops env ctx rec)
+    (hwsc : WhnfScoped ops env) (hrec : RunDeriv ops env ctx rec)
     {prog : List NestHole} (hsc : ProgScoped ctx prog) {kb : Nat} {n : Name} {us : List Level}
     (hnm : ctx.names.contains n = false) (hquot : n ≠ quotName)
     {ds : List Expr} (hds : ∀ x ∈ ds, WScoped (ctx.hiAt prog.length) x) {nPc : Nat}
@@ -705,7 +705,7 @@ theorem contNew_split {prog : List NestHole} {n : Name} {us : List Level} {ds : 
 otherwise the frame is derived here, or the key is a hit below every
 frame hole with a derived frame elsewhere. -/
 theorem nestContKey_deriv (hctx : NestCtxOk ctx)
-    (hwsc : ∀ dep e w, ops.whnf env dep e = .ok w → WScoped dep e → WScoped dep w) (hrec : RunDeriv ops env ctx rec)
+    (hwsc : WhnfScoped ops env) (hrec : RunDeriv ops env ctx rec)
     {prog : List NestHole} (hsc : ProgScoped ctx prog) {kb : Nat} {n : Name} {us : List Level}
     (hnm : ctx.names.contains n = false) (hquot : n ≠ quotName)
     {ds : List Expr} (hds : ∀ x ∈ ds, WScoped (ctx.hiAt prog.length) x) {nPc : Nat}
@@ -752,7 +752,7 @@ cache invariant, and when it leaves no restart pending, its input is
 derived (`PosD`), with the run's kind and
 normal form. -/
 theorem nestPos_deriv (hctx : NestCtxOk ctx) (hroot : NestRootOk ctx)
-    (hwsc : ∀ dep e w, ops.whnf env dep e = .ok w → WScoped dep e → WScoped dep w) :
+    (hwsc : WhnfScoped ops env) :
     ∀ fuel, RunDeriv ops env ctx (nestPos ops env ctx fuel)
   | 0 => by
     intro prog dep kb e st k nf st' hrun
@@ -765,7 +765,7 @@ theorem nestPos_deriv (hctx : NestCtxOk ctx) (hroot : NestRootOk ctx)
     | error err => simp [hw, bind, Except.bind] at hrun
     | ok w =>
       simp only [hw, bind, Except.bind] at hrun
-      have hwsw := hwsc dep e w hw hws
+      have hwsw := hwsc.1 dep e w hw hws
       by_cases hocc : w.nestOcc ctx.names ctx.nP (ctx.hiAt prog.length) = false
       · rw [ite_eq_left (by simpa using hocc)] at hrun
         simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at hrun
@@ -870,7 +870,7 @@ recorded only on top, and per member its constructor list derived at the
 root key (`.ctors []`), its nodes and constructors recorded, and every
 constructor's output (`CtorOut`). -/
 theorem nestRoot_deriv (hctx : NestCtxOk ctx) (hroot : NestRootOk ctx)
-    (hwsc : ∀ dep e w, ops.whnf env dep e = .ok w → WScoped dep e → WScoped dep w)
+    (hwsc : WhnfScoped ops env)
     {holes : List Expr} (hh : nestHoles ctx = some holes)
     (hpar : ∀ x ∈ ctx.params, WScoped (ctx.hiAt 0) x) :
     ∀ (css : List (List (ConstantVal × Nat))) (st : NestState)
@@ -955,7 +955,7 @@ scoped at the walk's depth. -/
 derived at the root (`PosD.seed`, its one node the seed's own key, whose
 group holds it, recorded), and constructors recorded only on top. -/
 theorem nestSeeds_deriv (hctx : NestCtxOk ctx) (hroot : NestRootOk ctx)
-    (hwsc : ∀ dep e w, ops.whnf env dep e = .ok w → WScoped dep e → WScoped dep w) :
+    (hwsc : WhnfScoped ops env) :
     ∀ (ks : List (NestKey × Nat)) (st st' : NestState), nestSeeds ops env ctx ks st = .ok st' →
       (∀ s ∈ ks, SeedOk ctx s) → DerivCache ops env ctx st →
       DerivCache ops env ctx st' ∧
@@ -1071,7 +1071,7 @@ every constructor's entry recorded (`CtorsRec` at the root key). -/
 theorem checkBlockPositivity_deriv {env₁ : Env}
     {find? : Name → Option ConstantInfo} {p : BlockShape}
     {kinds : List (List (List NestFieldKind))} {nfs : List (List Expr)} {pos : NestState}
-    (hwsc : ∀ dep e w, ops.whnf env₁ dep e = .ok w → WScoped dep e → WScoped dep w)
+    (hwsc : WhnfScoped ops env₁)
     (h : PositivityRun ops env₁ find? p kinds nfs pos) :
     ∃ cvTa0 fvsP rest holes, p.formers.head? = some cvTa0 ∧
       openPisAtFvars p.nP cvTa0.type 0 = some (fvsP, rest) ∧

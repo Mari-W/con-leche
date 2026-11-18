@@ -115,6 +115,9 @@ structure RulesInputs (V : Type w) [SetTheory V] {env : Env}
   nat_op_head : NatOpHead m φ
   /-- literal tier: an operation's name holds a definition -/
   op_defn : OpDefn env
+  /-- install tier: the stored `Eq` spine reads as the truth set of the
+  equation (a user rewrite rule's residue) -/
+  eq_law : EqLaw m
 
 /-- **The env-tier inputs, from the fold's invariant**: every field but
 the three literal rows is an `EnvModelM` projection; the rows stay
@@ -135,5 +138,6 @@ theorem RulesInputs.ofEnvModelM {env : Env} {φ : Name → Nat}
   nat_op := hop
   nat_op_head := hhead
   op_defn := mp.op_defn
+  eq_law := mp.eq_law
 
 end ConLeche.Model.Rules

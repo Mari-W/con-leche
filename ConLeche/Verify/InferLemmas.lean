@@ -78,9 +78,119 @@ theorem whnf_app_inv {env : Env} {fuel d : Nat} {f a e' : Expr} {c : Bool}
         simp only [pure, Except.pure, Except.ok.injEq] at h
         exact Or.inr (Or.inr h.symm)
 
+/-- The `Eq` spine's parts are the spine's. -/
+theorem eqSpine?_eq_some {R A l rhs : Expr} {eqn : Name} {u : Level} :
+    eqSpine? R = some (eqn, u, A, l, rhs) ↔ R = .app (.app (.app (.const eqn [u]) A) l) rhs := by
+  constructor
+  · intro h
+    unfold eqSpine? at h
+    split at h
+    · simp only [Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ := h
+      rfl
+    · exact nomatch h
+  · rintro rfl
+    rfl
+
+theorem bind_eqSpine?_eq_some {o : Option Expr} {A l rhs : Expr} {eqn : Name} {u : Level} :
+    o.bind eqSpine? = some (eqn, u, A, l, rhs) ↔
+      o = some (.app (.app (.app (.const eqn [u]) A) l) rhs) := by
+  cases o with
+  | none => simp
+  | some R => simpa using eqSpine?_eq_some
+
+/-- **Inversion for a rule firing**: the firing's checks, read back. -/
+theorem rewriteAttempt_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {e e₂ : Expr} {t : Name}
+    (h : rewriteAttempt r env d e t = .ok (some e₂)) :
+    ∃ (cv : ConstantVal) (args : List Expr) (us : List Level) (u : Level) (A : Expr) (c : Name)
+      (ls : List Level),
+      env.find? t = some (.thmInfo cv) ∧
+      piResidual (cv.type.instantiateLevelParams cv.levelParams us) args
+        = some (.app (.app (.app (.const eqName [u]) A) e) e₂) ∧
+      e.getAppFn = .const c ls ∧ us.length = cv.levelParams.length ∧
+      (∀ x ∈ args, x ∈ appSubterms e) ∧ (∀ x ∈ e₂.fvarLeaves, x ∈ e.fvarLeaves) ∧
+      iotaCertsFull r env d (cv.type.instantiateLevelParams cv.levelParams us) args = .ok true ∧
+      r.infer d A = .ok (.sort u) ∧ r.infer d e = .ok A ∧ r.infer d e₂ = .ok A := by
+  unfold rewriteAttempt at h
+  split at h
+  · rename_i cv hfind
+    split at h
+    · rename_i args us _
+      split at h
+      · rename_i eqn u A l rhs hres
+        rw [bind_eqSpine?_eq_some] at hres
+        split at h
+        · rename_i hchk
+          obtain ⟨rfl, hlen, hle, hsub, hleaf, hcst⟩ := hchk
+          subst l
+          obtain ⟨c, ls, hhead⟩ : ∃ c ls, e.getAppFn = .const c ls := by
+            revert hcst
+            cases e.getAppFn <;> simp [Expr.isConstB]
+          simp only [bind, Except.bind] at h
+          split at h
+          · exact nomatch h
+          rename_i b hcert
+          split at h
+          · rename_i hb
+            split at h
+            · exact nomatch h
+            rename_i tA hA
+            split at h
+            · rename_i hAe
+              split at h
+              · exact nomatch h
+              rename_i tl hl
+              split at h
+              · rename_i hle
+                split at h
+                · exact nomatch h
+                rename_i tr hr
+                split at h
+                · rename_i hre
+                  obtain rfl : rhs = e₂ := by simpa [pure, Except.pure] using h
+                  exact ⟨cv, args, us, u, A, c, ls, hfind, hres, hhead, hlen, hsub, hleaf,
+                    by rw [hcert, hb], by rw [hA, hAe], by rw [hl, hle], by rw [hr, hre]⟩
+                · simp [pure, Except.pure] at h
+              · simp [pure, Except.pure] at h
+            · simp [pure, Except.pure] at h
+          · simp [pure, Except.pure] at h
+        · simp [pure, Except.pure] at h
+      · simp [pure, Except.pure] at h
+    · simp [pure, Except.pure] at h
+  · simp [pure, Except.pure] at h
+
+/-- Inversion for the rules in order: a firing is one of the rules', the first. -/
+theorem rewriteRules_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {e e₂ : Expr} {t : Name} :
+    ∀ {ts : List Name}, rewriteRules r env d e ts = .ok (some (t, e₂)) →
+      t ∈ ts ∧ rewriteAttempt r env d e t = .ok (some e₂)
+  | [], h => by simp [rewriteRules, pure, Except.pure] at h
+  | t' :: ts, h => by
+    unfold rewriteRules at h
+    simp only [bind, Except.bind] at h
+    split at h
+    · exact nomatch h
+    rename_i o ho
+    cases o with
+    | some e' =>
+      simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      exact ⟨List.mem_cons_self, ho⟩
+    | none =>
+      obtain ⟨hm, ha⟩ := rewriteRules_inv h
+      exact ⟨List.mem_cons_of_mem _ hm, ha⟩
+
+/-- Inversion for the rewrite step. -/
+theorem rewriteStep_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {e e₂ : Expr} {t : Name}
+    (h : rewriteStep r env d e = .ok (some (t, e₂))) : rewriteAttempt r env d e t = .ok (some e₂) := by
+  unfold rewriteStep at h
+  split at h
+  · exact (rewriteRules_inv h).2
+  · simp [pure, Except.pure] at h
+
 /-- Inversion for one iteration of the reduction loop
 (`whnfStep`): head-normalize, then either the literal acceleration
-(whose literal is final, any other reduct goes on) or one definition
+(whose literal is final, any other reduct goes on), a rule firing (its
+reduct to the firing continuation `kr`), or one definition
 unfolding hands the reduct to the loop's continuation `k`, or the head
 normal form is final.  Task #106: the loop steps are
 iteration on `whnfLoop`'s own budget, so this is stated about the
@@ -88,15 +198,20 @@ continuation-parameterized body; `whnfLoop … (n+1)` *is*
 `whnfStep … (whnfLoop … n)`, so consumers apply it after `cases` on
 the budget and use the budget induction hypothesis for `k`. -/
 theorem whnfStep_inv {env : Env} {fuel d : Nat} {k : Expr → CheckM Expr}
-    {e e' : Expr}
-    (h : whnfStep (pureFns mode eager env fuel) env d k e = .ok e') :
+    {kr : Name → Expr → CheckM Expr} {e e' : Expr}
+    (h : whnfStep (pureFns mode eager env fuel) env d k kr e = .ok e') :
     ∃ e₁, whnfCore mode eager env fuel d e = .ok e₁ ∧
       ((∃ e₂, reduceNatFueled mode eager env fuel d e₁ = .ok (some e₂) ∧
           ((e₂.isLit = true ∧ e' = e₂) ∨ k e₂ = .ok e')) ∨
        (reduceNatFueled mode eager env fuel d e₁ = .ok none ∧
+        ∃ t e₂, rewriteStep (pureFns mode eager env fuel) env d e₁ = .ok (some (t, e₂)) ∧
+          kr t e₂ = .ok e') ∨
+       (reduceNatFueled mode eager env fuel d e₁ = .ok none ∧
+        rewriteStep (pureFns mode eager env fuel) env d e₁ = .ok none ∧
         ∃ e₂, unfoldDefinition env e₁ = some e₂ ∧
           k e₂ = .ok e') ∨
        (reduceNatFueled mode eager env fuel d e₁ = .ok none ∧
+        rewriteStep (pureFns mode eager env fuel) env d e₁ = .ok none ∧
         unfoldDefinition env e₁ = none ∧ e' = e₁)) := by
   simp only [whnfStep, Bind.bind, Except.bind] at h
   simp only [whnfCore_def] at h
@@ -123,15 +238,26 @@ theorem whnfStep_inv {env : Env} {fuel d : Nat} {k : Expr → CheckM Expr}
       exact Or.inr h
   | none =>
   dsimp only at h
+  cases hrw : rewriteStep (pureFns mode eager env fuel) env d e₁ with
+  | error err => rw [hrw] at h; exact nomatch h
+  | ok ro =>
+  rw [hrw] at h
+  dsimp only at h
+  cases ro with
+  | some te =>
+    obtain ⟨t, e₂⟩ := te
+    exact ⟨e₁, rfl, Or.inr (Or.inl ⟨hrn, t, e₂, hrw, h⟩)⟩
+  | none =>
+  dsimp only at h
   cases hu : unfoldDefinition env e₁ with
   | some e₂ =>
     rw [hu] at h
     dsimp only at h
-    exact ⟨e₁, rfl, Or.inr (Or.inl ⟨hrn, e₂, hu, h⟩)⟩
+    exact ⟨e₁, rfl, Or.inr (Or.inr (Or.inl ⟨hrn, hrw, e₂, hu, h⟩))⟩
   | none =>
     rw [hu] at h
     simp only [pure, Except.pure, Except.ok.injEq] at h
-    exact ⟨e₁, rfl, Or.inr (Or.inr ⟨hrn, hu, h.symm⟩)⟩
+    exact ⟨e₁, rfl, Or.inr (Or.inr (Or.inr ⟨hrn, hrw, hu, h.symm⟩))⟩
 
 /-- Inversion for the λ-rule of `inferTypeCore` (infer-only: the
 domain is reused whole).  The last conjunct is the **codomain
@@ -366,7 +492,7 @@ theorem whnf_forallE_eq {env : Env} {fuel d : Nat}
     -- budget is `irreducible`, so peel it with its positivity witness)
     obtain ⟨k, hk⟩ := whnfLoopFuel_succ
     rw [whnf_succ]
-    show whnfLoop (pureFns mode eager env (fuel + 1)) env d whnfLoopFuel _ = _
+    show whnfLoop (pureFns mode eager env (fuel + 1)) env d whnfLoopFuel ruleFireBudget _ = _
     rw [hk]
     rfl
   rw [h1] at h2
@@ -2595,6 +2721,51 @@ theorem unfoldDefinition_WScoped {env : Env} (henv : EnvWF env)
     exact hw.getAppArgs x hx
   · intro h; exact nomatch h
 
+/-- Peeling a `∀`-telescope along scoped arguments preserves
+well-scopedness. -/
+theorem piResidual_WScoped {d : Nat} :
+    ∀ {as : List Expr} {t res : Expr}, piResidual t as = some res →
+      WScoped d t → (∀ x ∈ as, WScoped d x) → WScoped d res
+  | [], t, res, h, hw, _ => by
+    simp only [piResidual, Option.some.injEq] at h
+    exact h ▸ hw
+  | a :: as, t, res, h, hw, has => by
+    match t, h with
+    | .forallE ty body, h =>
+      have hw' : WScoped d ty ∧ WScoped d body := by
+        simpa only [WScoped] using hw
+      have h' : piResidual (body.instantiate1 a) as = some res := h
+      exact piResidual_WScoped h'
+        (WScoped.instantiate1_gen (has a (List.mem_cons_self ..)) 0 hw'.2)
+        (fun x hx => has x (List.mem_cons_of_mem _ hx))
+
+/-- A subterm of the application tree is scoped where the term is. -/
+theorem appSubterms_WScoped {d : Nat} (e : Expr) :
+    ∀ {x : Expr}, x ∈ appSubterms e → WScoped d e → WScoped d x := by
+  induction e with
+  | app f a ihf iha =>
+    intro x hx hw
+    simp only [appSubterms, List.mem_cons, List.mem_append] at hx
+    rcases hx with rfl | hx | hx
+    · exact hw
+    · exact ihf hx (by simp only [WScoped] at hw; exact hw.1)
+    · exact iha hx (by simp only [WScoped] at hw; exact hw.2)
+  | _ => intro x hx hw; simp only [appSubterms, List.mem_singleton] at hx; subst hx; exact hw
+
+/-- **A rule's right side is scoped where the term it rewrites is**: the theorem's type is
+closed, the arguments are subterms of the term. -/
+theorem rewriteStep_WScoped {env : Env} (henv : EnvWF env) {r : CoreFns CheckM} {d : Nat}
+    {e e₂ : Expr} {t : Name} (h : rewriteStep r env d e = .ok (some (t, e₂)))
+    (hw : WScoped d e) : WScoped d e₂ := by
+  obtain ⟨cv, args, us, u, A, c, ls, hf, hres, -, -, hsub, -⟩ :=
+    rewriteAttempt_inv (rewriteStep_inv h)
+  have hT : WScoped d (cv.type.instantiateLevelParams cv.levelParams us) :=
+    WScoped.of_not_hasFvar (by
+      rw [hasFvar_instantiateLevelParams]; exact (henv.consts _ (Env.find?_mem hf)).1)
+  have hR := piResidual_WScoped hres hT (fun x hx => appSubterms_WScoped e (hsub x hx) hw)
+  simp only [WScoped] at hR
+  exact hR.2
+
 set_option maxRecDepth 2048 in
 set_option maxHeartbeats 1600000 in
 /-- Head normalization and the reduction loop preserve
@@ -2703,24 +2874,28 @@ theorem whnfPres_WScoped {env : Env} (henv : EnvWF env) :
       -- step budget (task #106), so this is an induction on that
       -- budget at the *same* knot fuel; `ihCore` covers the per-step
       -- head normalization.
-      have hloop : ∀ (n : Nat) {d : Nat} {e e' : Expr},
-          whnfLoop (pureFns mode eager env fuel) env d n e = .ok e' →
+      have hloop : ∀ (n fires : Nat) {d : Nat} {e e' : Expr},
+          whnfLoop (pureFns mode eager env fuel) env d n fires e = .ok e' →
           WScoped d e → WScoped d e' := by
         intro n
         induction n with
-        | zero => intro _ _ _ h _; exact nomatch h
+        | zero => intro _ _ _ _ h _; exact nomatch h
         | succ n ihN =>
-          intro d e e' h hw
+          intro fires d e e' h hw
           obtain ⟨e₁, hwc, hcase⟩ := whnfStep_inv h
           have hwe₁ : WScoped d e₁ := ihCore hwc hw
-          rcases hcase with ⟨e₂, hrn, ⟨-, rfl⟩ | hcont⟩ | ⟨-, e₂, hu, hcont⟩ | ⟨-, -, rfl⟩
+          rcases hcase with ⟨e₂, hrn, ⟨-, rfl⟩ | hcont⟩ | ⟨-, t, e₂, hrw, hcont⟩ |
+              ⟨-, -, e₂, hu, hcont⟩ | ⟨-, -, -, rfl⟩
           · rcases reduceNat_inv hrn with ⟨k, rfl⟩ | ⟨bn, rfl⟩ <;> simp [WScoped]
           · rcases reduceNat_inv hrn with ⟨k, rfl⟩ | ⟨bn, rfl⟩ <;>
-              exact ihN hcont (by simp [WScoped])
-          · exact ihN hcont (unfoldDefinition_WScoped henv hu hwe₁)
+              exact ihN fires hcont (by simp [WScoped])
+          · cases fires with
+            | zero => exact nomatch hcont
+            | succ f => exact ihN f hcont (rewriteStep_WScoped henv hrw hwe₁)
+          · exact ihN fires hcont (unfoldDefinition_WScoped henv hu hwe₁)
           · exact hwe₁
       intro d e e' h hw
-      exact hloop whnfLoopFuel h hw
+      exact hloop whnfLoopFuel ruleFireBudget h hw
 
 /-- Head normalization preserves well-scopedness. -/
 theorem whnfCore_WScoped {env : Env} (henv : EnvWF env)

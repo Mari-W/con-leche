@@ -174,7 +174,7 @@ theorem DenoteSpine.cons_mono {acval : Name → (Name → Nat) → Term}
     {ψ : Name → Nat} {d : Nat} :
     ∀ {as : List Expr} {vs : List Term}, (∀ a ∈ as, ConstsBound env a) →
       DenoteSpine acval env ψ d as vs →
-      DenoteSpine (acvalWith acval c₀.name A) ⟨c₀ :: env.consts, env.tables⟩ ψ d as vs
+      DenoteSpine (acvalWith acval c₀.name A) ⟨c₀ :: env.consts, env.tables, env.rules⟩ ψ d as vs
   | _, _, _, .nil => .nil
   | a :: _, _, hcb, .cons ha htl =>
     .cons (denote_cons_mono hfresh ψ d (hcb a List.mem_cons_self) ha)
@@ -358,7 +358,7 @@ theorem CtorDataI.cross {m : EnvModel V env} {T : Name} {lps : List Name} {cvC :
     (hfresh : env.find? c₀.name = none) (hT : T ≠ c₀.name)
     (hcb : ConstsBound env cvC.type)
     (hcbI : ∀ e ∈ idxArgs, ConstsBound env e)
-    (m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables⟩)
+    (m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables, env.rules⟩)
     (hac : m₂.acval = acvalWith m.acval c₀.name A) :
     CtorDataI m₂ T lps cvC nP nF nIdx resSort isProp large idxArgs ds Es srcs := by
   have hbody : ∀ ψ, ctorBodyAVI m₂ T nP nF ψ (Es ψ) = ctorBodyAVI m T nP nF ψ (Es ψ) := by
@@ -1040,11 +1040,11 @@ theorem stageCtorGen {T : Name}
       Sat V (((ds ψ).take nP)).reverse ρ →
       ∀ bs : List V, SpineFit ρ (((ds ψ).drop nP)) bs →
         SpineFit ρ (((ppsAll ψ).drop nP)) (idxValsAt ρ (Es ψ) bs)) :
-    ∃ mp' : EnvModelM V ⟨.ctorInfo cvCa nP nF T :: env.consts, env.tables⟩,
+    ∃ mp' : EnvModelM V ⟨.ctorInfo cvCa nP nF T :: env.consts, env.tables, env.rules⟩,
       mp'.base2.acval = acvalWith mp.base2.acval cvCa.name
         (fun ψ => sumMkAV (resSort.eval ψ) j (ds ψ) (((ds ψ).drop nP))
           (uChains (Fss ψ))) := by
-  have hwfC : ConLeche.EnvWF ⟨.ctorInfo cvCa nP nF T :: env.consts, env.tables⟩ :=
+  have hwfC : ConLeche.EnvWF ⟨.ctorInfo cvCa nP nF T :: env.consts, env.tables, env.rules⟩ :=
     hCtor.envWF_cons mp.base2.wf htr
   obtain ⟨⟨hty, hccv⟩, -, -⟩ := hCtor
   have hCname : cvCa.name = cvC.name := by rw [hty]
@@ -1061,7 +1061,7 @@ theorem stageCtorGen {T : Name}
   have hwalks := ctorWalksGen hFD hCD hfold hFsj hEsj hiff hFssOkP hIdx
   have hreadC : ∀ ψ : Name → Nat,
       denote (acvalWith mp.base2.acval cvCa.name A)
-        ⟨.ctorInfo cvCa nP nF T :: env.consts, env.tables⟩ ψ 0 cvCa.type
+        ⟨.ctorInfo cvCa nP nF T :: env.consts, env.tables, env.rules⟩ ψ 0 cvCa.type
         = some (mkPisAV (ds ψ) (ctorBodyAVI mp.base2 T nP nF ψ (Es ψ))) := fun ψ =>
     denote_cons_mono (c₀ := .ctorInfo cvCa nP nF T) hfresh ψ 0 hcb (hCD.read ψ)
   have hnresC : ConLeche.reservedBasisNames.contains

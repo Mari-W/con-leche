@@ -115484,3 +115484,97 @@ Regenerated on the nightly, the dump is byte-identical to the PR-release one exc
 label fields (`toolchain`, `leanVersion`, `preludeFile`). The generated prelude matches the
 committed v4.35.0 prelude below the meta line. The variant order in `#load_natop_pins` does not
 change. No checker code changed.
+
+## User rewrite rules, model side (2026-11-17, rewrite-rules)
+
+A constructor `Red.rewrite` in `Rules/Rel.lean` lets a stored theorem `h : ∀ xs, @Eq A l r` act as
+a head reduction `l ⇝ r`, both instantiated at arguments `args`. Its premises are the theorem's
+lookup at levels `us`, a `CertsF` certificate for `args` against the theorem's type, the
+`piResidual` equation that names `A`, `l` and `r`, a constant head on `l` (so `Red.rigid` still
+holds), every argument in `appSubterms l` (the subterms reached through `.app` alone, new in
+`Kernel/CoreDefs.lean`), every free-variable leaf of `r` in `l`, and three full-grade inferences
+`A : Sort u`, `l : A`, `r : A` with these types syntactically. Any stored theorem qualifies.
+Registration is the checker's business and changes nothing here. No checker site produces the
+constructor yet.
+
+The soundness lemma `Red.rewrite_sound` is in the new `Model/Rules/RewriteSound.lean`. The
+theorem's leaf inhabits its type's reading (`const_ty`), the certificate fits the arguments, so
+the residual `Eq` spine's reading is inhabited (`teleFitPA_inhabited`). `RulesInputs` gained the
+field `eq_law`, filled from `EnvModelM.eq_law`, which reads the spine as `eqv ⟦l⟧ ⟦r⟧`, and
+`eq_of_mem_eqv` equates the sides. The lemma needs neither the point condition nor the head.
+
+The use-site inferences are needed. The theorem's type alone does not type its `Eq` spine in the
+model. `const_ty` grades the type hereditarily (`AppliesTo`), and over an empty `A` the spine
+reads as the point, which says nothing about `⟦l⟧` and `⟦r⟧`. `eq_law`'s value clause needs
+`⟦A⟧ ∈ univ`, `⟦l⟧ ∈ ⟦A⟧` and `⟦r⟧ ∈ ⟦A⟧`, and the inferences supply exactly these. A cheaper
+discharge (dropping the inferences or the certificate where the left side's head constant already
+types the redex) is open.
+
+The subterm premise limits the rule to first-order patterns. An argument under a binder sits at
+another depth, so higher-order patterns need a stronger premise.
+
+## User rewrite rules, checker side (2026-11-17, rewrite-rules)
+
+`whnfStep` now fires user rewrite rules after `reduceNat` and before `unfoldDefinition`.
+`rewriteStep` reads the rules of the term's head constant (`Env.rulesFor`, newest first) and
+`rewriteAttempt` checks every premise of `Red.rewrite` at every firing. `ruleArgs` matches the
+rule's left side first order. A bound variable takes the subterm it meets, consistently, a level
+parameter takes the level it meets, and every other leaf compares syntactically. The firing then
+peels the theorem's type along the arguments (`piResidual`), reads the `Eq` spine (`eqSpine?`)
+and tests the syntactic gate `RuleGate` (the head is `Eq`, the level count is the theorem's, the
+left side is the term, the term's head is a constant, every argument is in `appSubterms` of the
+term, every free-variable leaf of the right side is the term's). It certifies the arguments at
+the full grade (`iotaCertsFull`) and runs the three full-grade inferences `A : Sort u`, `l : A`
+and `r : A`, compared syntactically. A failed check is no firing, so the term goes on to δ.
+
+The rules live in `Env.rules : List (Name × Name)`, pairs of head and theorem, newest first.
+`Env.rulesFor` keeps a head's rules whose theorem is stored. The cached index carries the same
+table as a hash map (`FBase.rls`, built by `mkRlsGo`) and `FEnv.rulesFor` reads it in the same
+order (`mkFEnv_rulesFor`). A stored theorem of any kind may be registered, and no `thmInfo` flag
+exists. No declaration registers a rule yet. The tests build their environments by hand, and the
+stream index has no rules (`IndexSpec.rls`).
+
+`whnfLoop` takes a firing budget beside its step budget, `ruleFireBudget = 2^16` firings per
+loop, so per `whnf` call. The firing past the budget throws `.invalid` naming its theorem
+(`ruleBudgetError`). The budget is a placeholder for a static termination check of the rule set.
+
+Every consumer of `whnfStep_inv` has the rule case. `whnfStep_bridge` builds `Red.rewrite` from
+`rewriteAttempt_inv` through `iotaCertsFull_bridge` and the inference bridge, so
+`whnf_bridge_succ` now takes the defeq and inference bridges. `EnvExt` gained the field `rules`
+(an extension fires the same rules). The shift commutes with a firing (`rewriteAttempt_shift` in
+`Verify/Deep.lean`) because a stored theorem's type is closed, so the matcher binds the shifted
+subterms of a shifted term. Member freedom (`NfMemberFree.lean`) needed no run-time check.
+`WhnfNamesFree` gained the clause that no stored theorem is a member, which
+`whnfNamesFree_formers` proves from the members being inductives, and the right side is then
+member free through `piResidual_occDeep`. The cached loop's simulation (`whnfLoopC_spec`) reads
+the pure step through four guarded equations (`whnfStep_lit`, `whnfStep_fire`, `whnfStep_delta`,
+`whnfStep_fix`). `rewriteAttempt` and `rewriteAttemptI` read the spine through `eqSpine?` and the
+gate as the named `RuleGate` for that simulation, so `grind` meets neither an overlapping
+`match` nor a `∀`.
+
+The rule table broke `FamilyRan`'s reliance on `EnvExt`, because an extension must now fire the
+same rules and a block install adds none. A definition-headed family's telescope is read at the
+environment below its own block instead. `IndCaps.blockPos` records the family's position in
+its block, `Env.famBelow` cuts the environment there (`Env.cutAt`, tables by `Env.liveTables`,
+rules by the cut's constants), and `CheckerOps.whnfB` runs `whnf` at the cut. The cached
+operations run the cached core at the view below the block between two flushes (`whnfBC`,
+`FEnv.famBelow`), which `whnfBS_spec` relates to the core at the cut. `EnvWF` gained `below`
+over the reachable cuts (`Env.Reach`), `FBase.chk` gates the view's table lookups, and
+`FamilyRan` takes `FreshExt` (an extension under fresh names) in place of `EnvExt`. Installs
+stay functions of the declaration, and the stream index and `checkDecls_of_jobs` are unchanged.
+
+Each firing costs one match of the left side, one residual, one pass of `RuleGate` over the
+term's application tree and leaves, one certificate pass over the arguments and three
+inferences. A term whose head has no rules pays one hash lookup per loop step. The matcher, the
+gate and the table reader run as plain code from the cached step (`tests/plain-reach-allow.txt`
+names them with their reason). Runtime was not measured.
+
+Open. The inferred types are compared with `A` syntactically, as `Red.rewrite` states them, so a
+rule whose sides infer to convertible but different types never fires (`T → T` infers to
+`Sort (imax 1 1)`, not `Type`). Relaxing it needs a conversion premise in `Red.rewrite`. The
+budget wants a static termination check, and rules want a registration path from the input.
+
+Tests (`tests/ConLecheTests/RewriteTests.lean`, pure and cached checker each). A declaration
+`g a : T` with `g : code` checks under the rule `code = Fn` (`Fn := T → T`) and fails without
+it. The ill-typed `g T` stays rejected under the rule. A rule whose right side is no type never
+fires. The rule `code = code` is rejected by the budget, naming `code_refl`.

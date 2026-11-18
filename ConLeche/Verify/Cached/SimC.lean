@@ -310,6 +310,25 @@ transition lemma the declaration fold uses. -/
 
 theorem flushC_run (s : CState) : flushC s = .ok ((), s.flushed) := rfl
 
+/-- Dissect a successful `CheckCM` bind. -/
+theorem bindC_ok {α β : Type} {x : CheckCM α} {k : α → CheckCM β}
+    {s₀ : CState} {v : β} {s' : CState}
+    (h : (x >>= k) s₀ = .ok (v, s')) :
+    ∃ a s₁, x s₀ = .ok (a, s₁) ∧ k a s₁ = .ok (v, s') := by
+  simp only [Bind.bind, StateT.bind] at h
+  cases hx : x s₀ with
+  | error e => rw [hx] at h; exact nomatch h
+  | ok pr =>
+    obtain ⟨a, s₁⟩ := pr
+    rw [hx] at h
+    exact ⟨a, s₁, rfl, h⟩
+
+theorem pureC_ok {α : Type} {a : α} {s₀ : CState} {v : α} {s' : CState}
+    (h : (pure a : CheckCM α) s₀ = .ok (v, s')) : a = v ∧ s₀ = s' := by
+  simp only [pure, StateT.pure, Except.pure, Except.ok.injEq,
+    Prod.mk.injEq] at h
+  exact h
+
 /-- After a flush the invariant holds for any environment: the
 surviving components are the residue and the dropped caches' clauses
 are vacuous. -/

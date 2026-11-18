@@ -30,6 +30,14 @@ structure CheckerOps (m : Type → Type) where
   isDefEq : Env → Nat → Expr → Expr → m Bool
   ensureSort : Env → Nat → Expr → m Level
   whnf : Env → Nat → Expr → m Expr
+  /-- `whnf` below the block of the family named by the second argument
+  (`Env.famBelow`): where a family's telescope is reduced
+  (`familyTelescope`). -/
+  whnfB : Env → Name → Nat → Expr → m Expr
+
+/-- The operations with `whnf` run below the block of the family `n`. -/
+def CheckerOps.below {m : Type → Type} (ops : CheckerOps m) (n : Name) : CheckerOps m :=
+  { ops with whnf := fun env => ops.whnfB env n }
 
 variable (mode : CheckMode)
 
@@ -39,6 +47,10 @@ def fueledOps (F : Nat) : CheckerOps CheckM where
   isDefEq env d a b := isDefEqCore mode false env F d a b
   ensureSort env d e := ensureSortCore mode false env F d e
   whnf env d e := ConLeche.whnf mode false env F d e
+  whnfB env n d e :=
+    match env.famBelow n with
+    | some env' => ConLeche.whnf mode false env' F d e
+    | none => throw (.internal "family telescope: no stored family")
 
 /-- The pure instantiation, at the standard fuel. -/
 def pureOps : CheckerOps CheckM := fueledOps mode checkFuel

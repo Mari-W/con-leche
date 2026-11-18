@@ -430,12 +430,12 @@ theorem StreamCorr.cons {q : BlockShape}
     {Q : Nat → RecShape → ConstantVal × TargetMajor × List Expr → Prop} {envS envG : Env}
     (h : StreamCorr q Q envS envG) {j : Nat} {rc : RecShape}
     {g : ConstantVal × TargetMajor × List Expr} (hQ : Q j rc g) :
-    StreamCorr q Q ⟨recEntryS q j rc g :: envS.consts, envS.tables⟩
-      ⟨recEntryG q j g :: envG.consts, envG.tables⟩ := by
+    StreamCorr q Q ⟨recEntryS q j rc g :: envS.consts, envS.tables, envS.rules⟩
+      ⟨recEntryG q j g :: envG.consts, envG.tables, envG.rules⟩ := by
   obtain ⟨hf, hm⟩ := h
   refine ⟨fun n ci hci => ?_, fun c hc => ?_⟩
   · rw [Env.find?_cons] at hci
-    have hG : ∀ n', Env.find? ⟨recEntryG q j g :: envG.consts, envG.tables⟩ n'
+    have hG : ∀ n', Env.find? ⟨recEntryG q j g :: envG.consts, envG.tables, envG.rules⟩ n'
         = if g.1.name = n' then some (recEntryG q j g) else envG.find? n' := fun n' => by
       rw [Env.find?_cons]; rfl
     by_cases hn : g.1.name = n
@@ -466,8 +466,8 @@ theorem StreamCorr.consBlockRecsT {q : BlockShape}
   | m, rc :: recs, g :: out, envS, envG, hl, hQ, h => by
     simp only [streamRecs, List.zipWith_cons_cons, ConLeche.consBlockRecsT]
     exact StreamCorr.consBlockRecsT (m := m + 1) (recs := recs) (out := out)
-      (envS := ⟨recEntryS q m rc g :: envS.consts, envS.tables⟩)
-      (envG := ⟨recEntryG q m g :: envG.consts, envG.tables⟩)
+      (envS := ⟨recEntryS q m rc g :: envS.consts, envS.tables, envS.rules⟩)
+      (envG := ⟨recEntryG q m g :: envG.consts, envG.tables, envG.rules⟩)
       (by simpa using hl)
       (fun i rc' g' hr hg => by
         have := hQ (i + 1) rc' g' (by simpa using hr) (by simpa using hg)

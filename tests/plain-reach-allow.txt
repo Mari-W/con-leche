@@ -246,6 +246,7 @@ ConLeche.Expr.EqPair.dflt
 ConLeche.Expr.app
 ConLeche.Expr.beqDec
 ConLeche.Expr.beqGoX
+ConLeche.Expr.beqMemo
 ConLeche.Expr.bvar
 ConLeche.Expr.bvarPool
 ConLeche.Expr.const
@@ -308,6 +309,35 @@ ConLeche.natLitNames
 ConLeche.natLitSupportedF
 ConLeche.natOpGuardF
 ConLeche.strLitNames
+
+# ConLeche.Kernel.FEnv — the view below a family's block (a definition-headed family's telescope
+# reading only): O(1) over the frozen layer, the record's own few pushes re-indexed, and a live
+# table's bodies resolved once per lookup there (tables' bodies are small fixed terms)
+ConLeche.Expr.constsResolveF
+ConLeche.FEnv.below
+ConLeche.FEnv.dropTop
+ConLeche.FEnv.famBelow
+ConLeche.mkIdxGo
+
+# User rewrite rules (Kernel/Core, Kernel/CoreDefs, Kernel/FEnv), run by the cached rule step as
+# they are. The index's rules of a head are one hash lookup and a filter over that head's few
+# rules. The matcher walks the rule's left side once against the term, its slots indexed by the
+# rule's binder count. The firing's gate is one pass over the term's application tree and its
+# free-variable leaves, beside the three full-grade inferences each firing runs anyway. The
+# budget and its error are constants.
+ConLeche.Expr.fvarLeaves
+ConLeche.Expr.isConstB
+ConLeche.FEnv.rulesFor
+ConLeche.appSubterms
+ConLeche.eqSpine?
+ConLeche.instDecidableRuleGate
+ConLeche.matchLevel
+ConLeche.matchLevels
+ConLeche.ruleArgs
+ConLeche.ruleBudgetError
+ConLeche.ruleFireBudget
+ConLeche.ruleMatch
+ConLeche.ruleTele
 
 # ConLeche.Kernel.Level — the level algorithms (levels are small trees; the cached tier memoises them by level, the official kernel runs the same walks)
 ConLeche.Expr.instantiateLevelParams

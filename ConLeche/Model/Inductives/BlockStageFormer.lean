@@ -5,6 +5,7 @@ import ConLeche.Model.Inductives.FormerInEnv
 public import ConLeche.Model.Inductives.BlockLeafOk
 import ConLeche.Model.Inductives.FixKit
 import ConLeche.Verify.Inductives.BlockInv
+import ConLeche.Verify.Inductives.BlockWF
 public section
 
 /-!
@@ -232,19 +233,19 @@ theorem stageBlockFormer (mp : EnvModelM V env)
     (hnres : ConLeche.reservedBasisNames.contains cvS.name = false)
     (hop : natOpName cvS.name = false)
     (hDS : FormerDeclared mp.base2 cvS cvTa)
-    (hwfI : ConLeche.EnvWF ⟨.indInfo cvS caps :: env.consts, env.tables⟩)
+    (hwfI : ConLeche.EnvWF ⟨.indInfo cvS caps :: env.consts, env.tables, env.rules⟩)
     (hFD : FormerData mp.base2 cvTa nP resSort pps)
     (hAbelow : ∀ ψ, Term.bvarsBelow 0 (A ψ))
     (hAparams : ∀ ψ₁ ψ₂ : Name → Nat, (∀ q ∈ cvS.levelParams, ψ₁ q = ψ₂ q) → A ψ₁ = A ψ₂)
     (hAok : ∀ (ψ : Name → Nat) (ρ : Nat → V), WellDenoted V ρ (A ψ))
     (hAmem : ∀ (ψ : Name → Nat) (ρ : Nat → V),
       interp V ρ (A ψ) ∈ˢ interp V ρ (mkPisAV (pps ψ) (.sort (resSort.eval ψ)))) :
-    ∃ mp' : EnvModelM V ⟨.indInfo cvS caps :: env.consts, env.tables⟩,
+    ∃ mp' : EnvModelM V ⟨.indInfo cvS caps :: env.consts, env.tables, env.rules⟩,
       mp'.base2.acval = acvalWith mp.base2.acval cvS.name A := by
   have hcb : ConstsBound env cvS.type := constsBound_of_constsResolve _ hDS.resolve
   have hreadS : ∀ ψ : Name → Nat, ∃ Ts : Term,
       denote (acvalWith mp.base2.acval cvS.name A)
-        ⟨.indInfo cvS caps :: env.consts, env.tables⟩ ψ 0 cvS.type = some Ts ∧
+        ⟨.indInfo cvS caps :: env.consts, env.tables, env.rules⟩ ψ 0 cvS.type = some Ts ∧
       denote mp.base2.acval env ψ 0 cvS.type = some Ts := fun ψ => by
     obtain ⟨Ts, -, h₁, -, -⟩ := hDS.read ψ
     exact ⟨Ts, denote_cons_mono (c₀ := .indInfo cvS caps) hfresh ψ 0 hcb h₁, h₁⟩
@@ -300,7 +301,8 @@ theorem stageBlockFormers {p₁ : BlockShape} {isRec : Bool}
     -- well-formed environment its type resolves at well formed
     (hwfOf : ∀ (j : Nat) (cvS : ConstantVal), declAll[j]? = some cvS → ∀ {env' : Env},
       ConLeche.EnvWF env' → cvS.type.constsResolve env' = true →
-      ConLeche.EnvWF ⟨.indInfo cvS (ConLeche.blockCapsAt p₁ j isRec) :: env'.consts, env'.tables⟩) :
+      ConLeche.Env.Reach env'.consts (env'.consts.drop j) →
+      ConLeche.EnvWF ⟨.indInfo cvS (ConLeche.blockCapsAt p₁ j isRec) :: env'.consts, env'.tables, env'.rules⟩) :
     ∀ (rest : List ConstantVal) (i : Nat) (env : Env) (mp : EnvModelM V env),
       (∀ j, rest[j]? = declAll[i + j]?) → i + rest.length = declAll.length →
       (∀ (j : Nat) (cvTa : ConstantVal), formersAll[j]? = some cvTa →
@@ -315,6 +317,7 @@ theorem stageBlockFormers {p₁ : BlockShape} {isRec : Bool}
         formersAll[j]? = some cvTa →
         env.find? cvTa.name = some (.indInfo cvS (ConLeche.blockCapsAt p₁ j isRec)) ∧
         ∀ ψ, mp.base2.acval cvTa.name ψ = A j ψ) →
+      ConLeche.Env.Reach env.consts (env.consts.drop i) →
       ∃ mp' : EnvModelM V (ConLeche.consBlockInds p₁ isRec rest i env),
         (∀ (j : Nat) (cvTa : ConstantVal), formersAll[j]? = some cvTa →
           FormerData mp'.base2 cvTa (nPOf j) resSort (ppsOf j)) ∧
@@ -327,12 +330,12 @@ theorem stageBlockFormers {p₁ : BlockShape} {isRec : Bool}
         -- OFF the members consed here the carrier reads as before
         (∀ n : Name, (∀ cvTb ∈ rest, n ≠ cvTb.name) →
           mp'.base2.acval n = mp.base2.acval n)
-  | [], i, env, mp, _, hk, _, _, hFD, hDS, hcons => by
+  | [], i, env, mp, _, hk, _, _, hFD, hDS, hcons, _ => by
     simp only [List.length_nil, Nat.add_zero] at hk
     refine ⟨mp, hFD, hDS, ?_, fun _ _ => rfl⟩
     intro j cvS cvTa hjS hj
     exact hcons j cvS cvTa (by rw [hk]; exact (List.getElem?_eq_some_iff.mp hjS).1) hjS hj
-  | cvS :: rest, i, env, mp, hrest, hk, hres, hfreshOf, hFD, hDS, hcons => by
+  | cvS :: rest, i, env, mp, hrest, hk, hres, hfreshOf, hFD, hDS, hcons, hreach => by
     have hiS : declAll[i]? = some cvS := by
       have := hrest 0; simpa using this.symm
     obtain ⟨cvTa, hi⟩ : ∃ cvTa, formersAll[i]? = some cvTa :=
@@ -342,8 +345,8 @@ theorem stageBlockFormers {p₁ : BlockShape} {isRec : Bool}
     have hfresh : env.find? cvS.name = none := by
       rw [hD.name]; exact hfreshOf i cvTa (Nat.le_refl _) hi
     have hwfI : ConLeche.EnvWF
-        ⟨.indInfo cvS (ConLeche.blockCapsAt p₁ i isRec) :: env.consts, env.tables⟩ :=
-      hwfOf i cvS hiS mp.base2.wf hD.resolve
+        ⟨.indInfo cvS (ConLeche.blockCapsAt p₁ i isRec) :: env.consts, env.tables, env.rules⟩ :=
+      hwfOf i cvS hiS mp.base2.wf hD.resolve hreach
     obtain ⟨mpI, hacI⟩ := stageBlockFormer mp hfresh
       (by rw [hD.name]; exact hnresOf i cvTa hi) (by rw [hD.name]; exact hopOf i cvTa hi) hD hwfI
       (hFD i cvTa hi)
@@ -356,10 +359,10 @@ theorem stageBlockFormers {p₁ : BlockShape} {isRec : Bool}
       rw [hD.name]; exact hndN j i cvTb cvTa hj hi hji
     have hres' : ∀ (j : Nat) (cvTb : ConstantVal), formersAll[j]? = some cvTb →
         cvTb.type.constsResolve
-          (⟨.indInfo cvS (ConLeche.blockCapsAt p₁ i isRec) :: env.consts, env.tables⟩ : Env) = true :=
+          (⟨.indInfo cvS (ConLeche.blockCapsAt p₁ i isRec) :: env.consts, env.tables, env.rules⟩ : Env) = true :=
       fun j cvTb hj => Expr.constsResolve_mono (hres j cvTb hj)
     have hfreshOf' : ∀ (j : Nat) (cvTb : ConstantVal), i + 1 ≤ j → formersAll[j]? = some cvTb →
-        (⟨.indInfo cvS (ConLeche.blockCapsAt p₁ i isRec) :: env.consts, env.tables⟩ : Env).find?
+        (⟨.indInfo cvS (ConLeche.blockCapsAt p₁ i isRec) :: env.consts, env.tables, env.rules⟩ : Env).find?
           cvTb.name = none := by
       intro j cvTb hij hj
       rw [ConLeche.Env.find?_cons,
@@ -376,7 +379,7 @@ theorem stageBlockFormers {p₁ : BlockShape} {isRec : Bool}
         (c₀ := .indInfo cvS (ConLeche.blockCapsAt p₁ i isRec)) hfresh mpI.base2 hacI
     have hcons' : ∀ (j : Nat) (cvS' cvTb : ConstantVal), j < i + 1 → declAll[j]? = some cvS' →
         formersAll[j]? = some cvTb →
-        (⟨.indInfo cvS (ConLeche.blockCapsAt p₁ i isRec) :: env.consts, env.tables⟩ : Env).find? cvTb.name
+        (⟨.indInfo cvS (ConLeche.blockCapsAt p₁ i isRec) :: env.consts, env.tables, env.rules⟩ : Env).find? cvTb.name
           = some (.indInfo cvS' (ConLeche.blockCapsAt p₁ j isRec)) ∧
         ∀ ψ, mpI.base2.acval cvTb.name ψ = A j ψ := by
       intro j cvS' cvTb hji hjS hj
@@ -402,7 +405,11 @@ theorem stageBlockFormers {p₁ : BlockShape} {isRec : Bool}
     obtain ⟨mp', hFD₂, hDS₂, hcons₂, hag₂⟩ :=
       stageBlockFormers hlenD hndN hnresOf hopOf hAbelowOf hAparamsOf hAokOf
         hAmemOf hwfOf rest (i + 1) _ mpI hrest' (by simp at hk; omega)
-        hres' hfreshOf' hFD' hDS' hcons'
+        hres' hfreshOf' hFD' hDS' hcons' (by
+          have h := ConLeche.Env.Reach.push_head (L := env.consts)
+            (rfl : ConstantInfo.indInfo cvS (ConLeche.blockCapsAt p₁ i isRec) = _)
+          rw [ConLeche.blockCapsAt_blockPos] at h
+          simpa [List.drop_succ_cons] using h)
     refine ⟨mp', hFD₂, hDS₂, hcons₂, fun n hn => ?_⟩
     rw [hag₂ n (fun cvTb hcvTb => hn cvTb (List.mem_cons_of_mem _ hcvTb)), hacI]
     exact acvalWith_ne (hn cvS List.mem_cons_self)

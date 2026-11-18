@@ -64,9 +64,9 @@ theorem denote_pinned_const {m : EnvModel V env}
         = some (Term.const c us)) (d : Nat)
     (hl : (ConLeche.pinnedInfo n).toConstantVal.levelParams
       = ci.toConstantVal.levelParams := by rfl) :
-    denote (acvalWith m.acval c₀.name A) ⟨c₀ :: env.consts, env.tables⟩ ψ d
+    denote (acvalWith m.acval c₀.name A) ⟨c₀ :: env.consts, env.tables, env.rules⟩ ψ d
         (.const n ls) = some (Term.const c us) := by
-  have hf' : (⟨c₀ :: env.consts, env.tables⟩ : Env).find? n = some ci := by
+  have hf' : (⟨c₀ :: env.consts, env.tables, env.rules⟩ : Env).find? n = some ci := by
     rw [ConLeche.Env.find?_cons, ite_eq_right hne]; exact hf
   rw [denote_const hf' hlen, acvalWith_ne (fun h => hne h.symm),
     EnvModel.acval_pinned m hf hres hpd hl]
@@ -125,7 +125,7 @@ variable {m : EnvModel V env} {A : (Name → Nat) → Term}
 nose. -/
 theorem denote_natA_type
     {acval : Name → (Name → Nat) → Term} (ψ : Name → Nat) :
-    denote acval ⟨natI :: env.consts, env.tables⟩ ψ 0 natI.toConstantVal.type
+    denote acval ⟨natI :: env.consts, env.tables, env.rules⟩ ψ 0 natI.toConstantVal.type
       = some (BConst.typeAV .nat []) := by
   rw [show natI.toConstantVal.type = Expr.sort (.succ .zero) from rfl,
     denote_sort]
@@ -135,7 +135,7 @@ theorem denote_natA_type
 theorem denote_natLeaf {c₀ : ConstantInfo} (ψ : Name → Nat)
     (hne : ¬ c₀.name = natName)
     (hN : env.find? natName = some natI) (d : Nat) :
-    denote (acvalWith m.acval c₀.name A) ⟨c₀ :: env.consts, env.tables⟩ ψ d
+    denote (acvalWith m.acval c₀.name A) ⟨c₀ :: env.consts, env.tables, env.rules⟩ ψ d
         (.const natName []) = some (Term.const .nat []) := by
   refine denote_pinned_const (m := m) hne hN (by decide) (by rfl) ?_ d
   simp +decide [ConLeche.Verify.pinnedStructT]
@@ -144,7 +144,7 @@ theorem denote_natLeaf {c₀ : ConstantInfo} (ψ : Name → Nat)
 theorem denote_natZeroA_type (ψ : Name → Nat)
     (hN : env.find? natName = some natI) :
     denote (acvalWith m.acval natZeroA.name A)
-        ⟨natZeroA :: env.consts, env.tables⟩ ψ 0 natZeroA.toConstantVal.type
+        ⟨natZeroA :: env.consts, env.tables, env.rules⟩ ψ 0 natZeroA.toConstantVal.type
       = some (BConst.typeAV .natZero []) := by
   rw [show natZeroA.toConstantVal.type = Expr.const natName [] from rfl]
   exact denote_natLeaf (m := m) (A := A) ψ (by decide) hN 0
@@ -155,7 +155,7 @@ constructor is `Nat.succ`). -/
 theorem denote_natSuccTy {c₀ : ConstantInfo} (ψ : Name → Nat)
     (hne : ¬ c₀.name = natName)
     (hN : env.find? natName = some natI) :
-    denote (acvalWith m.acval c₀.name A) ⟨c₀ :: env.consts, env.tables⟩ ψ 0
+    denote (acvalWith m.acval c₀.name A) ⟨c₀ :: env.consts, env.tables, env.rules⟩ ψ 0
         natSuccA.toConstantVal.type
       = some (.pi (.const .nat [])
           (.const .nat [])) := by
@@ -169,7 +169,7 @@ theorem denote_natSuccTy {c₀ : ConstantInfo} (ψ : Name → Nat)
 theorem denote_natSuccA_type (ψ : Name → Nat)
     (hN : env.find? natName = some natI) :
     denote (acvalWith m.acval natSuccA.name A)
-        ⟨natSuccA :: env.consts, env.tables⟩ ψ 0 natSuccA.toConstantVal.type
+        ⟨natSuccA :: env.consts, env.tables, env.rules⟩ ψ 0 natSuccA.toConstantVal.type
       = some (.pi (.const .nat [])
           (.const .nat [])) :=
   denote_natSuccTy (m := m) (A := A) ψ (by decide) hN
@@ -185,13 +185,13 @@ theorem denote_natRec_leaves (ψ : Name → Nat)
     (hZ : env.find? natZeroName = some natZeroA)
     (hS : env.find? natSuccName = some natSuccA) :
     (∀ d : Nat, denote (acvalWith m.acval natRecA.name A)
-        ⟨natRecA :: env.consts, env.tables⟩ ψ d (.const natName [])
+        ⟨natRecA :: env.consts, env.tables, env.rules⟩ ψ d (.const natName [])
         = some (Term.const .nat [])) ∧
     (∀ d : Nat, denote (acvalWith m.acval natRecA.name A)
-        ⟨natRecA :: env.consts, env.tables⟩ ψ d (.const natZeroName [])
+        ⟨natRecA :: env.consts, env.tables, env.rules⟩ ψ d (.const natZeroName [])
         = some (Term.const .natZero [])) ∧
     (∀ d : Nat, denote (acvalWith m.acval natRecA.name A)
-        ⟨natRecA :: env.consts, env.tables⟩ ψ d (.const natSuccName [])
+        ⟨natRecA :: env.consts, env.tables, env.rules⟩ ψ d (.const natSuccName [])
         = some (Term.const .natSucc [])) := by
   refine ⟨fun d => denote_natLeaf (m := m) (A := A) ψ (by decide) hN d,
     fun d => ?_, fun d => ?_⟩
@@ -209,7 +209,7 @@ theorem denote_natRecA_type (ψ : Name → Nat)
     (hZ : env.find? natZeroName = some natZeroA)
     (hS : env.find? natSuccName = some natSuccA) :
     denote (acvalWith m.acval natRecA.name A)
-        ⟨natRecA :: env.consts, env.tables⟩ ψ 0 natRecA.toConstantVal.type
+        ⟨natRecA :: env.consts, env.tables, env.rules⟩ ψ 0 natRecA.toConstantVal.type
       = some (.pi (.pi (.const .nat []) (.sort (ψ uN)))
           (.pi (.app (.bvar 0) (.const .natZero []))
             (.pi (.pi (.const .nat [])
@@ -261,9 +261,9 @@ bespoke non-firing obligation, two memberships. -/
 /-- **`Nat`, installed at the P tier.** -/
 theorem extendNat (mp : EnvModelM V env)
     (hfresh : env.find? natName = none)
-    (hguard : ConLeche.natLitSupported ⟨natI :: env.consts, env.tables⟩ = false)
-    (hwf : EnvWF ⟨natI :: env.consts, env.tables⟩) :
-    CoverTo mp [] ⟨natI :: env.consts, env.tables⟩ [natName] := by
+    (hguard : ConLeche.natLitSupported ⟨natI :: env.consts, env.tables, env.rules⟩ = false)
+    (hwf : EnvWF ⟨natI :: env.consts, env.tables, env.rules⟩) :
+    CoverTo mp [] ⟨natI :: env.consts, env.tables, env.rules⟩ [natName] := by
   -- the pinned block's lfp clause is recorded at its last constructor's
   -- cons (`extendNatSucc`: the clause's `ctor` reads the constructors' leaves)
   refine coverTo_pend hfresh (declStep_preserves_of_basis_cons_gen mp
@@ -296,9 +296,9 @@ theorem extendNat (mp : EnvModelM V env)
 theorem extendNatZero (mp : EnvModelM V env)
     (hN : env.find? natName = some natI)
     (hfresh : env.find? natZeroName = none)
-    (hguard : ConLeche.natLitSupported ⟨natZeroA :: env.consts, env.tables⟩ = false)
-    (hwf : EnvWF ⟨natZeroA :: env.consts, env.tables⟩) {ex : List Name} (hNex : natName ∈ ex) :
-    CoverTo mp ex ⟨natZeroA :: env.consts, env.tables⟩ ex := by
+    (hguard : ConLeche.natLitSupported ⟨natZeroA :: env.consts, env.tables, env.rules⟩ = false)
+    (hwf : EnvWF ⟨natZeroA :: env.consts, env.tables, env.rules⟩) {ex : List Name} (hNex : natName ∈ ex) :
+    CoverTo mp ex ⟨natZeroA :: env.consts, env.tables, env.rules⟩ ex := by
   have hty := fun ψ =>
     denote_natZeroA_type (m := mp.base2)
       (A := fun _ => Term.const .natZero []) ψ hN
@@ -337,8 +337,8 @@ theorem extendNatSucc (mp : EnvModelM V env)
     (hN : env.find? natName = some natI)
     (hZ : env.find? natZeroName = some natZeroA)
     (hfresh : env.find? natSuccName = none)
-    (hwf : EnvWF ⟨natSuccA :: env.consts, env.tables⟩) :
-    CoverTo mp [natName] ⟨natSuccA :: env.consts, env.tables⟩ [] := by
+    (hwf : EnvWF ⟨natSuccA :: env.consts, env.tables, env.rules⟩) :
+    CoverTo mp [natName] ⟨natSuccA :: env.consts, env.tables, env.rules⟩ [] := by
   have hty := fun ψ =>
     denote_natSuccA_type (m := mp.base2)
       (A := fun _ => Term.const .natSucc []) ψ hN
@@ -359,10 +359,10 @@ theorem extendNatSucc (mp : EnvModelM V env)
       (fun j hj => by
         rcases (show j = 0 ∨ j = 1 by omega) with rfl | rfl
         · exact ⟨_, _, _, _, by
-            show (⟨natSuccA :: env.consts, env.tables⟩ : ConLeche.Env).find? natZeroName = _
+            show (⟨natSuccA :: env.consts, env.tables, env.rules⟩ : ConLeche.Env).find? natZeroName = _
             rw [ConLeche.Env.find?_cons, ite_eq_right (by decide)]; exact hZ⟩
         · exact ⟨_, _, _, _, by
-            show (⟨natSuccA :: env.consts, env.tables⟩ : ConLeche.Env).find? natSuccA.name = _
+            show (⟨natSuccA :: env.consts, env.tables, env.rules⟩ : ConLeche.Env).find? natSuccA.name = _
             rw [ConLeche.Env.find?_cons]; exact ite_eq_left rfl⟩))
     (hrd := lfp0_reads (by rw [ConLeche.Env.find?_cons, ite_eq_right (by decide)]; exact hN) rfl
       (fun ψ => by show denote _ _ _ 0 (.sort _) = _; rw [denote_sort]; rfl))
@@ -372,10 +372,10 @@ theorem extendNatSucc (mp : EnvModelM V env)
       (fun j hj => by
         rcases (show j = 0 ∨ j = 1 by omega) with rfl | rfl
         · exact ⟨_, _, _, _, by
-            show (⟨natSuccA :: env.consts, env.tables⟩ : ConLeche.Env).find? natZeroName = _
+            show (⟨natSuccA :: env.consts, env.tables, env.rules⟩ : ConLeche.Env).find? natZeroName = _
             rw [ConLeche.Env.find?_cons, ite_eq_right (by decide)]; exact hZ, _, [], rfl⟩
         · exact ⟨_, _, _, _, by
-            show (⟨natSuccA :: env.consts, env.tables⟩ : ConLeche.Env).find? natSuccA.name = _
+            show (⟨natSuccA :: env.consts, env.tables, env.rules⟩ : ConLeche.Env).find? natSuccA.name = _
             rw [ConLeche.Env.find?_cons]; exact ite_eq_left rfl, _, [], rfl⟩))
     (hrdC := lfp0_ctorReads (by rw [ConLeche.Env.find?_cons, ite_eq_right (by decide)]; exact hN)
       (fun ψ => ⟨_, by show denote _ _ _ 0 (.sort _) = _; rw [denote_sort]⟩) fun j hj => by
@@ -384,7 +384,7 @@ theorem extendNatSucc (mp : EnvModelM V env)
           ⟨natI.toConstantVal, _, by rw [ConLeche.Env.find?_cons, ite_eq_right (by decide)]; exact hN,
             rfl⟩,
           .fvar 0 (.sort .zero), by decide, by decide, fun ψ => ⟨rfl, [], ?_, rfl⟩⟩
-        · show (⟨natSuccA :: env.consts, env.tables⟩ : ConLeche.Env).find? natZeroName = _
+        · show (⟨natSuccA :: env.consts, env.tables, env.rules⟩ : ConLeche.Env).find? natZeroName = _
           rw [ConLeche.Env.find?_cons, ite_eq_right (by decide)]; rw [hZ]; rfl
         · show denote _ _ _ 1 (.fvar 0 (.sort .zero)) = _
           rw [denote_fvar]; rfl
@@ -393,7 +393,7 @@ theorem extendNatSucc (mp : EnvModelM V env)
             rfl⟩,
           .forallE (.fvar 0 (.sort .zero)) (.fvar 0 (.sort .zero)), by decide,
           by decide, fun ψ => ⟨rfl, [.bvar 0], ?_, rfl⟩⟩
-        · show (⟨natSuccA :: env.consts, env.tables⟩ : ConLeche.Env).find? natSuccA.name = _
+        · show (⟨natSuccA :: env.consts, env.tables, env.rules⟩ : ConLeche.Env).find? natSuccA.name = _
           rw [ConLeche.Env.find?_cons, ite_eq_left rfl]; rfl
         · show denote _ _ _ 1 (.forallE (.fvar 0 (.sort .zero)) (.fvar 0 (.sort .zero))) = _
           simp [denote_forallE, ConLeche.Expr.instantiate1, denote_fvar, mkPisAV])
@@ -405,9 +405,9 @@ theorem extendNatSucc (mp : EnvModelM V env)
       (cs := [(natZeroA.toConstantVal, 0, 0), (natSuccA.toConstantVal, 0, 1)]) rfl rfl
       (by rw [ConLeche.Env.find?_cons, ite_eq_right (by decide)]; exact hN)
       (by
-        show List.filterMap (ctorLook (ConLeche.Env.find? ⟨natSuccA :: env.consts, env.tables⟩) natName)
+        show List.filterMap (ctorLook (ConLeche.Env.find? ⟨natSuccA :: env.consts, env.tables, env.rules⟩) natName)
           [natZeroA.name, natSuccA.name] = _
-        have hz : ConLeche.Env.find? ⟨natSuccA :: env.consts, env.tables⟩ natZeroA.name = some natZeroA := by
+        have hz : ConLeche.Env.find? ⟨natSuccA :: env.consts, env.tables, env.rules⟩ natZeroA.name = some natZeroA := by
           rw [ConLeche.Env.find?_cons, ite_eq_right (by decide)]; exact hZ
         simp only [List.filterMap_cons, List.filterMap_nil, ctorLook, hz,
           ConLeche.Env.find?_cons_self, Option.bind_some,
@@ -417,7 +417,7 @@ theorem extendNatSucc (mp : EnvModelM V env)
       ⟨0, [(natZeroA.toConstantVal, 0), (natSuccA.toConstantVal, 1)], rfl, rfl, fun j hj => by
         rcases (show j = 0 ∨ j = 1 by simp at hj; omega) with rfl | rfl
         · refine ⟨natName, ?_⟩
-          show (⟨natSuccA :: env.consts, env.tables⟩ : ConLeche.Env).find? natZeroName = _
+          show (⟨natSuccA :: env.consts, env.tables, env.rules⟩ : ConLeche.Env).find? natZeroName = _
           rw [ConLeche.Env.find?_cons, ite_eq_right (by decide)]; rw [hZ]; rfl
         · exact ⟨natName, ConLeche.Env.find?_cons_self natSuccA env⟩⟩
       (fun _ h => by simp [nestPick] at h) (by decide)
@@ -530,7 +530,7 @@ theorem denote_natRec_zeroRhs (ψ : Name → Nat)
     (hZ : env.find? natZeroName = some natZeroA)
     (hS : env.find? natSuccName = some natSuccA) :
     denote (acvalWith m.acval natRecA.name A)
-        ⟨natRecA :: env.consts, env.tables⟩ ψ 0 natRecZeroRule.rhs
+        ⟨natRecA :: env.consts, env.tables, env.rules⟩ ψ 0 natRecZeroRule.rhs
       = some (natZeroRa ψ) := by
   obtain ⟨hNc, hZc, hSc⟩ :=
     denote_natRec_leaves (m := m) (A := A) ψ hN hZ hS
@@ -555,7 +555,7 @@ theorem denote_natRec_succRhs (ψ : Name → Nat)
     (hS : env.find? natSuccName = some natSuccA) :
     denote (acvalWith m.acval natRecA.name
         (fun ψ => Term.const .natRec [ψ uN]))
-        ⟨natRecA :: env.consts, env.tables⟩ ψ 0 natRecSuccRule.rhs
+        ⟨natRecA :: env.consts, env.tables, env.rules⟩ ψ 0 natRecSuccRule.rhs
       = some (natSuccRa ψ) := by
   obtain ⟨hNc, hZc, hSc⟩ :=
     denote_natRec_leaves (m := m)
@@ -563,11 +563,11 @@ theorem denote_natRec_succRhs (ψ : Name → Nat)
   have hRc : ∀ d : Nat,
       denote (acvalWith m.acval natRecA.name
           (fun ψ => Term.const .natRec [ψ uN]))
-        ⟨natRecA :: env.consts, env.tables⟩ ψ d
+        ⟨natRecA :: env.consts, env.tables, env.rules⟩ ψ d
         (.const (natName.str "rec") [.param uN])
         = some (Term.const .natRec [ψ uN]) := by
     intro d
-    have hf : (⟨natRecA :: env.consts, env.tables⟩ : Env).find? (natName.str "rec")
+    have hf : (⟨natRecA :: env.consts, env.tables, env.rules⟩ : Env).find? (natName.str "rec")
         = some natRecA := by
       rw [ConLeche.Env.find?_cons]; exact ite_eq_left rfl
     rw [denote_const hf (by rfl),
@@ -962,14 +962,14 @@ theorem natSuccRa_transport (ψ : Name → Nat) (ρ : Nat → V)
 
 /-- Both rows share this: the recursor's instantiated type reading,
 folded back into the two named domains. -/
-theorem natRecTyRead (m₂ : EnvModel V ⟨natRecA :: env.consts, env.tables⟩)
+theorem natRecTyRead (m₂ : EnvModel V ⟨natRecA :: env.consts, env.tables, env.rules⟩)
     (hN : env.find? natName = some natI)
     (hZ : env.find? natZeroName = some natZeroA)
     (hS : env.find? natSuccName = some natSuccA)
     (hac : m₂.acval = acvalWith m.acval natRecA.name A)
     (φ : Name → Nat) (us : List Level) {ψ : Name → Nat}
     (hψ : ψ = Level.substFn φ natRecA.toConstantVal.levelParams us) :
-    denote m₂.acval ⟨natRecA :: env.consts, env.tables⟩ φ 0
+    denote m₂.acval ⟨natRecA :: env.consts, env.tables, env.rules⟩ φ 0
         (natRecA.toConstantVal.type.instantiateLevelParams
           natRecA.toConstantVal.levelParams us)
       = some (.pi (natMotiveTy ψ)
@@ -983,13 +983,13 @@ theorem natRecTyRead (m₂ : EnvModel V ⟨natRecA :: env.consts, env.tables⟩)
 
 /-- The major of a `Nat.rec` spine fitting the recursor's instantiated
 type reads in `ω`, which holds no point. -/
-theorem natRecMajor_ne_pt (m₂ : EnvModel V ⟨natRecA :: env.consts, env.tables⟩)
+theorem natRecMajor_ne_pt (m₂ : EnvModel V ⟨natRecA :: env.consts, env.tables, env.rules⟩)
     (hN : env.find? natName = some natI)
     (hZ : env.find? natZeroName = some natZeroA)
     (hS : env.find? natSuccName = some natSuccA)
     (hac : m₂.acval = acvalWith m.acval natRecA.name A)
     (φ : Name → Nat) (us : List Level) {TVa : Term}
-    (hTVa : denote m₂.acval ⟨natRecA :: env.consts, env.tables⟩ φ 0
+    (hTVa : denote m₂.acval ⟨natRecA :: env.consts, env.tables, env.rules⟩ φ 0
         (natRecA.toConstantVal.type.instantiateLevelParams
           natRecA.toConstantVal.levelParams us) = some TVa)
     (ρ : Nat → V) {xs : List Term} {a restR : Term}
@@ -1007,18 +1007,18 @@ theorem natRecMajor_ne_pt (m₂ : EnvModel V ⟨natRecA :: env.consts, env.table
 domain `ω` holds no point, so (S) and (P) hold outright; the
 constructors have no level parameters, so (T) is the fired application
 itself; no indices, so (U) is the trivial index pin. -/
-theorem natRecExtra (m₂ : EnvModel V ⟨natRecA :: env.consts, env.tables⟩)
+theorem natRecExtra (m₂ : EnvModel V ⟨natRecA :: env.consts, env.tables, env.rules⟩)
     (hN : env.find? natName = some natI)
     (hZ : env.find? natZeroName = some natZeroA)
     (hS : env.find? natSuccName = some natSuccA)
     (hac : m₂.acval = acvalWith m.acval natRecA.name A)
     (φ : Name → Nat) (rl : RecRule)
     (harity : ∀ (cvj : ConstantVal) (cnP cnF : Nat) (iT : Name),
-      (⟨natRecA :: env.consts, env.tables⟩ : Env).find? rl.ctor
+      (⟨natRecA :: env.consts, env.tables, env.rules⟩ : Env).find? rl.ctor
         = some (.ctorInfo cvj cnP cnF iT) →
       (cvj.type.stripPis (cnP + rl.nfields)).isSome = true)
     (hlps : ∀ (cvj : ConstantVal) (cnP cnF : Nat) (iT : Name),
-      (⟨natRecA :: env.consts, env.tables⟩ : Env).find? rl.ctor
+      (⟨natRecA :: env.consts, env.tables, env.rules⟩ : Env).find? rl.ctor
         = some (.ctorInfo cvj cnP cnF iT) → cvj.levelParams = []) :
     RecRuleExtra m₂ φ natRecA.name natRecA.toConstantVal 3 3 false rl := by
   intro us _ TVa hTVa
@@ -1039,7 +1039,7 @@ theorem natRecExtra (m₂ : EnvModel V ⟨natRecA :: env.consts, env.tables⟩)
     exact ⟨restC, [], rfl, Or.inl rfl, fun i hi => absurd hi (by omega)⟩
 
 /-- `Nat.rec`'s `zero` rule's ι facts. -/
-theorem natRecZeroExtra (m₂ : EnvModel V ⟨natRecA :: env.consts, env.tables⟩)
+theorem natRecZeroExtra (m₂ : EnvModel V ⟨natRecA :: env.consts, env.tables, env.rules⟩)
     (hN : env.find? natName = some natI)
     (hZ : env.find? natZeroName = some natZeroA)
     (hS : env.find? natSuccName = some natSuccA)
@@ -1047,7 +1047,7 @@ theorem natRecZeroExtra (m₂ : EnvModel V ⟨natRecA :: env.consts, env.tables�
     (φ : Name → Nat) :
     RecRuleExtra m₂ φ natRecA.name natRecA.toConstantVal 3 3 false
       natRecZeroRule :=
-  have hZ' : (⟨natRecA :: env.consts, env.tables⟩ : Env).find? natZeroName
+  have hZ' : (⟨natRecA :: env.consts, env.tables, env.rules⟩ : Env).find? natZeroName
       = some natZeroA := by
     rw [ConLeche.Env.find?_cons, ite_eq_right (by decide)]; exact hZ
   natRecExtra (m := m) m₂ hN hZ hS hac φ _
@@ -1063,7 +1063,7 @@ theorem natRecZeroExtra (m₂ : EnvModel V ⟨natRecA :: env.consts, env.tables�
       rw [← a1])
 
 /-- `Nat.rec`'s `succ` rule's ι facts. -/
-theorem natRecSuccExtra (m₂ : EnvModel V ⟨natRecA :: env.consts, env.tables⟩)
+theorem natRecSuccExtra (m₂ : EnvModel V ⟨natRecA :: env.consts, env.tables, env.rules⟩)
     (hN : env.find? natName = some natI)
     (hZ : env.find? natZeroName = some natZeroA)
     (hS : env.find? natSuccName = some natSuccA)
@@ -1071,7 +1071,7 @@ theorem natRecSuccExtra (m₂ : EnvModel V ⟨natRecA :: env.consts, env.tables�
     (φ : Name → Nat) :
     RecRuleExtra m₂ φ natRecA.name natRecA.toConstantVal 3 3 false
       natRecSuccRule := by
-  have hS' : (⟨natRecA :: env.consts, env.tables⟩ : Env).find? natSuccName
+  have hS' : (⟨natRecA :: env.consts, env.tables, env.rules⟩ : Env).find? natSuccName
       = some natSuccA := by
     rw [ConLeche.Env.find?_cons, ite_eq_right (by decide)]; exact hS
   refine natRecExtra (m := m) m₂ hN hZ hS hac φ _ ?_ ?_
@@ -1089,7 +1089,7 @@ theorem natRecSuccExtra (m₂ : EnvModel V ⟨natRecA :: env.consts, env.tables�
 
 /-- **`Nat.rec`'s `zero` row.** -/
 theorem natRecZeroLaw {m : EnvModel V env}
-    (m₂ : EnvModel V ⟨natRecA :: env.consts, env.tables⟩)
+    (m₂ : EnvModel V ⟨natRecA :: env.consts, env.tables, env.rules⟩)
     (hN : env.find? natName = some natI)
     (hZ : env.find? natZeroName = some natZeroA)
     (hS : env.find? natSuccName = some natSuccA)
@@ -1109,7 +1109,7 @@ theorem natRecZeroLaw {m : EnvModel V env}
   · intro _ _ h; exact nomatch h
   intro cvj cnP cnF iT hfj usj ρ xs ys TVa TVja restR restC hxs hys husj
     hlev _ hpin hTVa hTVja hfitR hfitC
-  have hZ' : (⟨natRecA :: env.consts, env.tables⟩ : Env).find? natZeroName
+  have hZ' : (⟨natRecA :: env.consts, env.tables, env.rules⟩ : Env).find? natZeroName
       = some natZeroA := by
     rw [ConLeche.Env.find?_cons, ite_eq_right (by decide)]; exact hZ
   obtain rfl : cnP = 0 := by
@@ -1149,7 +1149,7 @@ theorem natRecZeroLaw {m : EnvModel V env}
 /-- **`Nat.rec`'s `succ` row** — the RHS mentions the recursor, read
 through the *fresh* leaf. -/
 theorem natRecSuccLaw {m : EnvModel V env}
-    (m₂ : EnvModel V ⟨natRecA :: env.consts, env.tables⟩)
+    (m₂ : EnvModel V ⟨natRecA :: env.consts, env.tables, env.rules⟩)
     (hN : env.find? natName = some natI)
     (hZ : env.find? natZeroName = some natZeroA)
     (hS : env.find? natSuccName = some natSuccA)
@@ -1169,7 +1169,7 @@ theorem natRecSuccLaw {m : EnvModel V env}
   · intro _ _ h; exact nomatch h
   intro cvj cnP cnF iT hfj usj ρ xs ys TVa TVja restR restC hxs hys husj
     hlev _ hpin hTVa hTVja hfitR hfitC
-  have hS' : (⟨natRecA :: env.consts, env.tables⟩ : Env).find? natSuccName
+  have hS' : (⟨natRecA :: env.consts, env.tables, env.rules⟩ : Env).find? natSuccName
       = some natSuccA := by
     rw [ConLeche.Env.find?_cons, ite_eq_right (by decide)]; exact hS
   obtain rfl : cnP = 0 := by
@@ -1197,7 +1197,7 @@ theorem natRecSuccLaw {m : EnvModel V env}
     rw [hac, acvalWith_self, hψ]
   -- `n`'s membership comes from the *constructor's* telescope
   have hcvj : cvj = natSuccA.toConstantVal := by
-    have hS' : (⟨natRecA :: env.consts, env.tables⟩ : Env).find? natSuccName
+    have hS' : (⟨natRecA :: env.consts, env.tables, env.rules⟩ : Env).find? natSuccName
         = some natSuccA := by
       rw [ConLeche.Env.find?_cons, ite_eq_right (by decide)]; exact hS
     rw [show RecRule.ctor natRecSuccRule = natSuccName from rfl,
@@ -1235,8 +1235,8 @@ theorem extendNatRec (mp : EnvModelM V env)
     (hZ : env.find? natZeroName = some natZeroA)
     (hS : env.find? natSuccName = some natSuccA)
     (hfresh : env.find? natRecA.name = none)
-    (hwf : EnvWF ⟨natRecA :: env.consts, env.tables⟩) {ex : List Name} :
-    CoverTo mp ex ⟨natRecA :: env.consts, env.tables⟩ ex := by
+    (hwf : EnvWF ⟨natRecA :: env.consts, env.tables, env.rules⟩) {ex : List Name} :
+    CoverTo mp ex ⟨natRecA :: env.consts, env.tables, env.rules⟩ ex := by
   have hty := fun ψ =>
     denote_natRecA_type (m := mp.base2)
       (A := fun ψ => Term.const .natRec [ψ uN]) ψ hN hZ hS
@@ -1294,48 +1294,49 @@ theorem declBasisPB_natK {env₁ : Env} (mp : EnvModelM V env)
   subst hnil
   have hf1 : env.find? natI.name = none :=
     Option.isNone_iff_eq_none.mp h1
-  have hwf1 : EnvWF ⟨natI :: env.consts, env.tables⟩ :=
+  have hwf1 : EnvWF ⟨natI :: env.consts, env.tables, env.rules⟩ :=
     EnvWF.cons (by decide) mp.base2.wf ⟨rfl, rfl, rfl, rfl,
       (fun _ _ _ heq => nomatch heq), (fun _ _ _ _ _ heq => nomatch heq)⟩
       (by intro _ _ h _; cases h; decide)
-  have hf2 : (⟨natI :: env.consts, env.tables⟩ : Env).find? natZeroA.name = none :=
+      (hb := fun _ _ h => by cases h; exact .top)
+  have hf2 : (⟨natI :: env.consts, env.tables, env.rules⟩ : Env).find? natZeroA.name = none :=
     Option.isNone_iff_eq_none.mp h2
   refine (extendNat mp hf1
     (by simp [ConLeche.natLitSupported, ConLeche.natZeroOk,
-      show (⟨natI :: env.consts, env.tables⟩ : Env).find? natZeroName = none
+      show (⟨natI :: env.consts, env.tables, env.rules⟩ : Env).find? natZeroName = none
         from hf2]) hwf1).trans fun mp1 => ?_
-  have hN1 : (⟨natI :: env.consts, env.tables⟩ : Env).find? natName
+  have hN1 : (⟨natI :: env.consts, env.tables, env.rules⟩ : Env).find? natName
       = some natI := by
     rw [ConLeche.Env.find?_cons]; exact ite_eq_left rfl
-  have hwf2 : EnvWF ⟨natZeroA :: natI :: env.consts, env.tables⟩ := by
+  have hwf2 : EnvWF ⟨natZeroA :: natI :: env.consts, env.tables, env.rules⟩ := by
     refine EnvWF.cons (by decide) hwf1 ⟨rfl, rfl, ?_, rfl,
       (fun _ _ _ heq => nomatch heq), (fun _ _ _ _ _ heq => nomatch heq)⟩
       (hk := CtorWF.of_head (us := []) rfl)
     show Expr.constsResolve _ natZeroA.toConstantVal.type = true
-    have hf : (⟨natZeroA :: natI :: env.consts, env.tables⟩ : Env).find? natName
+    have hf : (⟨natZeroA :: natI :: env.consts, env.tables, env.rules⟩ : Env).find? natName
         = some natI := by
       rw [ConLeche.Env.find?_cons, ite_eq_right (by decide)]; exact hN1
     rw [show natZeroA.toConstantVal.type = Expr.const natName []
       from rfl]
     simp [Expr.constsResolve, hf]
-  have hf3 : (⟨natZeroA :: natI :: env.consts, env.tables⟩ : Env).find?
+  have hf3 : (⟨natZeroA :: natI :: env.consts, env.tables, env.rules⟩ : Env).find?
       natSuccA.name = none := Option.isNone_iff_eq_none.mp h3
   refine (extendNatZero mp1 hN1 hf2
     (by simp [ConLeche.natLitSupported, ConLeche.natSuccOk,
-      show (⟨natZeroA :: natI :: env.consts, env.tables⟩ : Env).find? natSuccName
+      show (⟨natZeroA :: natI :: env.consts, env.tables, env.rules⟩ : Env).find? natSuccName
         = none from hf3]) hwf2 List.mem_cons_self).trans fun mp2 => ?_
-  have hN2 : (⟨natZeroA :: natI :: env.consts, env.tables⟩ : Env).find? natName
+  have hN2 : (⟨natZeroA :: natI :: env.consts, env.tables, env.rules⟩ : Env).find? natName
       = some natI := by
     rw [ConLeche.Env.find?_cons, ite_eq_right (by decide)]; exact hN1
-  have hZ2 : (⟨natZeroA :: natI :: env.consts, env.tables⟩ : Env).find? natZeroName
+  have hZ2 : (⟨natZeroA :: natI :: env.consts, env.tables, env.rules⟩ : Env).find? natZeroName
       = some natZeroA := by
     rw [ConLeche.Env.find?_cons]; exact ite_eq_left rfl
-  have hwf3 : EnvWF ⟨natSuccA :: natZeroA :: natI :: env.consts, env.tables⟩ := by
+  have hwf3 : EnvWF ⟨natSuccA :: natZeroA :: natI :: env.consts, env.tables, env.rules⟩ := by
     refine EnvWF.cons (by decide) hwf2 ⟨rfl, rfl, ?_, rfl,
       (fun _ _ _ heq => nomatch heq), (fun _ _ _ _ _ heq => nomatch heq)⟩
       (hk := CtorWF.of_head (us := []) rfl)
     show Expr.constsResolve _ natSuccA.toConstantVal.type = true
-    have hf : (⟨natSuccA :: natZeroA :: natI :: env.consts, env.tables⟩
+    have hf : (⟨natSuccA :: natZeroA :: natI :: env.consts, env.tables, env.rules⟩
         : Env).find? natName = some natI := by
       rw [ConLeche.Env.find?_cons, ite_eq_right (by decide)]; exact hN2
     rw [show natSuccA.toConstantVal.type
@@ -1343,28 +1344,28 @@ theorem declBasisPB_natK {env₁ : Env} (mp : EnvModelM V env)
         (.const natName []) from rfl]
     simp [Expr.constsResolve, hf]
   refine (extendNatSucc mp2 hN2 hZ2 hf3 hwf3).trans fun mp3 => ?_
-  have hN3 : (⟨natSuccA :: natZeroA :: natI :: env.consts, env.tables⟩
+  have hN3 : (⟨natSuccA :: natZeroA :: natI :: env.consts, env.tables, env.rules⟩
       : Env).find? natName = some natI := by
     rw [ConLeche.Env.find?_cons, ite_eq_right (by decide)]; exact hN2
-  have hZ3 : (⟨natSuccA :: natZeroA :: natI :: env.consts, env.tables⟩
+  have hZ3 : (⟨natSuccA :: natZeroA :: natI :: env.consts, env.tables, env.rules⟩
       : Env).find? natZeroName = some natZeroA := by
     rw [ConLeche.Env.find?_cons, ite_eq_right (by decide)]; exact hZ2
-  have hS3 : (⟨natSuccA :: natZeroA :: natI :: env.consts, env.tables⟩
+  have hS3 : (⟨natSuccA :: natZeroA :: natI :: env.consts, env.tables, env.rules⟩
       : Env).find? natSuccName = some natSuccA := by
     rw [ConLeche.Env.find?_cons]; exact ite_eq_left rfl
-  have hf4 : (⟨natSuccA :: natZeroA :: natI :: env.consts, env.tables⟩
+  have hf4 : (⟨natSuccA :: natZeroA :: natI :: env.consts, env.tables, env.rules⟩
       : Env).find? natRecA.name = none :=
     Option.isNone_iff_eq_none.mp h4
   have hwf4 : EnvWF ⟨natRecA :: natSuccA :: natZeroA :: natI
-      :: env.consts, env.tables⟩ := by
+      :: env.consts, env.tables, env.rules⟩ := by
     have hfN : (⟨natRecA :: natSuccA :: natZeroA :: natI
-        :: env.consts, env.tables⟩ : Env).find? natName = some natI := by
+        :: env.consts, env.tables, env.rules⟩ : Env).find? natName = some natI := by
       rw [ConLeche.Env.find?_cons, ite_eq_right (by decide)]; exact hN3
     have hfZ : (⟨natRecA :: natSuccA :: natZeroA :: natI
-        :: env.consts, env.tables⟩ : Env).find? natZeroName = some natZeroA := by
+        :: env.consts, env.tables, env.rules⟩ : Env).find? natZeroName = some natZeroA := by
       rw [ConLeche.Env.find?_cons, ite_eq_right (by decide)]; exact hZ3
     have hfS : (⟨natRecA :: natSuccA :: natZeroA :: natI
-        :: env.consts, env.tables⟩ : Env).find? natSuccName = some natSuccA := by
+        :: env.consts, env.tables, env.rules⟩ : Env).find? natSuccName = some natSuccA := by
       rw [ConLeche.Env.find?_cons, ite_eq_right (by decide)]; exact hS3
     refine EnvWF.cons (by decide) hwf3 ⟨rfl, rfl, ?_, rfl,
       (fun _ _ _ heq => nomatch heq), ?_⟩ (hr := ruleWF_of_recRulesBindB (by decide))
@@ -1402,7 +1403,7 @@ theorem declBasisPB_natK {env₁ : Env} (mp : EnvModelM V env)
           · subst h1'; rfl
           · show Expr.constsResolve _ natRecSuccRule.rhs = true
             have hfR : (⟨natRecA :: natSuccA :: natZeroA :: natI
-                :: env.consts, env.tables⟩ : Env).find? (natName.str "rec")
+                :: env.consts, env.tables, env.rules⟩ : Env).find? (natName.str "rec")
                 = some natRecA := by
               rw [ConLeche.Env.find?_cons]; exact ite_eq_left rfl
             simp only [natRecSuccRule, Expr.constsResolve, hfN, hfZ,

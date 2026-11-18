@@ -165,14 +165,14 @@ theorem divMod_entry_cons {m : EnvModel V env} {φ : Name → Nat}
     (hprev : DivMod m φ)
     {c₀ : ConstantInfo} {A : (Name → Nat) → Term}
     (hfresh : env.find? c₀.name = none)
-    (m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables⟩)
+    (m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables, env.rules⟩)
     (hac : m₂.acval = acvalWith m.acval c₀.name A)
     {c : Name} (hcN : c ∈ ConLeche.natDivModNames) (hne : c ≠ c₀.name)
     {cv' : ConstantVal} {v' : Expr} {hint' : ReducibilityHint}
-    (hf₂ : (⟨c₀ :: env.consts, env.tables⟩ : Env).find? c
+    (hf₂ : (⟨c₀ :: env.consts, env.tables, env.rules⟩ : Env).find? c
       = some (.defnInfo cv' v' hint')) :
-    natOpGuard (⟨c₀ :: env.consts, env.tables⟩ : Env) c = true ∧
-    ConLeche.natOpTyPinned (⟨c₀ :: env.consts, env.tables⟩ : Env) c cv'.type = true ∧
+    natOpGuard (⟨c₀ :: env.consts, env.tables, env.rules⟩ : Env) c = true ∧
+    ConLeche.natOpTyPinned (⟨c₀ :: env.consts, env.tables, env.rules⟩ : Env) c cv'.type = true ∧
     ∀ (ρ : Nat → V) (x y : V),
       x ∈ˢ interp V ρ (m₂.acval ConLeche.natName φ) →
       y ∈ˢ interp V ρ (m₂.acval ConLeche.natName φ) →
@@ -210,7 +210,7 @@ theorem divMod_cons_fresh {m : EnvModel V env} {φ : Name → Nat}
     (hfresh : env.find? c₀.name = none)
     (hnothead : (∀ cv v hint, c₀ ≠ .defnInfo cv v hint) ∨
       c₀.name ∉ ConLeche.natDivModNames)
-    (m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables⟩)
+    (m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables, env.rules⟩)
     (hac : m₂.acval = acvalWith m.acval c₀.name A) :
     DivMod m₂ φ := by
   intro c hcN cv' v' hint' hf₂
@@ -236,7 +236,7 @@ theorem eqLaw_cons_fresh {m : EnvModel V env}
     (hprev : EqLaw m)
     {c₀ : ConstantInfo} {A : (Name → Nat) → Term}
     (hne : eqName ≠ c₀.name)
-    (m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables⟩)
+    (m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables, env.rules⟩)
     (hac : m₂.acval = acvalWith m.acval c₀.name A) :
     EqLaw m₂ := by
   intro ci p hfind hp ψ
@@ -257,7 +257,7 @@ theorem eqLaw_cons_valueKind {m : EnvModel V env}
     (hprev : EqLaw m)
     {c₀ : ConstantInfo} {A : (Name → Nat) → Term}
     (hnotind : ∀ cv caps, c₀ ≠ .indInfo cv caps)
-    (m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables⟩)
+    (m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables, env.rules⟩)
     (hac : m₂.acval = acvalWith m.acval c₀.name A) :
     EqLaw m₂ := by
   by_cases hn : eqName = c₀.name
@@ -293,13 +293,13 @@ theorem reduceOps_entry_cons {m : EnvModel V env}
     (hprev : ReduceOps m)
     {c₀ : ConstantInfo} {A : (Name → Nat) → Term}
     (hfresh : env.find? c₀.name = none)
-    (m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables⟩)
+    (m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables, env.rules⟩)
     (hac : m₂.acval = acvalWith m.acval c₀.name A)
     {c : Name} (hcN : c ∈ ConLeche.reduceOpNames) (hne : c ≠ c₀.name)
     {cv : ConstantVal}
-    (hf₂ : (⟨c₀ :: env.consts, env.tables⟩ : Env).find? c = some (.axiomInfo cv))
+    (hf₂ : (⟨c₀ :: env.consts, env.tables, env.rules⟩ : Env).find? c = some (.axiomInfo cv))
     (hpin : ConstantVal.matchesPin cv (ConLeche.reduceOpCvA c) = true) :
-    ((⟨c₀ :: env.consts, env.tables⟩ : Env).find?
+    ((⟨c₀ :: env.consts, env.tables, env.rules⟩ : Env).find?
         (ConLeche.reduceElemName c)).isSome = true ∧
       ∀ (ψ : Name → Nat) (ρ : Nat → V) (x : V),
         x ∈ˢ interp V ρ (m₂.acval (ConLeche.reduceElemName c) ψ) →
@@ -341,7 +341,7 @@ theorem reduceOps_cons_fresh {m : EnvModel V env}
     (hfresh : env.find? c₀.name = none)
     (hnothead : (∀ cv, c₀ ≠ .axiomInfo cv) ∨
       c₀.name ∉ ConLeche.reduceOpNames)
-    (m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables⟩)
+    (m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables, env.rules⟩)
     (hac : m₂.acval = acvalWith m.acval c₀.name A) :
     ReduceOps m₂ := by
   intro c hcN cv hf₂ hpin

@@ -252,13 +252,13 @@ theorem axiomOfReduce
     (mp : EnvModelM V env) {cv : ConstantVal} {type' : Expr}
     (hopn : natOpName cv.name = false)
     (hcv : ConstantValRun F env cv type')
-    (hwf₂ : ConLeche.EnvWF ⟨.axiomInfo ⟨cv.name, cv.levelParams, type'⟩ :: env.consts, env.tables⟩)
+    (hwf₂ : ConLeche.EnvWF ⟨.axiomInfo ⟨cv.name, cv.levelParams, type'⟩ :: env.consts, env.tables, env.rules⟩)
     (hor : cv.name = ConLeche.ofReduceNatName ∨
       cv.name = ConLeche.ofReduceBoolName)
     (hok : ConLeche.ofReduceAxOk env ⟨cv.name, cv.levelParams, type'⟩
       = true) :
     CoverStep mp
-      ⟨.axiomInfo ⟨cv.name, cv.levelParams, type'⟩ :: env.consts, env.tables⟩ := by
+      ⟨.axiomInfo ⟨cv.name, cv.levelParams, type'⟩ :: env.consts, env.tables, env.rules⟩ := by
   refine harvestAxiom (V := V) (hwf₂ := hwf₂) mp hopn hcv
     (by rcases hor with h | h <;> rw [h] <;> decide)
     (A := fun _ => Term.prf) (fun _ => trivial)

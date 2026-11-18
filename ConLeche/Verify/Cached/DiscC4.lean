@@ -715,22 +715,176 @@ section Walks2
 
 variable {env : Env} {f : Nat}
 
+/-- A rule firing's scope side condition: the reduct is well-scoped. -/
+@[expose] def RuleWS (d : Nat) : Option (Name × Expr) → Prop
+  | none => True
+  | some (_, e) => Expr.WScoped d e
+
+@[conleche_grind =] theorem RuleWS.none_eq (d : Nat) : RuleWS d none = True := rfl
+
+@[conleche_grind =] theorem RuleWS.some_eq (d : Nat) (t : Name) (e : Expr) :
+    RuleWS d (some (t, e)) = Expr.WScoped d e := rfl
+
+/-- One rule's firing simulates its specification: the theorem's type through the memo, then
+every check the specification's. -/
+theorem rewriteAttemptC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d : Nat}
+    {e : Expr} (t : Name) {s₀ : CState} (hs : CSOK mode eager env s₀) (hw : Expr.WScoped d e) :
+    ⦃fun s => s = s₀⦄ rewriteAttemptI mode (mkFEnv env) eager f d e t
+    ⦃fun o s' => CSOK mode eager env s' ∧
+      Runs (rewriteAttempt (fueledFns mode eager env) env d e t) o ∧ OptWS d o; ⊤⦄ := by
+  unfold rewriteAttemptI rewriteAttempt
+  rw [mkFEnv_find_fun]
+  cases hft : env.find? t with
+  | none => sym only [conleche_grind] => vcgen <;> finish
+  | some ci =>
+    cases ci
+    case thmInfo cv =>
+      have hfind : (env.find? t).isSome = true := by rw [hft]; rfl
+      have hcl : cv.type.hasFvar = false := (henv.consts _ (Env.find?_mem hft)).1
+      dsimp only
+      cases hra : ruleArgs cv e with
+      | none => sym only [conleche_grind] => vcgen <;> finish
+      | some au =>
+        obtain ⟨args, us⟩ := au
+        dsimp only
+        have hT : constTyOf env t us = cv.type.instantiateLevelParams cv.levelParams us := by
+          simp [constTyOf, hft, ConstantInfo.toConstantVal]
+        have hwT : Expr.WScoped d (cv.type.instantiateLevelParams cv.levelParams us) :=
+          Expr.WScoped.of_not_hasFvar (by rw [Expr.hasFvar_instantiateLevelParams]; exact hcl)
+        cases hsp : (piResidual (cv.type.instantiateLevelParams cv.levelParams us) args).bind
+            eqSpine? with
+        | none =>
+          sym only [conleche_grind] =>
+            vcgen [constTyAtM_spec (mode := mode) (eager := eager) (env := env) hs t t us hfind,
+              piResidualM_spec (mode := mode) (eager := eager) (env := env)] <;> finish
+        | some q =>
+          obtain ⟨eqn, u, A, l, rhs⟩ := q
+          dsimp only
+          by_cases hg : RuleGate cv us args e eqn l rhs
+          · rw [ite_eq_left hg]
+            have hargs : AllWS d args := fun x hx => appSubterms_WScoped e (hg.2.2.2.1 x hx) hw
+            obtain ⟨R, hres, hR⟩ : ∃ R, piResidual
+                (cv.type.instantiateLevelParams cv.levelParams us) args = some R ∧
+                eqSpine? R = some (eqn, u, A, l, rhs) := by
+              cases h : piResidual (cv.type.instantiateLevelParams cv.levelParams us) args with
+              | none => rw [h] at hsp; exact nomatch hsp
+              | some R => rw [h] at hsp; exact ⟨R, rfl, hsp⟩
+            rw [eqSpine?_eq_some] at hR
+            subst hR
+            have hwR := piResidual_WScoped hres hwT hargs
+            simp only [Expr.WScoped] at hwR
+            have hwA := hwR.1.1.2
+            have hwr := hwR.2
+            sym only [conleche_grind] =>
+              vcgen [constTyAtM_spec (mode := mode) (eager := eager) (env := env) hs t t us hfind,
+                piResidualM_spec (mode := mode) (eager := eager) (env := env),
+                iotaCertsFullC_spec ih, ih.infer_spec] <;> finish
+          · rw [ite_eq_right hg]
+            sym only [conleche_grind] =>
+              vcgen [constTyAtM_spec (mode := mode) (eager := eager) (env := env) hs t t us hfind,
+                piResidualM_spec (mode := mode) (eager := eager) (env := env)] <;> finish
+    all_goals sym only [conleche_grind] => vcgen <;> finish
+
+/-- The rules in order simulate their specification. -/
+theorem rewriteRulesC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d : Nat}
+    {e : Expr} (hw : Expr.WScoped d e) (ts : List Name) :
+    ∀ {s₀ : CState}, CSOK mode eager env s₀ →
+    ⦃fun s => s = s₀⦄ rewriteRulesI mode (mkFEnv env) eager f d e ts
+    ⦃fun o s' => CSOK mode eager env s' ∧
+      Runs (rewriteRules (fueledFns mode eager env) env d e ts) o ∧ RuleWS d o; ⊤⦄ := by
+  induction ts with
+  | nil =>
+    intro s₀ hs
+    sym only [conleche_grind, rewriteRules] => vcgen [rewriteRulesI.eq_def] <;> finish
+  | cons t ts iht =>
+    intro s₀ hs
+    sym only [conleche_grind, rewriteRules] =>
+      vcgen [rewriteRulesI.eq_def, rewriteAttemptC_spec ih henv t, iht] <;> finish
+
+/-- The rewrite step simulates its specification: the index's rules are `Env.rulesFor`'s. -/
+theorem rewriteStepC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d : Nat}
+    {e : Expr} {s₀ : CState} (hs : CSOK mode eager env s₀) (hw : Expr.WScoped d e) :
+    ⦃fun s => s = s₀⦄ rewriteStepI mode (mkFEnv env) eager f d e
+    ⦃fun o s' => CSOK mode eager env s' ∧
+      Runs (rewriteStep (fueledFns mode eager env) env d e) o ∧ RuleWS d o; ⊤⦄ := by
+  unfold rewriteStepI rewriteStep
+  rw [mkFEnv_rulesFor_fun]
+  cases e.getAppFn with
+  | const c ls => exact rewriteRulesC_spec ih henv hw _ hs
+  | _ => sym only [conleche_grind] => vcgen <;> finish
+
+/-! The reduction step's arms, one guarded equation each (the pure side's nested matches never
+reach `grind`). -/
+
+theorem whnfStep_lit {d : Nat} {k : Expr → FueledM Expr} {kr : Name → Expr → FueledM Expr}
+    {e e₁ e₂ v : Expr} (h₁ : Runs ((fueledFns mode eager env).whnfCore false d e) e₁)
+    (h₂ : Runs (reduceNat (fueledFns mode eager env) env d e₁) (some e₂)) :
+    Runs (whnfStep (fueledFns mode eager env) env d k kr e) v =
+      Runs (if e₂.isLit then pure e₂ else k e₂) v := by
+  unfold whnfStep
+  rw [Runs.bind_eq v h₁, Runs.bind_eq v h₂]
+
+theorem whnfStep_fire {d : Nat} {k : Expr → FueledM Expr} {kr : Name → Expr → FueledM Expr}
+    {e e₁ v : Expr} {t : Name} {e₂ : Expr}
+    (h₁ : Runs ((fueledFns mode eager env).whnfCore false d e) e₁)
+    (h₂ : Runs (reduceNat (fueledFns mode eager env) env d e₁) none)
+    (h₃ : Runs (rewriteStep (fueledFns mode eager env) env d e₁) (some (t, e₂))) :
+    Runs (whnfStep (fueledFns mode eager env) env d k kr e) v = Runs (kr t e₂) v := by
+  unfold whnfStep
+  rw [Runs.bind_eq v h₁, Runs.bind_eq v h₂]
+  exact Runs.bind_eq v h₃
+
+theorem whnfStep_delta {d : Nat} {k : Expr → FueledM Expr} {kr : Name → Expr → FueledM Expr}
+    {e e₁ e₂ v : Expr} (h₁ : Runs ((fueledFns mode eager env).whnfCore false d e) e₁)
+    (h₂ : Runs (reduceNat (fueledFns mode eager env) env d e₁) none)
+    (h₃ : Runs (rewriteStep (fueledFns mode eager env) env d e₁) none)
+    (hu : unfoldDefinition env e₁ = some e₂) :
+    Runs (whnfStep (fueledFns mode eager env) env d k kr e) v = Runs (k e₂) v := by
+  unfold whnfStep
+  rw [Runs.bind_eq v h₁, Runs.bind_eq v h₂]
+  show Runs (_ >>= _) v = _
+  rw [Runs.bind_eq v h₃]
+  show Runs (match unfoldDefinition env e₁ with | some e₂ => k e₂ | none => pure e₁) v = _
+  rw [hu]
+
+theorem whnfStep_fix {d : Nat} {k : Expr → FueledM Expr} {kr : Name → Expr → FueledM Expr}
+    {e e₁ v : Expr} (h₁ : Runs ((fueledFns mode eager env).whnfCore false d e) e₁)
+    (h₂ : Runs (reduceNat (fueledFns mode eager env) env d e₁) none)
+    (h₃ : Runs (rewriteStep (fueledFns mode eager env) env d e₁) none)
+    (hu : unfoldDefinition env e₁ = none) :
+    Runs (whnfStep (fueledFns mode eager env) env d k kr e) v = (e₁ = v) := by
+  unfold whnfStep
+  rw [Runs.bind_eq v h₁, Runs.bind_eq v h₂]
+  show Runs (_ >>= _) v = _
+  rw [Runs.bind_eq v h₃]
+  show Runs (match unfoldDefinition env e₁ with | some e₂ => k e₂ | none => pure e₁) v = _
+  rw [hu]
+  exact Runs.pure_eq e₁ v
+
 /-- The reduction loop simulates its specification, by induction on the
 shared step budget (task #106). -/
 theorem whnfLoopC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d : Nat} (n : Nat) :
-    ∀ {i : Expr} {s₀ : CState}, CSOK mode eager env s₀ → Expr.WScoped d i →
-      ⦃fun s => s = s₀⦄ whnfLoopI mode (mkFEnv env) eager f d n i
+    ∀ {fires : Nat} {i : Expr} {s₀ : CState}, CSOK mode eager env s₀ → Expr.WScoped d i →
+      ⦃fun s => s = s₀⦄ whnfLoopI mode (mkFEnv env) eager f d n fires i
       ⦃fun v s' => CSOK mode eager env s' ∧
-        Runs (whnfLoop (fueledFns mode eager env) env d n i) v ∧ Expr.WScoped d v; ⊤⦄ := by
+        Runs (whnfLoop (fueledFns mode eager env) env d n fires i) v ∧ Expr.WScoped d v; ⊤⦄ := by
   induction n with
   | zero =>
-    intro i s₀ hs hw
+    intro fires i s₀ hs hw
     sym only [conleche_grind] => vcgen [whnfLoopI.eq_def] <;> finish
   | succ n ihn =>
-    intro i s₀ hs hw
-    sym only [conleche_grind, whnfLoop, whnfStep, unfoldDefinition_WScoped henv] =>
-      vcgen [whnfLoopI.eq_def, ih.whnfCore_spec, reduceNatC_spec ih,
-        unfoldDefinitionC_spec (mode := mode) (eager := eager) (env := env), ihn] <;> finish
+    intro fires i s₀ hs hw
+    cases fires with
+    | zero =>
+      sym only [conleche_grind, whnfLoop, whnfStep_lit, whnfStep_fire, whnfStep_delta,
+          whnfStep_fix, unfoldDefinition_WScoped henv] =>
+        vcgen [whnfLoopI.eq_def, ih.whnfCore_spec, reduceNatC_spec ih, rewriteStepC_spec ih henv,
+          unfoldDefinitionC_spec (mode := mode) (eager := eager) (env := env), ihn] <;> finish
+    | succ fires =>
+      sym only [conleche_grind, whnfLoop, whnfStep_lit, whnfStep_fire, whnfStep_delta,
+          whnfStep_fix, unfoldDefinition_WScoped henv] =>
+        vcgen [whnfLoopI.eq_def, ih.whnfCore_spec, reduceNatC_spec ih, rewriteStepC_spec ih henv,
+          unfoldDefinitionC_spec (mode := mode) (eager := eager) (env := env), ihn] <;> finish
 
 theorem whnfBodyC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) :
     BodySpec mode eager env (whnfBodyI mode (mkFEnv env) eager f)

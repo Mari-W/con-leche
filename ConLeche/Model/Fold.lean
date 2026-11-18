@@ -92,9 +92,9 @@ step and coverage is unconditional. -/
 /-- A step's carrier, covered, from a covered input. -/
 theorem CoverTo.covered {env env' : Env} {mp : EnvModelM V env}
     (h : CoverStep mp env') (hcov : LfpCover mp []) (hS : FamilyRan mp)
-    (htb : ∀ T, (env.find? T).isSome = true → env'.findTable? T = env.findTable? T) :
+    (hx : FreshExt env env') :
     ∃ mp' : EnvModelM V env', LfpCover mp' [] ∧ FamilyRan mp' :=
-  h.elim fun mp' h' => ⟨mp', h'.2 hcov, hS.step h'.1 htb⟩
+  h.elim fun mp' h' => ⟨mp', h'.2 hcov, hS.step h'.1 hx⟩
 
 /-- **The P fold invariant**: a covered P carrier, and the `Nat` facts. -/
 @[expose] def EnvModelOk (V : Type w) [SetTheory V] (env : Env) :
@@ -111,33 +111,37 @@ theorem EnvModelOk.empty : EnvModelOk V Env.empty :=
   ⟨⟨EnvModelM.empty V, lfpCover_empty, fun _ hD => nomatch hD⟩,
     ⟨fun h => by rcases h with h | h | h <;> exact nomatch h⟩⟩
 
-/-- A step that adds constants, none of `Nat`'s block's, and no table. -/
+/-- A step that adds constants under fresh names, none of `Nat`'s block's, and no table. -/
 @[expose] def PlainStep (env env₂ : Env) : Prop :=
   ∃ new : List ConstantInfo, env₂.consts = new ++ env.consts ∧ env₂.tables = env.tables ∧
-    ∀ c ∈ new, c.name ≠ ConLeche.natName ∧ c.name ≠ ConLeche.natZeroName ∧
-      c.name ≠ ConLeche.natSuccName
+    env₂.rules = env.rules ∧ (∀ c ∈ new, c.name ≠ ConLeche.natName ∧ c.name ≠ ConLeche.natZeroName ∧
+      c.name ≠ ConLeche.natSuccName) ∧ ∀ c ∈ new, env.find? c.name = none
 
 /-- A plain step keeps the two fold-level facts. -/
 theorem PlainStep.close {env env₂ : Env} {mp : EnvModelM V env} (h : PlainStep env env₂)
     (hstep : CoverStep mp env₂) (hcov : LfpCover mp []) (hS : FamilyRan mp) (hN : NatFacts env) :
     (∃ mp' : EnvModelM V env₂, LfpCover mp' [] ∧ FamilyRan mp') ∧ NatFacts env₂ := by
-  obtain ⟨new, hnew, htab, hres⟩ := h
-  exact ⟨hstep.covered hcov hS (findTable_of_added hnew htab), hN.append hnew hres⟩
+  obtain ⟨new, hnew, htab, hrul, hres, hfr⟩ := h
+  exact ⟨hstep.covered hcov hS ⟨⟨new, hnew, hfr⟩, ⟨[], by rw [htab]; rfl, fun _ h => nomatch h⟩,
+    ⟨[], by rw [hrul]; rfl, fun _ h => nomatch h⟩⟩, hN.append hnew hres⟩
 
 /-- A declaration's constant, stored under an unreserved name. -/
 theorem PlainStep.cons {env : Env} {c : ConstantInfo}
-    (h : ConLeche.reservedBasisNames.contains c.name = false) :
-    PlainStep env ⟨c :: env.consts, env.tables⟩ :=
-  ⟨[c], rfl, rfl, fun _ hc => by
-    rw [List.mem_singleton.mp hc]; exact nat_names_of_unreserved h⟩
+    (h : ConLeche.reservedBasisNames.contains c.name = false)
+    (hf : (env.find? c.name).isNone = true) :
+    PlainStep env ⟨c :: env.consts, env.tables, env.rules⟩ :=
+  ⟨[c], rfl, rfl, rfl, fun _ hc => by
+    rw [List.mem_singleton.mp hc]; exact nat_names_of_unreserved h, fun _ hc => by
+    rw [List.mem_singleton.mp hc]; exact Option.isNone_iff_eq_none.mp hf⟩
 
 /-- A quotient record is a plain step. -/
 theorem plainStep_quot {env env₂ : Env} {k : ConLeche.QuotKind} {cv : ConstantVal}
     (h : DeclQuotRun env k cv env₂) : PlainStep env env₂ := by
-  obtain ⟨-, -, -, rfl⟩ := h
-  refine ⟨[_], rfl, rfl, fun _ hc => ?_⟩
-  rw [List.mem_singleton.mp hc, show (quotAt k cv).name = (quotPin k).name from atLps_name _ _]
-  cases k <;> decide
+  obtain ⟨-, -, hfr, rfl⟩ := h
+  refine ⟨[_], rfl, rfl, rfl, fun _ hc => ?_, fun _ hc => ?_⟩
+  · rw [List.mem_singleton.mp hc, show (quotAt k cv).name = (quotPin k).name from atLps_name _ _]
+    cases k <;> decide
+  · rw [List.mem_singleton.mp hc]; exact Option.isNone_iff_eq_none.mp hfr
 
 /-- An axiom record is a plain step. -/
 theorem plainStep_axiom {F : Nat} {env env₂ : Env} {cv : ConstantVal}
@@ -149,10 +153,10 @@ theorem plainStep_axiom {F : Nat} {env env₂ : Env} {cv : ConstantVal}
     have hres : ConLeche.reservedBasisNames.contains cv.name = false := by
       simpa [ConLeche.basisNamesOk, hqs] using hb
     rcases hbranch with ⟨-, rfl⟩ | ⟨-, -, rfl⟩ | ⟨-, -, rfl⟩ | ⟨-, -, -, -, -, -, -, rfl⟩
-    · exact PlainStep.cons hres
-    · exact PlainStep.cons hres
-    · exact PlainStep.cons hres
-    · exact ⟨[], rfl, rfl, fun _ hc => nomatch hc⟩
+    · exact PlainStep.cons hres hcv.1
+    · exact PlainStep.cons hres hcv.1
+    · exact PlainStep.cons hres hcv.1
+    · refine ⟨[], rfl, rfl, rfl, ?_, ?_⟩ <;> intro _ hc <;> exact nomatch hc
 
 /-- **Constants pushed under distinct fresh names** are pushed one by one, each fresh. -/
 theorem basisInstallRun_of_push :
@@ -163,7 +167,7 @@ theorem basisInstallRun_of_push :
   | ci :: rest, env, hnd, hfr => by
     simp only [List.map_cons, List.nodup_cons, List.mem_map, not_exists, not_and] at hnd
     refine ⟨Option.isNone_iff_eq_none.mpr (hfr _ List.mem_cons_self), ?_⟩
-    have h := basisInstallRun_of_push (env := ⟨ci :: env.consts, env.tables⟩) hnd.2
+    have h := basisInstallRun_of_push (env := ⟨ci :: env.consts, env.tables, env.rules⟩) hnd.2
       fun n hn => by
         rw [ConLeche.Env.find?_cons, ite_eq_right fun he => ?_]
         · exact hfr n (List.mem_cons_of_mem _ hn)
@@ -171,16 +175,33 @@ theorem basisInstallRun_of_push :
           exact hnd.1 c hc he.symm
     simpa [ConLeche.Env.pushDelta] using h
 
+/-- What a pinned block stores is fresh at the environment it is pushed onto. -/
+theorem basisInstallRun_fresh :
+    ∀ {L : List ConstantInfo} {env env₂ : Env}, BasisInstallRun env L env₂ →
+      ∀ c ∈ L, env.find? c.name = none
+  | [], _, _, _, _, hc => nomatch hc
+  | ci :: rest, env, _, h, c, hc => by
+    rcases List.mem_cons.mp hc with rfl | hc
+    · exact Option.isNone_iff_eq_none.mp h.1
+    · have h' := basisInstallRun_fresh h.2 c hc
+      cases hf : env.find? c.name with
+      | none => rfl
+      | some ci' =>
+        rw [ConLeche.Env.find?_cons] at h'
+        split at h'
+        · exact nomatch h'
+        · rw [h'] at hf; exact nomatch hf
+
 /-- What a pinned block stores, as a prefix of the constants. -/
 theorem basisInstallRun_consts :
     ∀ {L : List ConstantInfo} {env env₂ : Env}, BasisInstallRun env L env₂ →
-      env₂.consts = L.reverse ++ env.consts ∧ env₂.tables = env.tables
+      env₂.consts = L.reverse ++ env.consts ∧ env₂.tables = env.tables ∧ env₂.rules = env.rules
   | [], _, _, h => by
     obtain rfl := h
-    exact ⟨rfl, rfl⟩
+    exact ⟨rfl, rfl, rfl⟩
   | ci :: rest, _, _, h => by
-    obtain ⟨hc, ht⟩ := basisInstallRun_consts h.2
-    refine ⟨?_, ht⟩
+    obtain ⟨hc, ht, hr⟩ := basisInstallRun_consts h.2
+    refine ⟨?_, ht, hr⟩
     rw [hc]
     simp
 
@@ -200,7 +221,7 @@ theorem storedAt_names :
 private theorem natFacts_basis {env env₂ : Env} {kind : ConLeche.BasisKind} {block : List ConstantInfo}
     (hN : NatFacts env) (hk : ConLeche.basisNameHit block = some kind)
     (h : BasisInstallRun env (kind.storedAt block) env₂) : NatFacts env₂ := by
-  obtain ⟨hc, -⟩ := basisInstallRun_consts h
+  obtain ⟨hc, -, -⟩ := basisInstallRun_consts h
   have hn : kind.decls.map (·.name) = block.map (·.name) := by
     have := List.find?_some hk
     simpa using this
@@ -300,7 +321,7 @@ theorem declStep_preserves
     have hsh := hrun
     obtain ⟨type', value', hcv, -, henv2, -, -⟩ := hsh
     subst henv2
-    exact PlainStep.close (PlainStep.cons hnres) (harvestDefn mp hrun hwf₂ hnres) hcov hS hN
+    exact PlainStep.close (PlainStep.cons hnres hcv.1) (harvestDefn mp hrun hwf₂ hnres) hcov hS hN
   | thmDecl cv value =>
     have hnres : ConLeche.reservedBasisNames.contains cv.name = false := by
       simpa [ConLeche.basisNamesOk] using hnames
@@ -308,14 +329,14 @@ theorem declStep_preserves
     -- the run record has no is-a-proposition derivation row
     obtain ⟨-, type', value', hcv, -, -, henv2⟩ := hsh
     subst henv2
-    exact PlainStep.close (PlainStep.cons hnres) (harvestThm mp hrun hwf₂ hnres) hcov hS hN
+    exact PlainStep.close (PlainStep.cons hnres hcv.1) (harvestThm mp hrun hwf₂ hnres) hcov hS hN
   | opaqueDecl cv value =>
     have hnres : ConLeche.reservedBasisNames.contains cv.name = false := by
       simpa [ConLeche.basisNamesOk] using hnames
     have hsh := hrun
     obtain ⟨-, type', value', hcv, -, henv2, -⟩ := hsh
     subst henv2
-    exact PlainStep.close (PlainStep.cons hnres) (harvestOpaque mp hrun hwf₂ hnres) hcov hS hN
+    exact PlainStep.close (PlainStep.cons hnres hcv.1) (harvestOpaque mp hrun hwf₂ hnres) hcov hS hN
   | axiomDecl cv =>
     exact (plainStep_axiom hrun hnames).close (axiomStepPB_of mp hrun hnames hwf₂) hcov hS hN
   | quotDecl k cv => exact (plainStep_quot hrun).close (declQuotPB_at mp hrun hwf₂) hcov hS hN
@@ -339,8 +360,10 @@ theorem declStep_preserves
           have hm := List.mem_of_find?_eq_some hk
           simp at hm
         have hinst := basisInstallRun_of_block hk hok hdf hrun'
-        obtain ⟨hc, htb⟩ := basisInstallRun_consts hinst
-        exact ⟨(declBasisPB_at mp hnq hok hinst hwf₂).covered hcov hS (findTable_of_added hc htb),
+        obtain ⟨hc, htb, hrb⟩ := basisInstallRun_consts hinst
+        exact ⟨(declBasisPB_at mp hnq hok hinst hwf₂).covered hcov hS
+          ⟨⟨_, hc, fun c hcm => basisInstallRun_fresh hinst c (List.mem_reverse.mp hcm)⟩,
+            ⟨[], by rw [htb]; rfl, fun _ h => nomatch h⟩, ⟨[], by rw [hrb]; rfl, fun _ h => nomatch h⟩⟩,
           natFacts_basis hN hk hinst⟩
       | none =>
         -- the uniform install, at any number of members, nested blocks included

@@ -72,7 +72,7 @@ private theorem bnd_insert (idx : Std.HashMap Name ConstantInfo) (base : FBase)
 
 private theorem pushAll_shape : ∀ (cis : List ConstantInfo) (fe : FEnv), fe.ovl = [] →
     (FEnv.pushAll cis fe).ovl = [] ∧
-    (FEnv.pushAll cis fe).env = ⟨cis.reverse ++ fe.env.consts, fe.env.tables⟩ ∧
+    (FEnv.pushAll cis fe).env = ⟨cis.reverse ++ fe.env.consts, fe.env.tables, fe.env.rules⟩ ∧
     ∀ n, (FEnv.pushAll cis fe).find? n
       = (cis.reverse.find? (·.name == n)).or (bnd fe.idx fe.base n)
   | [], fe, h => by
@@ -123,43 +123,6 @@ theorem classFeROvl_find? {fe : FEnv} (h : fe.ovl = []) (p : BlockShape)
   unfold classFeROvl classFeR
   rw [consBlockRecsBareF_eq_pushAll, find?_overlay_pushAll h]
 
-/-- An overlay answers the table lookups as the pushed index does. -/
-theorem findTable?_overlay_pushAll {fe : FEnv} (h : fe.ovl = []) (cis : List ConstantInfo) :
-    (fe.overlay cis.reverse).findTable? = (FEnv.pushAll cis fe).findTable? := by
-  funext T
-  unfold FEnv.findTable?
-  rw [find?_overlay_pushAll h, FEnv.rawTable?_pushAll]
-  rfl
-
-/-- The overlay leaves the table map and the base alone. -/
-theorem classFeROvl_rawTable? (fe : FEnv) (p : BlockShape)
-    (Ms : List TargetMajor) (cvGs : List ConstantVal) (recCls : List Nat) :
-    (classFeROvl p Ms cvGs recCls fe).rawTable? = (classFeR p Ms cvGs recCls fe).rawTable? := by
-  unfold classFeROvl classFeR
-  rw [consBlockRecsBareF_eq_pushAll, FEnv.rawTable?_pushAll]
-  rfl
-
-theorem classFeROvl_findTable? {fe : FEnv} (h : fe.ovl = []) (p : BlockShape)
-    (Ms : List TargetMajor) (cvGs : List ConstantVal) (recCls : List Nat) :
-    (classFeROvl p Ms cvGs recCls fe).findTable? =
-      (classFeR p Ms cvGs recCls fe).findTable? := by
-  funext T
-  unfold FEnv.findTable?
-  rw [classFeROvl_find? h, classFeROvl_rawTable?]
-
-theorem classFeROvl_env {fe : FEnv} (h : fe.ovl = []) (p : BlockShape)
-    (Ms : List TargetMajor) (cvGs : List ConstantVal) (recCls : List Nat) :
-    (classFeROvl p Ms cvGs recCls fe).env = (classFeR p Ms cvGs recCls fe).env := by
-  unfold classFeROvl classFeR
-  rw [consBlockRecsBareF_eq_pushAll, env_overlay_pushAll fe h]
-
-/-- The cached operations read their index through `find?` alone. -/
-theorem sharedOpsC_congr {mode : CheckMode} {fe₁ fe₂ : FEnv} (hfe : fe₁.find? = fe₂.find?)
-    (htb : fe₁.findTable? = fe₂.findTable?) :
-    sharedOpsC mode fe₁ = sharedOpsC mode fe₂ := by
-  unfold sharedOpsC opI opW opB opS
-  simp only [knotI_congr hfe htb]
-
 /-- The resolution guard reads the index through `find?` alone. -/
 theorem constsResolveF_congr {fe₁ fe₂ : FEnv} (hfe : fe₁.find? = fe₂.find?) :
     ∀ e : Expr, e.constsResolveF fe₁ = e.constsResolveF fe₂
@@ -175,6 +138,127 @@ theorem constsResolveF_congr {fe₁ fe₂ : FEnv} (hfe : fe₁.find? = fe₂.fin
     simp only [Expr.constsResolveF, constsResolveF_congr hfe ty, constsResolveF_congr hfe v,
       constsResolveF_congr hfe b]
   | .proj s _ e => by simp only [Expr.constsResolveF, hfe, constsResolveF_congr hfe e]
+
+/-- The table lookup reads the constant lookup, the raw table lookup and the view's gate. -/
+theorem FEnv.findTable?_congr {fe₁ fe₂ : FEnv} (hf : fe₁.find? = fe₂.find?)
+    (hr : fe₁.rawTable? = fe₂.rawTable?) (hc : fe₁.base.chk = fe₂.base.chk) :
+    fe₁.findTable? = fe₂.findTable? := by
+  funext T
+  simp only [FEnv.findTable?, hf, hr, hc, constsResolveF_congr hf]
+
+/-- A push leaves the base layer alone. -/
+theorem FEnv.base_pushAll : ∀ (cis : List ConstantInfo) (fe : FEnv),
+    (FEnv.pushAll cis fe).base = fe.base
+  | [], _ => rfl
+  | _ :: cis, fe => FEnv.base_pushAll cis (fe.push _)
+
+/-- A push leaves the table map alone. -/
+theorem FEnv.tbls_pushAll : ∀ (cis : List ConstantInfo) (fe : FEnv),
+    (FEnv.pushAll cis fe).tbls = fe.tbls
+  | [], _ => rfl
+  | _ :: cis, fe => FEnv.tbls_pushAll cis (fe.push _)
+
+/-- **The view below a block reads the pushed constants, the base and the table map alone.** -/
+theorem FEnv.famBelow_congr {fe₁ fe₂ : FEnv} (hf : fe₁.find? = fe₂.find?) (he : fe₁.env = fe₂.env)
+    (hb : fe₁.base = fe₂.base) (ht : fe₁.tbls = fe₂.tbls) : fe₁.famBelow = fe₂.famBelow := by
+  funext n
+  unfold FEnv.famBelow FEnv.below FEnv.dropTop
+  rw [hf, he, hb, ht]
+
+/-- An overlay reads below a block as pushing its constants would. -/
+theorem famBelow_overlay_pushAll {fe : FEnv} (h : fe.ovl = []) (cis : List ConstantInfo) :
+    (fe.overlay cis.reverse).famBelow = (FEnv.pushAll cis fe).famBelow :=
+  FEnv.famBelow_congr (find?_overlay_pushAll h cis) (env_overlay_pushAll fe h cis)
+    (FEnv.base_pushAll cis fe).symm (FEnv.tbls_pushAll cis fe).symm
+
+/-- Two views below a block that answer alike (or no view at all). -/
+@[expose] def FEnv.BelowReads : Option FEnv → Option FEnv → Prop
+  | some a, some b => a.find? = b.find? ∧ a.findTable? = b.findTable? ∧ a.rulesFor = b.rulesFor
+  | none, none => True
+  | _, _ => False
+
+theorem FEnv.BelowReads.refl : ∀ o : Option FEnv, FEnv.BelowReads o o
+  | some _ => ⟨rfl, rfl, rfl⟩
+  | none => trivial
+
+/-- An overlay answers the table lookups as the pushed index does. -/
+theorem findTable?_overlay_pushAll {fe : FEnv} (h : fe.ovl = []) (cis : List ConstantInfo) :
+    (fe.overlay cis.reverse).findTable? = (FEnv.pushAll cis fe).findTable? := by
+  refine FEnv.findTable?_congr (find?_overlay_pushAll h cis) ?_ ?_
+  · funext T
+    rw [FEnv.rawTable?_pushAll]
+    rfl
+  · rw [FEnv.base_pushAll]
+    rfl
+
+/-- The overlay leaves the table map and the base alone. -/
+theorem classFeROvl_rawTable? (fe : FEnv) (p : BlockShape)
+    (Ms : List TargetMajor) (cvGs : List ConstantVal) (recCls : List Nat) :
+    (classFeROvl p Ms cvGs recCls fe).rawTable? = (classFeR p Ms cvGs recCls fe).rawTable? := by
+  unfold classFeROvl classFeR
+  rw [consBlockRecsBareF_eq_pushAll, FEnv.rawTable?_pushAll]
+  rfl
+
+theorem classFeROvl_findTable? {fe : FEnv} (h : fe.ovl = []) (p : BlockShape)
+    (Ms : List TargetMajor) (cvGs : List ConstantVal) (recCls : List Nat) :
+    (classFeROvl p Ms cvGs recCls fe).findTable? =
+      (classFeR p Ms cvGs recCls fe).findTable? := by
+  refine FEnv.findTable?_congr (classFeROvl_find? h p Ms cvGs recCls)
+    (classFeROvl_rawTable? fe p Ms cvGs recCls) ?_
+  unfold classFeROvl classFeR
+  rw [consBlockRecsBareF_eq_pushAll, FEnv.base_pushAll]
+  rfl
+
+/-- The overlay reads the rules as the pushes do. -/
+theorem classFeROvl_rulesFor {fe : FEnv} (h : fe.ovl = []) (p : BlockShape)
+    (Ms : List TargetMajor) (cvGs : List ConstantVal) (recCls : List Nat) :
+    (classFeROvl p Ms cvGs recCls fe).rulesFor = (classFeR p Ms cvGs recCls fe).rulesFor := by
+  funext c
+  unfold FEnv.rulesFor
+  rw [classFeROvl_find? h p Ms cvGs recCls]
+  unfold classFeROvl classFeR
+  rw [consBlockRecsBareF_eq_pushAll, FEnv.base_pushAll]
+  rfl
+
+/-- The overlay reads below a block as the pushes do. -/
+theorem classFeROvl_famBelow {fe : FEnv} (h : fe.ovl = []) (p : BlockShape)
+    (Ms : List TargetMajor) (cvGs : List ConstantVal) (recCls : List Nat) :
+    (classFeROvl p Ms cvGs recCls fe).famBelow = (classFeR p Ms cvGs recCls fe).famBelow := by
+  refine FEnv.famBelow_congr (classFeROvl_find? h p Ms cvGs recCls) (by
+    unfold classFeROvl classFeR
+    rw [consBlockRecsBareF_eq_pushAll, env_overlay_pushAll fe h]) ?_ ?_ <;>
+  · unfold classFeROvl classFeR
+    rw [consBlockRecsBareF_eq_pushAll]
+    first | rw [FEnv.base_pushAll]; rfl | rw [FEnv.tbls_pushAll]; rfl
+
+theorem classFeROvl_env {fe : FEnv} (h : fe.ovl = []) (p : BlockShape)
+    (Ms : List TargetMajor) (cvGs : List ConstantVal) (recCls : List Nat) :
+    (classFeROvl p Ms cvGs recCls fe).env = (classFeR p Ms cvGs recCls fe).env := by
+  unfold classFeROvl classFeR
+  rw [consBlockRecsBareF_eq_pushAll, env_overlay_pushAll fe h]
+
+theorem whnfBC_congr {mode : CheckMode} {fe₁ fe₂ : FEnv}
+    (hfb : ∀ n, FEnv.BelowReads (fe₁.famBelow n) (fe₂.famBelow n)) :
+    whnfBC mode fe₁ = whnfBC mode fe₂ := by
+  funext n d e
+  unfold whnfBC whnfBelowC
+  have h := hfb n
+  revert h
+  cases fe₁.famBelow n <;> cases fe₂.famBelow n <;> intro h
+  · rfl
+  · exact h.elim
+  · exact h.elim
+  · simp only [knotI_congr h.1 h.2.1 h.2.2]
+
+/-- The cached operations read their index through `find?`, `findTable?` and the views below a
+block. -/
+theorem sharedOpsC_congr {mode : CheckMode} {fe₁ fe₂ : FEnv} (hfe : fe₁.find? = fe₂.find?)
+    (hru : fe₁.rulesFor = fe₂.rulesFor)
+    (htb : fe₁.findTable? = fe₂.findTable?)
+    (hfb : ∀ n, FEnv.BelowReads (fe₁.famBelow n) (fe₂.famBelow n)) :
+    sharedOpsC mode fe₁ = sharedOpsC mode fe₂ := by
+  unfold sharedOpsC opI opW opB opS
+  simp only [knotI_congr hfe htb hru, whnfBC_congr hfb]
 
 /-- The stored recursors' check (task #431) reads its index through
 `find?` and `env` alone. -/
@@ -244,10 +328,12 @@ variable (mode : CheckMode)
 
 /-- `sharedOpsRuleR` reads `fe` only through `find?` and `findTable?`. -/
 theorem sharedOpsRuleR_congr {fe₁ fe₂ : FEnv} (hfe : fe₁.find? = fe₂.find?)
-    (htb : fe₁.findTable? = fe₂.findTable?) :
+    (hru : fe₁.rulesFor = fe₂.rulesFor)
+    (htb : fe₁.findTable? = fe₂.findTable?)
+    (hfb : ∀ n, FEnv.BelowReads (fe₁.famBelow n) (fe₂.famBelow n)) :
     sharedOpsRuleR mode fe₁ = sharedOpsRuleR mode fe₂ := by
   unfold sharedOpsRuleR sharedOpsC opI opW opB opS
-  simp only [knotI_congr hfe htb]
+  simp only [knotI_congr hfe htb hru, whnfBC_congr hfb]
 
 /-- **The rule stage at the overlay is the rule stage at the pushes**,
 at the cached operations, on an environment without an overlay. -/
@@ -259,7 +345,9 @@ theorem classRecsRulesOk_classFeROvl {fe : FEnv} (h : fe.ovl = []) (p : BlockSha
       = classRecsRulesOk (sharedOpsRuleR mode (classFeR p Ms cvGs recCls fe))
         fe (classFeR p Ms cvGs recCls fe) g recOf cvGs recCls := by
   have hfind := classFeROvl_find? h p Ms cvGs recCls
-  rw [sharedOpsRuleR_congr mode hfind (classFeROvl_findTable? h p Ms cvGs recCls)]
+  rw [sharedOpsRuleR_congr mode hfind (classFeROvl_rulesFor h p Ms cvGs recCls)
+    (classFeROvl_findTable? h p Ms cvGs recCls)
+    (fun n => by rw [classFeROvl_famBelow h p Ms cvGs recCls]; exact FEnv.BelowReads.refl _)]
   exact classRecsRulesOk_congrR (funext (constsResolveF_congr hfind))
     (classFeROvl_env h p Ms cvGs recCls) g recOf cvGs recCls
 

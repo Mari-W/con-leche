@@ -150,12 +150,44 @@ def reducedFormerC (fe : FEnv) (cv : ConstantVal) (n : Nat) : CheckCM ConstantVa
   let (bs, s) ← whnfTelescopeC mode fe 0 n cv.type
   pure { cv with type := Expr.closeTelescopeC bs 0 (.sort s) }
 
-/-- The cached `familyTelescope`: a definition-headed former's reduct
-by `reducedFormerC` (`familyTelescopeC_eq`). -/
+/-- The cached core at the view below the block of the family `m` (`FEnv.famBelow`). -/
+def whnfBelowC (fe : FEnv) (m : Name) (d : Nat) (e : Expr) : CheckCM Expr :=
+  match fe.famBelow m with
+  | some fe' => whnfI mode fe' false checkFuel d e
+  | none => throw (.internal "family telescope: no stored family")
+
+/-- **The cached `whnfB`** (`CheckerOps.whnfB`): the cached core at the view below the block of
+the family `m` (`FEnv.famBelow`), between two flushes: the memo caches are a claim at one
+environment, as for `sharedOpsRuleR`'s other environment. -/
+def whnfBC (fe : FEnv) (m : Name) (d : Nat) (e : Expr) : CheckCM Expr := do
+  flushC
+  let r ← whnfBelowC mode fe m d e
+  flushC
+  pure r
+
+/-- The cached `whnfTelescope` below the block of the family `m`. -/
+def whnfTelescopeBC (fe : FEnv) (m : Name) : Nat → Nat → Expr → CheckCM (List Expr × Level)
+  | i, 0, e => do
+    let e' ← whnfBC mode fe m i e
+    match e' with
+    | .sort s => pure ([], s)
+    | _ => throw (.invalid "direct sum: type former does not reduce to a sort \
+        after its parameters and indices")
+  | i, n + 1, e => do
+    let e' ← whnfBC mode fe m i e
+    match e' with
+    | .forallE dom body =>
+      let (bs, s) ← whnfTelescopeBC fe m (i + 1) n (Expr.instantiate1C body (.fvar i dom))
+      pure (dom :: bs, s)
+    | _ => throw (.invalid "direct sum: type former does not reduce to a telescope \
+        of its parameters and indices")
+
+/-- The cached `familyTelescope`: a definition-headed former's reduct below its block, closed by
+`closeTelescopeC` (`familyTelescopeC_eq`). -/
 def familyTelescopeC (fe : FEnv) (cv : ConstantVal) (caps : IndCaps) : CheckCM Expr :=
   if formerDefHeaded cv then do
-    let cvR ← reducedFormerC mode fe cv (caps.nparams + caps.nIdx)
-    pure cvR.type
+    let (bs, s) ← whnfTelescopeBC mode fe cv.name 0 (caps.nparams + caps.nIdx) cv.type
+    pure (Expr.closeTelescopeC bs 0 (.sort s))
   else pure cv.type
 
 /-- The cached `checkSpineAt`: the cached core's `infer` and `defeq`,

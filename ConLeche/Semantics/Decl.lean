@@ -40,13 +40,13 @@ def BasisInstallRun (env : Env) : List ConstantInfo → Env → Prop
   | [], env₂ => env₂ = env
   | ci :: rest, env₂ =>
     (env.find? ci.name).isNone = true ∧
-    BasisInstallRun ⟨ci :: env.consts, env.tables⟩ rest env₂
+    BasisInstallRun ⟨ci :: env.consts, env.tables, env.rules⟩ rest env₂
 
 /-- A quotient record: the comparison with its slot's pin, the slots it
 needs stored, and the slot's constant stored. -/
 def DeclQuotRun (env : Env) (k : QuotKind) (cv : ConstantVal) (env₂ : Env) : Prop :=
   quotPinHit k cv = true ∧ quotPredsOk env.find? k = true ∧
     (env.find? (quotAt k cv).name).isNone = true ∧
-    env₂ = ⟨quotAt k cv :: env.consts, env.tables⟩
+    env₂ = ⟨quotAt k cv :: env.consts, env.tables, env.rules⟩
 
 end ConLeche.Semantics

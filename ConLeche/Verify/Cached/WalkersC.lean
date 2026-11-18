@@ -82,6 +82,17 @@ theorem whnfTelescopeC_eq (mode : CheckMode) (fe : FEnv) :
     simp only [whnfTelescopeC, whnfTelescope, Expr.instantiate1C_spec, whnfTelescopeC_eq mode fe]
     rfl
 
+/-- **The cached telescope loop below a block is the specification's at the shared operations
+below it.** -/
+theorem whnfTelescopeBC_eq (mode : CheckMode) (fe : FEnv) (m : Name) :
+    ∀ (i n : Nat) (e : Expr),
+      whnfTelescopeBC mode fe m i n e = whnfTelescope ((sharedOpsC mode fe).below m) fe.env i n e
+  | i, 0, e => rfl
+  | i, n + 1, e => by
+    simp only [whnfTelescopeBC, whnfTelescope, Expr.instantiate1C_spec,
+      whnfTelescopeBC_eq mode fe m]
+    rfl
+
 /-- **The cached reduced former is `reducedFormer` at the shared
 operations.** -/
 theorem reducedFormerC_eq (mode : CheckMode) (fe : FEnv) (cv : ConstantVal) (n : Nat) :
@@ -92,7 +103,8 @@ theorem reducedFormerC_eq (mode : CheckMode) (fe : FEnv) (cv : ConstantVal) (n :
 operations.** -/
 theorem familyTelescopeC_eq (mode : CheckMode) (fe : FEnv) (cv : ConstantVal) (caps : IndCaps) :
     familyTelescopeC mode fe cv caps = familyTelescope (sharedOpsC mode fe) fe.env cv caps := by
-  simp only [familyTelescopeC, familyTelescope, reducedFormerC_eq]
+  simp only [familyTelescopeC, familyTelescope, reducedFormer, whnfTelescopeBC_eq,
+    Expr.closeTelescopeC_eq, bind_assoc, pure_bind]
 
 /-- **The cached `is_rec` is `blockIsRec`.** -/
 theorem blockIsRecC_eq (p : BlockShape) : blockIsRecC p = blockIsRec p := by

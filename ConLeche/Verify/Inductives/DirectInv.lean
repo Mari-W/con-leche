@@ -128,7 +128,7 @@ theorem checkStructProjTable_tableWF {env : Env} {t : ProjTable}
 /-- A table the stage checked keeps an environment well-formed. -/
 theorem direct_table_wf {env : Env} (henv : EnvWF env) {t : ProjTable}
     (h : checkStructProjTable (m := CheckM) t env = .ok ()) :
-    EnvWF ⟨env.consts, t :: env.tables⟩ :=
+    EnvWF ⟨env.consts, t :: env.tables, env.rules⟩ :=
   EnvWF.pushTable henv (checkStructProjTable_tableWF h)
 
 
@@ -478,7 +478,7 @@ theorem envWF_cons_ctor {env : Env} {cv : ConstantVal} {nP nF : Nat} {T : Name} 
     (h1 : cv.type.hasFvar = false) (h2 : cv.type.allLevelParamsDefined cv.levelParams = true)
     (h3 : cv.type.constsResolve env = true) (h4 : cv.type.looseBVarsBounded 0 = true)
     (hs : LitShapeAt cv) (hh : ∃ us, cv.type.piResult.getAppFn = .const T us) :
-    EnvWF ⟨.ctorInfo cv nP nF T :: env.consts, env.tables⟩ :=
+    EnvWF ⟨.ctorInfo cv nP nF T :: env.consts, env.tables, env.rules⟩ :=
   EnvWF.cons (hs _ rfl) henv (structConstWF h1 h2 (Expr.constsResolve_mono h3) h4
     (fun _ _ _ heq => nomatch heq) (fun _ _ _ _ _ heq => nomatch heq))
     (hk := let ⟨_, h⟩ := hh; CtorWF.of_head h)
@@ -532,7 +532,7 @@ theorem SumCtorRun.envWF_cons {env₀ env₁ : Env} {T : Name} {lps : List Name}
     {nF : Nat} {F : Nat} {sorts : List Level}
     (h : SumCtorRun mode F env₀ env₁ T lps nP nIdx resSort isProp large cvC nF cvTa cvCa sorts)
     {env : Env} (henv : EnvWF env) (hres : cvCa.type.constsResolve env = true) :
-    EnvWF ⟨.ctorInfo cvCa nP nF T :: env.consts, env.tables⟩ := by
+    EnvWF ⟨.ctorInfo cvCa nP nF T :: env.consts, env.tables, env.rules⟩ := by
   obtain ⟨g1, g2, -, g4, g5⟩ := direct_sum_ctor_typeWF h
   exact envWF_cons_ctor henv g1 g2 hres g4 g5 h.head
 

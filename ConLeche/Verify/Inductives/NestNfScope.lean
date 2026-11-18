@@ -6,10 +6,8 @@ public import ConLeche.Verify.Inductives.NestScope
 public import ConLeche.Verify.EnvWF
 import ConLeche.Verify.Inductives.DirectInv
 import ConLeche.Verify.Abstract
-import ConLeche.Verify.InferLemmas
-import ConLeche.Verify.InferLeaves
 import ConLeche.Verify.InstLevels
-import ConLeche.Verify.Inductives.NestContInv
+public import ConLeche.Verify.Inductives.NestContInv
 import ConLeche.Verify.Inductives.PosDerivInv
 import ConLeche.Verify.Cached.Erase
 
@@ -103,21 +101,19 @@ theorem nestContainer_scb (hc : NestCtxOk ctx) (hb : NestCtxB ctx) {C : Name}
 /-- The container's type former at the key (its hole's type) is scoped
 where the key's parameters are. -/
 theorem nestInstType_scb (hc : NestCtxOk ctx) (hb : NestCtxB ctx) {ops : CheckerOps CheckM}
-    {env : Env} (hwW : ∀ d e w, ops.whnf env d e = .ok w → WScoped d e → WScoped d w)
-    (hwB : ∀ d e w, ops.whnf env d e = .ok w → e.looseBVarsBounded 0 = true →
-      w.looseBVarsBounded 0 = true)
+    {env : Env} (hwW : WhnfScoped ops env)
+    (hwB : WhnfBounded ops env)
     {hi d : Nat} {key : NestKey} {nI : Nat} {cty : Expr}
     (h : nestInstType (m := CheckM) ctx ops env hi key = .ok (nI, cty))
     (hds : ∀ x ∈ key.ds, ScB d x) : ScB d cty := by
   obtain ⟨cvC, caps, tyC, hf, hfam, hF⟩ := nestInstType_inv h
   refine ScB.of_instPisWith hF.inst (ScB.of_closed ?_ ?_ d) hds
-  · rw [Expr.hasFvar_instantiateLevelParams]; exact familyTelescope_hasFvar hwW hfam (hc.1 _ _ hf)
-  · rw [Expr.looseBVarsBounded_instantiateLevelParams]; exact familyTelescope_bounded hwB hfam (hb _ _ hf)
+  · rw [Expr.hasFvar_instantiateLevelParams]; exact familyTelescope_hasFvar (hwW.2 cvC.name) hfam (hc.1 _ _ hf)
+  · rw [Expr.looseBVarsBounded_instantiateLevelParams]; exact familyTelescope_bounded (hwB.2 cvC.name) hfam (hb _ _ hf)
 
 theorem nestGrowGroup_scb (hc : NestCtxOk ctx) (hb : NestCtxB ctx) {ops : CheckerOps CheckM}
-    {env : Env} (hwW : ∀ d e w, ops.whnf env d e = .ok w → WScoped d e → WScoped d w)
-    (hwB : ∀ d e w, ops.whnf env d e = .ok w → e.looseBVarsBounded 0 = true →
-      w.looseBVarsBounded 0 = true)
+    {env : Env} (hwW : WhnfScoped ops env)
+    (hwB : WhnfBounded ops env)
     {hi d : Nat}
     {us : List Level} {ds : List Expr} {cs : List Name} {grp grp' : List (Name × Expr)}
     (h : nestGrowGroup (m := CheckM) ctx ops env hi us ds cs grp = .ok grp')
@@ -453,9 +449,8 @@ theorem nestFrame_nfScoped (hc : NestCtxOk ctx) (hb : NestCtxB ctx) (hrec : RecN
   subst hhi; simp [NestCtx.hiAt]; omega
 
 theorem nestContNew_nfScoped (hc : NestCtxOk ctx) (hb : NestCtxB ctx)
-    (hwW : ∀ d e w, ops.whnf env d e = .ok w → WScoped d e → WScoped d w)
-    (hwB : ∀ d e w, ops.whnf env d e = .ok w → e.looseBVarsBounded 0 = true →
-      w.looseBVarsBounded 0 = true)
+    (hwW : WhnfScoped ops env)
+    (hwB : WhnfBounded ops env)
     (hrec : RecNf ctx rec)
     (hpar : ∀ x ∈ ctx.params, ScB ctx.nP x)
     {prog : List NestHole} (hp : ProgScB ctx prog) {kb : Nat} {n : Name} {us : List Level}
@@ -491,9 +486,8 @@ theorem nestContNew_nfScoped (hc : NestCtxOk ctx) (hb : NestCtxB ctx)
   exact hst₁
 
 theorem nestContKey_nfScoped (hc : NestCtxOk ctx) (hb : NestCtxB ctx)
-    (hwW : ∀ d e w, ops.whnf env d e = .ok w → WScoped d e → WScoped d w)
-    (hwB : ∀ d e w, ops.whnf env d e = .ok w → e.looseBVarsBounded 0 = true →
-      w.looseBVarsBounded 0 = true)
+    (hwW : WhnfScoped ops env)
+    (hwB : WhnfBounded ops env)
     (hrec : RecNf ctx rec)
     (hpar : ∀ x ∈ ctx.params, ScB ctx.nP x)
     {prog : List NestHole} (hp : ProgScB ctx prog) {kb : Nat} {n : Name} {us : List Level}
@@ -513,9 +507,8 @@ theorem nestContKey_nfScoped (hc : NestCtxOk ctx) (hb : NestCtxB ctx)
     · exact nestContNew_nfScoped hc hb hwW hwB hrec hpar hp hds hcty h hst
 
 theorem nestCont_nfScoped (hc : NestCtxOk ctx) (hb : NestCtxB ctx)
-    (hwW : ∀ d e w, ops.whnf env d e = .ok w → WScoped d e → WScoped d w)
-    (hwB : ∀ d e w, ops.whnf env d e = .ok w → e.looseBVarsBounded 0 = true →
-      w.looseBVarsBounded 0 = true)
+    (hwW : WhnfScoped ops env)
+    (hwB : WhnfBounded ops env)
     (hrec : RecNf ctx rec)
     (hpar : ∀ x ∈ ctx.params, ScB ctx.nP x)
     {prog : List NestHole} (hp : ProgScB ctx prog) {kb : Nat} {n : Name} {us : List Level}
@@ -536,9 +529,8 @@ its input is — at any fuel, under any `ops` whose whnf keeps terms scoped
 and bvar-closed. -/
 theorem nestPos_nfScoped (hc : NestCtxOk ctx) (hb : NestCtxB ctx)
     (hpar : ∀ x ∈ ctx.params, ScB ctx.nP x)
-    (hwW : ∀ d e w, ops.whnf env d e = .ok w → WScoped d e → WScoped d w)
-    (hwB : ∀ d e w, ops.whnf env d e = .ok w → e.looseBVarsBounded 0 = true →
-      w.looseBVarsBounded 0 = true) :
+    (hwW : WhnfScoped ops env)
+    (hwB : WhnfBounded ops env) :
     ∀ fuel, RecNf ctx (nestPos ops env ctx fuel)
   | 0 => by
     intro prog dep kb e st k nf st' hrun
@@ -551,7 +543,7 @@ theorem nestPos_nfScoped (hc : NestCtxOk ctx) (hb : NestCtxB ctx)
     | error err => simp [hw, bind, Except.bind] at hrun
     | ok w =>
       simp only [hw, bind, Except.bind] at hrun
-      have hwsw : ScB dep w := ⟨hwW dep e w hw hws.1, hwB dep e w hw hws.2⟩
+      have hwsw : ScB dep w := ⟨hwW.1 dep e w hw hws.1, hwB.1 dep e w hw hws.2⟩
       by_cases hocc : w.nestOcc ctx.names ctx.nP (ctx.hiAt prog.length) = false
       · rw [ite_eq_left (by simpa using hocc)] at hrun
         simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at hrun
@@ -606,9 +598,8 @@ theorem nestPos_nfScoped (hc : NestCtxOk ctx) (hb : NestCtxB ctx)
 
 /-- **The root frame keeps the state scoped.** -/
 theorem nestRoot_nfScoped (hc : NestCtxOk ctx) (hb : NestCtxB ctx)
-    (hwW : ∀ d e w, ops.whnf env d e = .ok w → WScoped d e → WScoped d w)
-    (hwB : ∀ d e w, ops.whnf env d e = .ok w → e.looseBVarsBounded 0 = true →
-      w.looseBVarsBounded 0 = true)
+    (hwW : WhnfScoped ops env)
+    (hwB : WhnfBounded ops env)
     {holes : List Expr} (hh : nestHoles ctx = some holes)
     (hpar : ∀ x ∈ ctx.params, ScB ctx.nP x) :
     ∀ (css : List (List (ConstantVal × Nat))) (st : NestState)
@@ -649,9 +640,8 @@ theorem nestRoot_nfScoped (hc : NestCtxOk ctx) (hb : NestCtxB ctx)
 scoped at the walk's root depth. -/
 theorem nestSeeds_nfScoped (hc : NestCtxOk ctx) (hb : NestCtxB ctx)
     (hpar : ∀ x ∈ ctx.params, ScB ctx.nP x)
-    (hwW : ∀ d e w, ops.whnf env d e = .ok w → WScoped d e → WScoped d w)
-    (hwB : ∀ d e w, ops.whnf env d e = .ok w → e.looseBVarsBounded 0 = true →
-      w.looseBVarsBounded 0 = true) :
+    (hwW : WhnfScoped ops env)
+    (hwB : WhnfBounded ops env) :
     ∀ (ks : List (NestKey × Nat)) (st st' : NestState), nestSeeds ops env ctx ks st = .ok st' →
       (∀ s ∈ ks, ∀ x ∈ s.1.ds, ScB (ctx.hiAt 0) x) → NfStScoped ctx.nP st →
       NfStScoped ctx.nP st'
@@ -720,8 +710,7 @@ theorem checkBlockPositivity_nfScoped {mode : CheckMode} {F : Nat} {env₁ : Env
     NfStScoped pp.nP pos := by
   obtain ⟨cvTa0, fvsP, rest, holes, outs, h0, hop, hh, -, hroot, -⟩ := checkBlockPositivity_inv h
   obtain ⟨hc, hb⟩ := nestCtx_ok_of_envWF henv pp fvsP hM
-  exact nestRoot_nfScoped hc hb (fun d e w hw he => whnf_WScoped henv F hw he)
-    (fun d e w hw he => whnf_looseBVars henv F hw he) hh
+  exact nestRoot_nfScoped hc hb (whnfScoped_fueledOps henv F) (whnfBounded_fueledOps henv F) hh
     (nestCtx_params_scb (hT cvTa0 (List.mem_of_mem_head? h0)) hop) pp.memberCtors {} outs pos hroot
     hct (nfStScoped_empty _)
 

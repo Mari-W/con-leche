@@ -242,7 +242,7 @@ theorem swapTyList_streamRecs {q : ConLeche.BlockShape} :
   | m, rc :: recs, g :: out, env₀, env₃, hl, hres, h, ht => by
     simp only [ConLeche.streamRecs, List.zipWith_cons_cons, ConLeche.consBlockRecsT]
     refine swapTyList_streamRecs (m := m + 1) (recs := recs) (out := out)
-      (env₀ := ⟨_ :: env₀.consts, env₀.tables⟩) (env₃ := ⟨_ :: env₃.consts, env₃.tables⟩)
+      (env₀ := ⟨_ :: env₀.consts, env₀.tables, env₀.rules⟩) (env₃ := ⟨_ :: env₃.consts, env₃.tables, env₃.rules⟩)
       (by simpa using hl) (fun g' hg' => hres g' (List.mem_cons_of_mem _ hg'))
       (ConLeche.SwapTyList.cons (Or.inr ⟨_, _, _, _, _, _, _, rfl, rfl, rfl, rfl,
         hres g List.mem_cons_self⟩) h) ht

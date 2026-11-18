@@ -62,7 +62,7 @@ nor nested; nested blocks are the subject of @sec:nested. The block is given by 
   $arrow(e)_j$ of its result $I thick arrow(x) thick arrow(e)_j$.
 
 A field is one of #src("whitepaper/Fragment/Spec.lean", 28, 42)[two kinds]
-(#src("ConLeche/Kernel/Inductives/Positivity.lean", 317, 327)[as in con-leche]):
+(#src("ConLeche/Kernel/Inductives/Positivity.lean", 319, 329)[as in con-leche]):
 
 - _ordinary_: its domain does not mention $I$;
 - _reflexive_: its domain is
@@ -78,7 +78,7 @@ mentions $I$ anywhere else; this is
 #src("whitepaper/Fragment/Decl.lean", 628, 642)[strict positivity].
 And nothing after a reflexive field
 #src("whitepaper/Fragment/Decl.lean", 645, 650)[may depend on its value]
-(#src("ConLeche/Kernel/Inductives/Positivity.lean", 707, 710)[as in con-leche] and the
+(#src("ConLeche/Kernel/Inductives/Positivity.lean", 709, 712)[as in con-leche] and the
 official kernel), so that the model can read a constructor's domains
 without knowing the values of its reflexive fields.
 
@@ -89,7 +89,7 @@ without knowing the values of its reflexive fields.
   domain after weak head normal form, with $I$ at the block's
   parameters replaced by a variable standing for the family being
   defined; @sec:nested uses the same check
-  (#src("ConLeche/Kernel/Inductives/Positivity.lean", 895, 896)[positivity]).
+  (#src("ConLeche/Kernel/Inductives/Positivity.lean", 897, 898)[positivity]).
 ]
 
 Reflexive fields with a non-empty telescope matter to the model. A
@@ -135,7 +135,7 @@ or $0$ (_small elimination_); the elimination rule below says which.
   once they agree with the generated ones: the type binder by binder up
   to the major premise, each rule up to definitional equality, at the
   generated recursor's firing data
-  (#src("ConLeche/Kernel/Inductives/StreamRecs.lean", 187, 193)[the comparison]).
+  (#src("ConLeche/Kernel/Inductives/StreamRecs.lean", 186, 192)[the comparison]).
 ]
 
 Here is the recursor of the natural numbers.
@@ -746,7 +746,7 @@ $R_j[arrow(p) := arrow(ell)]$ applied to the parameters, motive and
 minors from $arrow(a)$ and to the fields $arrow(f)$; con-leche
 substitutes those values into $R_j$'s body under its leading lambdas at once,
 the application's β steps
-(#src("ConLeche/Rules/Rel.lean", 190, 242)[the rule there]). Besides
+(#src("ConLeche/Rules/Rel.lean", 216, 268)[the rule there]). Besides
 finding $r$, $c_j$ and the rule in the environment, the fragment's
 rule has three _comparisons_ as premises:
 
@@ -1003,7 +1003,7 @@ assumed of the environment they extend.
 
 #real[
   The block step is one theorem,
-  #src("ConLeche/Model/Inductives/DeclBlockStep.lean", 72, 76)[the install of a block],
+  #src("ConLeche/Model/Inductives/DeclBlockStep.lean", 104, 108)[the install of a block],
   read off the checker's run stage by stage.
 ]
 
@@ -1013,7 +1013,7 @@ assumed of the environment they extend.
   environment. Then #src("whitepaper/Fragment/Consistency.lean", 89, 98)[no closed term $e$ has] $tack e => I$; in
   particular no stored constant has type $I$
   (#src("whitepaper/Fragment/Consistency.lean", 134, 138)[at the block `inductive False : Prop`]\;
-  #src("ConLeche/Model/Fold.lean", 421, 428)[as in con-leche]).
+  #src("ConLeche/Model/Fold.lean", 444, 451)[as in con-leche]).
 ] <cor:consistency>
 
 #proof[
@@ -1041,7 +1041,7 @@ assumed of the environment they extend.
   name `False` and say that it denotes the empty set and `Eq` set
   equality, with no hypothesis about the stream (#overview(1)); and
   its acceptance is the run of a program,
-  #src("ConLeche/Model/Fold.lean", 350, 352)[the declaration fold],
+  #src("ConLeche/Model/Fold.lean", 373, 375)[the declaration fold],
   rather than a relation, so a bridge theorem turns each accepting
   run into the derivations §3 and §4 consume (@sec:left-out). The
   argument in between is the one above.

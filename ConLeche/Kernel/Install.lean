@@ -21,7 +21,7 @@ namespace ConLeche
 
 /-- The environment with a declaration's constants and tables pushed, each list oldest first. -/
 def Env.pushDelta (env : Env) (L : List ConstantInfo) (Q : List ProjTable) : Env :=
-  ⟨L.reverse ++ env.consts, Q.reverse ++ env.tables⟩
+  ⟨L.reverse ++ env.consts, Q.reverse ++ env.tables, env.rules⟩
 
 /-- The formers, in block order, as declared, with the capabilities their block gives them. -/
 def blockFormers (p : BlockShape) (isRec : Bool) : List ConstantInfo :=

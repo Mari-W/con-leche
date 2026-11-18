@@ -36,6 +36,13 @@ variable {pins : List NatOpPinSet}
     ⟨fun F => ensureSortCore mode false env F d e, fun hle h => ensureSortCore_mono hle h⟩
   whnf env d e :=
     ⟨fun F => whnf mode false env F d e, fun hle h => whnf_mono hle h⟩
+  whnfB env n d e :=
+    ⟨fun F => (fueledOps mode F).whnfB env n d e, fun hle h => by
+      revert h
+      simp only [fueledOps]
+      split
+      · exact whnf_mono hle
+      · exact id⟩
 
 /-! ## The `atF` battery: fueled-family runs are fueled-ops runs -/
 
@@ -121,27 +128,35 @@ theorem checkStructProjTable_datF (t : ProjTable) (env : Env) (F : Nat) :
 theorem fueledOpsM_whnf_atF (env : Env) (d : Nat) (a : Expr) (F : Nat) :
     ((fueledOpsM mode).whnf env d a).val F = (fueledOps mode F).whnf env d a := by rfl
 
-/-- Official's telescope loop (task #195) at fuel `F`. -/
-theorem whnfTelescope_datF (env : Env) (F : Nat) :
+/-- Official's telescope loop (task #195) at fuel `F`, for any operations whose `whnf` is the
+fuelled one at `F`. -/
+theorem whnfTelescope_datF_of {opsM : CheckerOps FueledM} {ops : CheckerOps CheckM} {F : Nat}
+    (hw : ∀ env d a, (opsM.whnf env d a).val F = ops.whnf env d a) (env : Env) :
     ∀ (i n : Nat) (e : Expr),
-      (whnfTelescope (fueledOpsM mode) env i n e).val F =
-        whnfTelescope (fueledOps mode F) env i n e
+      (whnfTelescope opsM env i n e).val F = whnfTelescope ops env i n e
   | i, 0, e => by
     unfold whnfTelescope
-    simp only [FueledM.atF_bind, fueledOpsM_whnf_atF]
+    simp only [FueledM.atF_bind, hw]
     congr 1
     funext e'
     split <;> simp only [FueledM.atF_pure, FueledM.atF_throw]
   | i, n + 1, e => by
     unfold whnfTelescope
-    simp only [FueledM.atF_bind, fueledOpsM_whnf_atF]
+    simp only [FueledM.atF_bind, hw]
     congr 1
     funext e'
     split
     · next dom body =>
       simp only [FueledM.atF_bind, FueledM.atF_pure,
-        whnfTelescope_datF env F (i + 1) n (body.instantiate1 (.fvar i dom))]
+        whnfTelescope_datF_of hw env (i + 1) n (body.instantiate1 (.fvar i dom))]
     · simp only [FueledM.atF_throw]
+
+/-- Official's telescope loop (task #195) at fuel `F`. -/
+theorem whnfTelescope_datF (env : Env) (F : Nat) :
+    ∀ (i n : Nat) (e : Expr),
+      (whnfTelescope (fueledOpsM mode) env i n e).val F =
+        whnfTelescope (fueledOps mode F) env i n e :=
+  whnfTelescope_datF_of (fun _ _ _ => rfl) env
 
 /-- The former's telescope stage at fuel `F`. -/
 theorem checkSumTele_datF (n : Nat) (cvTa₀ : ConstantVal) (F : Nat) :
@@ -181,12 +196,21 @@ theorem reducedFormer_datF (env : Env) (cv : ConstantVal) (n F : Nat) :
   simp only [FueledM.atF_bind, FueledM.atF_pure, FueledM.atF_throw, FueledM.atF_ite,
     whnfTelescope_datF]
 
+/-- The reduced former below a block at fuel `F`. -/
+theorem reducedFormer_below_datF (env : Env) (m : Name) (cv : ConstantVal) (n F : Nat) :
+    (reducedFormer ((fueledOpsM mode).below m) env cv n).val F =
+      reducedFormer ((fueledOps mode F).below m) env cv n := by
+  unfold reducedFormer
+  simp only [FueledM.atF_bind, FueledM.atF_pure, FueledM.atF_throw, FueledM.atF_ite,
+    whnfTelescope_datF_of (opsM := (fueledOpsM mode).below m) (ops := (fueledOps mode F).below m)
+      (fun _ _ _ => rfl)]
+
 theorem familyTelescope_datF (env : Env) (cv : ConstantVal) (caps : IndCaps) (F : Nat) :
     (familyTelescope (fueledOpsM mode) env cv caps).val F =
       familyTelescope (fueledOps mode F) env cv caps := by
   unfold familyTelescope
   split
-  · simp only [FueledM.atF_bind, FueledM.atF_pure, reducedFormer_datF]
+  · simp only [FueledM.atF_bind, FueledM.atF_pure, reducedFormer_below_datF]
   · rfl
 
 theorem checkSpineAt_datF (env : Env) (d F : Nat) :

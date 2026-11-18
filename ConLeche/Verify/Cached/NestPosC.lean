@@ -6,6 +6,7 @@ public import ConLeche.Verify.BridgeDecl
 public import ConLeche.Verify.Cached.Grind
 import ConLeche.Verify.Denote.IndFrame
 import ConLeche.Verify.Cached.SimCS
+import ConLeche.Verify.Cached.BelowC
 import ConLeche.Verify.Cached.Erase
 import ConLeche.Verify.InstLevels
 import ConLeche.Verify.Inductives.NestContInv
@@ -94,22 +95,33 @@ variable {env : Env}
 /-- Official's telescope loop (task #195) at the shared operations:
 every `whnf` is the shared one, on a well-scoped input at its depth
 (the opened body is well-scoped one deeper). -/
-theorem whnfTelescopeS_spec (henv : EnvWF env) :
+theorem whnfTelescopeS_spec_of {opsC : CheckerOps CheckCM} {opsM : CheckerOps FueledM}
+    (hwh : ∀ {i : Nat} {e : Expr} {s₀ : CState}, CSOK .verified false env s₀ → WScoped i e →
+      ⦃fun s => s = s₀⦄ opsC.whnf env i e
+      ⦃fun v s' => CSOK .verified false env s' ∧ Runs (opsM.whnf env i e) v ∧ WScoped i v; ⊤⦄) :
     ∀ {i n : Nat} {e : Expr} {s₀ : CState}, CSOK .verified false env s₀ → WScoped i e →
-      ⦃fun s => s = s₀⦄ whnfTelescope (sharedOpsC .verified (mkFEnv env)) env i n e
-      ⦃fun v s' => CSOK .verified false env s' ∧
-        Runs (whnfTelescope (fueledOpsM .verified) env i n e) v; ⊤⦄ := by
+      ⦃fun s => s = s₀⦄ whnfTelescope opsC env i n e
+      ⦃fun v s' => CSOK .verified false env s' ∧ Runs (whnfTelescope opsM env i n e) v; ⊤⦄ := by
   intro i n
   induction n generalizing i with
   | zero =>
     intro _ _ _ _
     sym only [conleche_grind, whnfTelescope.eq_1] =>
-      vcgen [whnfTelescope, whnfS_spec henv] <;> finish
+      vcgen [whnfTelescope, hwh] <;> finish
   | succ n ih =>
     intro _ _ _ _
     sym only [conleche_grind, whnfTelescope.eq_2] =>
-      vcgen [whnfTelescope, whnfS_spec henv, ih] <;>
+      vcgen [whnfTelescope, hwh, ih] <;>
         finish
+
+/-- Official's telescope loop (task #195) at the shared operations. -/
+theorem whnfTelescopeS_spec (henv : EnvWF env) :
+    ∀ {i n : Nat} {e : Expr} {s₀ : CState}, CSOK .verified false env s₀ → WScoped i e →
+      ⦃fun s => s = s₀⦄ whnfTelescope (sharedOpsC .verified (mkFEnv env)) env i n e
+      ⦃fun v s' => CSOK .verified false env s' ∧
+        Runs (whnfTelescope (fueledOpsM .verified) env i n e) v; ⊤⦄ :=
+  whnfTelescopeS_spec_of (fun hs hw => whnfS_spec henv hs hw)
+
 
 /-- The reduct a run reads has no free variable where the stored type has none. -/
 theorem Runs.reducedFormer_hasFvar (henv : EnvWF env) {cv cvR : ConstantVal} {n : Nat}
@@ -140,6 +152,39 @@ theorem reducedFormerS_spec (henv : EnvWF env) {cv : ConstantVal} {n : Nat} {s�
     exact ⟨h₁, h₂, Runs.reducedFormer_hasFvar henv
       (not_hasFvar_of_fvarsBelow_zero (WScoped.fvarsBelow hw)) h₂⟩
 
+/-- The reduced former below a block at the cached operations simulates its fueled original. -/
+theorem reducedFormerBRunS_spec (henv : EnvWF env) {m : Name} {cv : ConstantVal} {n : Nat}
+    {s₀ : CState} (hw : WScoped 0 cv.type) (hs : CSOK .verified false env s₀) :
+    ⦃fun s => s = s₀⦄ reducedFormer ((sharedOpsC .verified (mkFEnv env)).below m) env cv n
+    ⦃fun v s' => CSOK .verified false env s' ∧
+      Runs (reducedFormer ((fueledOpsM .verified).below m) env cv n) v; ⊤⦄ := by
+  sym only [conleche_grind, reducedFormer] =>
+    vcgen [reducedFormer, whnfTelescopeS_spec_of (opsC := (sharedOpsC .verified (mkFEnv env)).below m)
+      (opsM := (fueledOpsM .verified).below m) (fun hs hw => whnfBS_spec henv (n := m) hs hw)] <;>
+      finish
+
+/-- The reduct below a block a run reads has no free variable where the stored type has none. -/
+theorem Runs.reducedFormerB_hasFvar (henv : EnvWF env) {m : Name} {cv cvR : ConstantVal} {n : Nat}
+    (hc : cv.type.hasFvar = false)
+    (h : Runs (reducedFormer ((fueledOpsM .verified).below m) env cv n) cvR) :
+    cvR.type.hasFvar = false := by
+  obtain ⟨F, hF⟩ := h
+  rw [reducedFormer_below_datF] at hF
+  exact ConLeche.reducedFormer_hasFvar (fun _ _ _ hw he => fueledOps_whnfB_WScoped henv hw he) hF hc
+
+/-- The reduced former below a block, of a closed type, simulated, and closed. -/
+theorem reducedFormerBS_spec (henv : EnvWF env) {m : Name} {cv : ConstantVal} {n : Nat}
+    {s₀ : CState} (hw : WScoped 0 cv.type) (hs : CSOK .verified false env s₀) :
+    ⦃fun s => s = s₀⦄ reducedFormer ((sharedOpsC .verified (mkFEnv env)).below m) env cv n
+    ⦃fun v s' => CSOK .verified false env s' ∧
+      Runs (reducedFormer ((fueledOpsM .verified).below m) env cv n) v ∧
+      v.type.hasFvar = false; ⊤⦄ :=
+  triple_iff_run.mpr fun v s' hr => by
+    obtain ⟨h₁, h₂⟩ :=
+      triple_iff_run.mp (reducedFormerBRunS_spec henv (m := m) (n := n) (cv := cv) hw hs) v s' hr
+    exact ⟨h₁, h₂, Runs.reducedFormerB_hasFvar henv
+      (not_hasFvar_of_fvarsBelow_zero (WScoped.fvarsBelow hw)) h₂⟩
+
 /-- A family's telescope at the cached operations simulates its fueled original, and is closed
 where its stored type is. -/
 theorem familyTelescopeS_spec (henv : EnvWF env) {cv : ConstantVal} {caps : IndCaps} {s₀ : CState}
@@ -149,7 +194,7 @@ theorem familyTelescopeS_spec (henv : EnvWF env) {cv : ConstantVal} {caps : IndC
       Runs (familyTelescope (fueledOpsM .verified) env cv caps) v ∧ v.hasFvar = false; ⊤⦄ := by
   have hw : WScoped 0 cv.type := WScoped.of_not_hasFvar hcl
   sym only [conleche_grind, familyTelescope, reducedFormer] =>
-    vcgen [familyTelescope, reducedFormerS_spec henv hw] <;> finish
+    vcgen [familyTelescope, reducedFormerBS_spec henv hw] <;> finish
 
 /-- The arguments against a telescope at the cached operations simulate their fueled original. -/
 theorem checkSpineAtS_spec (henv : EnvWF env) {d : Nat} :

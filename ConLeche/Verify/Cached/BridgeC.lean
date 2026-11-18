@@ -95,30 +95,30 @@ of the index (`FEnv.overlay`); on `mkFEnv env` it answers every reader
 as the pure arm's consed environment does (`find?_overlay_push`). -/
 
 theorem find?_overlay_mkFEnv (env : Env) (ci : ConstantInfo) (n : Name) :
-    ((mkFEnv env).overlay [ci]).find? n = Env.find? ⟨ci :: env.consts, env.tables⟩ n := by
+    ((mkFEnv env).overlay [ci]).find? n = Env.find? ⟨ci :: env.consts, env.tables, env.rules⟩ n := by
   rw [find?_overlay_push (fe := mkFEnv env) rfl ci, push_mkFEnv, mkFEnv_find?]
 
 theorem natOpGuardF_overlay (env : Env) (ci : ConstantInfo) (c : Name) :
-    natOpGuardF ((mkFEnv env).overlay [ci]) c = natOpGuard ⟨ci :: env.consts, env.tables⟩ c := by
+    natOpGuardF ((mkFEnv env).overlay [ci]) c = natOpGuard ⟨ci :: env.consts, env.tables, env.rules⟩ c := by
   rw [natOpGuardF_congr (find?_overlay_push (fe := mkFEnv env) rfl ci), push_mkFEnv,
     natOpGuardF_eq]
 
 theorem natOpStoredOkF_overlay (env : Env) (ci : ConstantInfo) :
-    natOpStoredOkF ((mkFEnv env).overlay [ci]) = natOpStoredOk ⟨ci :: env.consts, env.tables⟩ := by
+    natOpStoredOkF ((mkFEnv env).overlay [ci]) = natOpStoredOk ⟨ci :: env.consts, env.tables, env.rules⟩ := by
   rw [natOpStoredOkF_congr (find?_overlay_push (fe := mkFEnv env) rfl ci), push_mkFEnv,
     natOpStoredOkF_eq_fun]
 
 theorem checkReducePinF_overlay (ops : CheckerOps CheckCM) (env : Env) (ci : ConstantInfo)
     (c : Name) (value : Expr) :
     checkReducePinF ops (mkFEnv env) ((mkFEnv env).overlay [ci]) c value
-      = checkReducePin ops env ⟨ci :: env.consts, env.tables⟩ c value := by
+      = checkReducePin ops env ⟨ci :: env.consts, env.tables, env.rules⟩ c value := by
   rw [checkReducePinF_congr2 _ _ (find?_overlay_push (fe := mkFEnv env) rfl ci), push_mkFEnv,
     checkReducePinF_eq]
 
 theorem checkDivModPinF_overlay (ops : CheckerOps CheckCM) (env : Env) (ci : ConstantInfo)
     (c : Name) :
     checkDivModPinF ops pins (mkFEnv env) ((mkFEnv env).overlay [ci]) c
-      = checkDivModPin ops pins env ⟨ci :: env.consts, env.tables⟩ c := by
+      = checkDivModPin ops pins env ⟨ci :: env.consts, env.tables, env.rules⟩ c := by
   rw [checkDivModPinF_congr2 _ _ _ (find?_overlay_push (fe := mkFEnv env) rfl ci), push_mkFEnv,
     checkDivModPinF_eq]
 
@@ -126,14 +126,14 @@ theorem checkDivModPinF_overlay (ops : CheckerOps CheckCM) (env : Env) (ci : Con
 theorem checkReducePinC_overlay (mode : CheckMode) (env : Env) (ci : ConstantInfo)
     (c : Name) (value : Expr) :
     checkReducePinC mode (mkFEnv env) ((mkFEnv env).overlay [ci]) c value
-      = checkReducePin (sharedOpsC mode (mkFEnv env)) env ⟨ci :: env.consts, env.tables⟩ c value := by
+      = checkReducePin (sharedOpsC mode (mkFEnv env)) env ⟨ci :: env.consts, env.tables, env.rules⟩ c value := by
   rw [checkReducePinC_eq, checkReducePinF_overlay]
 
 /-- The cached pin check at the arm's overlay (`checkDivModPinC_eq`, task #497). -/
 theorem checkDivModPinC_overlay (mode : CheckMode) (env : Env) (ci : ConstantInfo)
     (c : Name) :
     checkDivModPinC mode pins (mkFEnv env) ((mkFEnv env).overlay [ci]) c
-      = checkDivModPin (sharedOpsC mode (mkFEnv env)) pins env ⟨ci :: env.consts, env.tables⟩ c := by
+      = checkDivModPin (sharedOpsC mode (mkFEnv env)) pins env ⟨ci :: env.consts, env.tables, env.rules⟩ c := by
   rw [checkDivModPinC_eq, checkDivModPinF_overlay]
 
 /-- The structural-`Nat` recurrences at a closed stored value (at the
@@ -159,12 +159,12 @@ theorem checkDivModPinConsS_spec (henv : EnvWF env)
     (hc : natDivModNames.contains cv.name = true) (hvf : value.hasFvar = false)
     (hs : CSOK .verified false env s₀) :
     ⦃fun s => s = s₀⦄ checkDivModPin (sharedOpsC .verified (mkFEnv env)) pins env
-      ⟨ci :: env.consts, env.tables⟩ cv.name
+      ⟨ci :: env.consts, env.tables, env.rules⟩ cv.name
     ⦃fun r s' => CSOK .verified false env s' ∧ Runs (checkDivModPin (fueledOpsM .verified) pins env
-      ⟨ci :: env.consts, env.tables⟩ cv.name) r; ⊤⦄ := by
+      ⟨ci :: env.consts, env.tables, env.rules⟩ cv.name) r; ⊤⦄ := by
   subst hci
   refine checkDivModPinS_spec henv (List.contains_iff_mem.mp hc) (fun cv' v' h' hf => ?_) hs
-  have hself : Env.find? ⟨.defnInfo cv value hint :: env.consts, env.tables⟩ cv.name
+  have hself : Env.find? ⟨.defnInfo cv value hint :: env.consts, env.tables, env.rules⟩ cv.name
       = some (.defnInfo cv value hint) := Env.find?_cons_self _ _
   rw [hself] at hf
   cases hf
@@ -177,7 +177,7 @@ theorem checkDefnValCI_spec (henv : EnvWF env)
     (htf : Expr.WScoped 0 cv.type) (hs : CSOK .verified false env s₀) :
     ⦃fun s => s = s₀⦄ checkDefnValCI .verified (mkFEnv env) cv value hint
     ⦃fun v s' => CSOK .verified false env s' ∧
-      Runs (checkDefnVal (fueledOpsM .verified) env cv value hint) ⟨v :: env.consts, env.tables⟩ ∧
+      Runs (checkDefnVal (fueledOpsM .verified) env cv value hint) ⟨v :: env.consts, env.tables, env.rules⟩ ∧
       v = .defnInfo cv value hint ∧ value.hasFvar = false; ⊤⦄ := by
   sym only [conleche_grind, checkDefnVal.eq_1, Expr.allLevelParamsDefinedC_spec,
       constsResolveFC_spec, constsResolveF_eq, @wscoped_of_hasFvar_false 0 value] =>
@@ -190,7 +190,7 @@ theorem checkThmValCI_spec (henv : EnvWF env)
     (htf : Expr.WScoped 0 cv.type) (hs : CSOK .verified false env s₀) :
     ⦃fun s => s = s₀⦄ checkThmValCI .verified (mkFEnv env) cv value
     ⦃fun v s' => CSOK .verified false env s' ∧
-      Runs (checkThmVal (fueledOpsM .verified) env cv value) ⟨v :: env.consts, env.tables⟩ ∧
+      Runs (checkThmVal (fueledOpsM .verified) env cv value) ⟨v :: env.consts, env.tables, env.rules⟩ ∧
       v = .thmInfo cv; ⊤⦄ := by
   sym only [conleche_grind, checkThmVal.eq_1, Expr.allLevelParamsDefinedC_spec,
       constsResolveFC_spec, constsResolveF_eq, @wscoped_of_hasFvar_false 0 value] =>
@@ -205,7 +205,7 @@ theorem checkOpaqueValCI_spec (henv : EnvWF env)
     (htf : Expr.WScoped 0 cv.type) (hs : CSOK .verified false env s₀) :
     ⦃fun s => s = s₀⦄ checkOpaqueValCI .verified (mkFEnv env) cv value
     ⦃fun v s' => CSOK .verified false env s' ∧
-      Runs (checkOpaqueVal (fueledOpsM .verified) env cv value) ⟨v :: env.consts, env.tables⟩ ∧
+      Runs (checkOpaqueVal (fueledOpsM .verified) env cv value) ⟨v :: env.consts, env.tables, env.rules⟩ ∧
       v = .axiomInfo cv ∧ value.hasFvar = false; ⊤⦄ := by
   sym only [conleche_grind, checkOpaqueVal.eq_1, Expr.allLevelParamsDefinedC_spec,
       constsResolveFC_spec, constsResolveF_eq, @wscoped_of_hasFvar_false 0 value] =>

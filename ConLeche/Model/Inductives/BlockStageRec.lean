@@ -103,7 +103,7 @@ theorem envModelM_consBlockRecsBare {q : BlockShape}
       (∀ r ∈ ls, ∀ (m' : Nat) {env' : Env}, ConLeche.EnvWF env' →
         r.1.type.constsResolve env' = true →
         ConLeche.EnvWF ⟨.recInfo r.1 (q.majorIdxAt m') (q.rulePrefixAt m') false [] :: env'.consts,
-          env'.tables⟩) →
+          env'.tables, env'.rules⟩) →
       (∀ n : Name, (∀ r ∈ ls, n ≠ r.1.name) → acv n = mp.base2.acval n) →
       (∀ r ∈ ls, ∀ ψ : Name → Nat, Term.Closed (acv r.1.name ψ)) →
       (∀ r ∈ ls, ∀ ψ₁ ψ₂ : Name → Nat,
@@ -127,7 +127,7 @@ theorem envModelM_consBlockRecsBare {q : BlockShape}
     have hcb : ConstsBound env r0.1.type := constsBound_of_constsResolve _ h3
     have hreadUp : ∀ ψ : Name → Nat, ∃ ta : Term,
         denote (acvalWith mp.base2.acval r0.1.name (acv r0.1.name))
-            ⟨.recInfo r0.1 (q.majorIdxAt m) (q.rulePrefixAt m) false [] :: env.consts, env.tables⟩ ψ 0
+            ⟨.recInfo r0.1 (q.majorIdxAt m) (q.rulePrefixAt m) false [] :: env.consts, env.tables, env.rules⟩ ψ 0
             r0.1.type = some ta ∧
           (∀ ρ : Nat → V, WellDenotedTy V ρ ta) ∧
           (∀ ρ : Nat → V, interp V ρ (acv r0.1.name ψ) ∈ˢ interp V ρ ta) := by
@@ -164,7 +164,7 @@ theorem envModelM_consBlockRecsBare {q : BlockShape}
             (fun _ _ _ _ _ heq => by injection heq with _ _ _ _ e4; exact e4.symm) m₂ hac φ)
     -- the tail
     show ∃ mp' : EnvModelM V (consBlockRecsBare q (m + 1) rest
-        ⟨.recInfo r0.1 (q.majorIdxAt m) (q.rulePrefixAt m) false [] :: env.consts, env.tables⟩),
+        ⟨.recInfo r0.1 (q.majorIdxAt m) (q.rulePrefixAt m) false [] :: env.consts, env.tables, env.rules⟩),
       mp'.base2.acval = acv
     refine envModelM_consBlockRecsBare mp₁ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
     · exact hnd.2
@@ -215,7 +215,7 @@ theorem swapShList_consBlockRecsR {R : Nat → RecDatum → Bool × List RecRule
   | m, (cvRa, rhss, nIdx, ctorList) :: rest, envA, envB, h => by
     simp only [bareOf, List.map_cons, consBlockRecsBare, consBlockRecsR]
     exact swapShList_consBlockRecsR (R := R) (q := q)
-      (rs := rest) (envA := ⟨_ :: envA.consts, envA.tables⟩) (envB := ⟨_ :: envB.consts, envB.tables⟩)
+      (rs := rest) (envA := ⟨_ :: envA.consts, envA.tables, envA.rules⟩) (envB := ⟨_ :: envB.consts, envB.tables, envB.rules⟩)
       (ConLeche.SwapShList.cons
         (Or.inr ⟨cvRa, q.majorIdxAt m, q.rulePrefixAt m, _, _, rfl, rfl⟩) h)
 
@@ -451,7 +451,7 @@ theorem envModelM_consBlockRecsR
     (hwfOf : ∀ r ∈ rs, ∀ (m' : Nat) {env' : Env}, ConLeche.EnvWF env' →
       r.1.type.constsResolve env' = true →
       ConLeche.EnvWF ⟨.recInfo r.1 (q.majorIdxAt m') (q.rulePrefixAt m') false [] :: env'.consts,
-        env'.tables⟩)
+        env'.tables, env'.rules⟩)
     (hwf₃ : ConLeche.EnvWF (consBlockRecsR R q 0 rs envC))
     (hnew : ∀ (n : Name) (cv : ConstantVal) (mI rP : Nat) (isK : Bool) (rules : List RecRule),
       (consBlockRecsR R q 0 rs envC).find? n
@@ -534,7 +534,7 @@ theorem blockRecStaged_of
     (hwfOf : ∀ r ∈ rs, ∀ (m' : Nat) {env' : Env}, ConLeche.EnvWF env' →
       r.1.type.constsResolve env' = true →
       ConLeche.EnvWF ⟨.recInfo r.1 (q.majorIdxAt m') (q.rulePrefixAt m') false [] :: env'.consts,
-        env'.tables⟩)
+        env'.tables, env'.rules⟩)
     (hwf₃ : ConLeche.EnvWF (consBlockRecsR R q 0 rs envC))
     (hctorsIn : ∀ r ∈ rs, ∀ ctor ∈ r.2.2.2,
       ∃ cvj cnP cnF iT, envC.find? ctor.1.name = some (.ctorInfo cvj cnP cnF iT))

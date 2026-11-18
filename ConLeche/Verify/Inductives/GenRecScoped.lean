@@ -3,13 +3,11 @@ module
 public import ConLeche.Verify.Inductives.GenRecRun
 public import ConLeche.Verify.Inductives.NestNfScope
 import ConLeche.Verify.Inductives.PositivityInv
-import ConLeche.Verify.Inductives.NestContInv
 import ConLeche.Verify.CheckerF
 import ConLeche.Verify.ExceptBind
 import ConLeche.Verify.Inductives.RecCheckScope
 import ConLeche.Verify.Inductives.NestScope
 import ConLeche.Verify.InferLemmas
-import ConLeche.Verify.InferLeaves
 import ConLeche.Verify.InstLevels
 import ConLeche.Verify.Cached.Erase
 import ConLeche.Verify.Cached.GenRecC
@@ -585,8 +583,8 @@ theorem genRun_tbl_scoped
     obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem ha
     obtain ⟨ty, hxe, -⟩ := (genRun_params R hT).2 i _ (List.getElem?_eq_getElem hi)
     exact ⟨i, ty, hxe⟩
-  have hst := nestSeeds_nfScoped hcb.1 hcb.2 hparN (fun d e w hw he => whnf_WScoped henv₁ F hw he)
-    (fun d e w hw he => whnf_looseBVars henv₁ F hw he) _ pos R.st R.hst hseeds
+  have hst := nestSeeds_nfScoped hcb.1 hcb.2 hparN (whnfScoped_fueledOps henv₁ F)
+    (whnfBounded_fueledOps henv₁ F) _ pos R.st R.hst hseeds
     (by rw [hnP]; exact hpos)
   rw [hnP] at hst
   exact hst
@@ -687,9 +685,12 @@ theorem genScoped_of_run
         rw [mkFEnv_find?_fun] at hf
         have hw := henvC.consts _ (List.mem_of_find?_eq_some hf)
         refine ScB.of_closed ?_ ?_ 0
-        · rw [Expr.hasFvar_instantiateLevelParams]; exact familyTelescope_hasFvar (fun _ _ _ hw he => whnf_WScoped henvC F hw he) hfam hw.1
+        · rw [Expr.hasFvar_instantiateLevelParams]
+          exact familyTelescope_hasFvar (fun _ _ _ hw he => fueledOps_whnfB_WScoped henvC hw he)
+            hfam hw.1
         · rw [Expr.looseBVarsBounded_instantiateLevelParams]
-          exact familyTelescope_bounded (fun _ _ _ hw he => whnf_looseBVars henvC F hw he) hfam hw.2.2.2.1
+          exact familyTelescope_bounded (fun _ _ _ hw he => fueledOps_whnfB_looseBVars henvC hw he)
+            hfam hw.2.2.2.1
       · simp [throw, throwThe, MonadExceptOf.throw] at hrun
   case tyN =>
     intro c x hx

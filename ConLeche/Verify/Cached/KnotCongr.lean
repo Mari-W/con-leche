@@ -514,20 +514,51 @@ theorem inferSpineIOI_congr (_hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode
     rw [inferSpineIOI.eq_def, inferSpineIOI.eq_def]
     simp only [h, ih]
 
-/-- `whnfLoopI` reads `fe` only through `find?`. -/
-theorem whnfLoopI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv) :
+/-- The rules through the index read `find?` and the rule map. -/
+theorem FEnv.rulesFor_congr (hfe : fe₁.find? = fe₂.find?) (hrl : fe₁.base.rls = fe₂.base.rls) :
+    fe₁.rulesFor = fe₂.rulesFor := by
+  funext c; unfold FEnv.rulesFor; rw [hrl, hfe]
+
+/-- `rewriteAttemptI` reads `fe` only through `find?`. -/
+theorem rewriteAttemptI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv) :
+    rewriteAttemptI mode fe₁ eager lv = rewriteAttemptI mode fe₂ eager lv := by
+  funext depth e t; rw [rewriteAttemptI.eq_def, rewriteAttemptI.eq_def]
+  simp only [hfe, constTyAtM_congr hfe, iotaCertsFullI_congr hfe h, h]
+
+/-- `rewriteRulesI` reads `fe` only through `find?`. -/
+theorem rewriteRulesI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv) :
+    rewriteRulesI mode fe₁ eager lv = rewriteRulesI mode fe₂ eager lv := by
+  funext depth e ts
+  induction ts with
+  | nil => rw [rewriteRulesI.eq_def, rewriteRulesI.eq_def]
+  | cons t ts ih =>
+    rw [rewriteRulesI.eq_def, rewriteRulesI.eq_def]
+    simp only [rewriteAttemptI_congr hfe h, ih]
+
+/-- `rewriteStepI` reads `fe` through `find?` and the rule map. -/
+theorem rewriteStepI_congr (hfe : fe₁.find? = fe₂.find?) (hru : fe₁.rulesFor = fe₂.rulesFor)
+    (h : SlotsEq mode fe₁ fe₂ lv) :
+    rewriteStepI mode fe₁ eager lv = rewriteStepI mode fe₂ eager lv := by
+  funext depth e; rw [rewriteStepI.eq_def, rewriteStepI.eq_def]
+  simp only [rewriteRulesI_congr hfe h, hru]
+
+/-- `whnfLoopI` reads `fe` only through `find?` and the rule map. -/
+theorem whnfLoopI_congr (hfe : fe₁.find? = fe₂.find?) (hru : fe₁.rulesFor = fe₂.rulesFor)
+    (h : SlotsEq mode fe₁ fe₂ lv) :
     whnfLoopI mode fe₁ eager lv = whnfLoopI mode fe₂ eager lv := by
   funext depth n
   induction n with
-  | zero => funext e; rw [whnfLoopI.eq_def, whnfLoopI.eq_def]
+  | zero => funext fires e; rw [whnfLoopI.eq_def, whnfLoopI.eq_def]
   | succ n ih =>
-    funext e; rw [whnfLoopI.eq_def, whnfLoopI.eq_def]
-    simp only [ih, h, reduceNatI_congr hfe h, unfoldDefinitionI_congr hfe]
+    funext fires e; rw [whnfLoopI.eq_def, whnfLoopI.eq_def]
+    simp only [ih, h, reduceNatI_congr hfe h, unfoldDefinitionI_congr hfe,
+      rewriteStepI_congr hfe hru h]
 
-/-- `whnfBodyI` reads `fe` only through `find?`. -/
-theorem whnfBodyI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv) :
+/-- `whnfBodyI` reads `fe` only through `find?` and the rule map. -/
+theorem whnfBodyI_congr (hfe : fe₁.find? = fe₂.find?) (hru : fe₁.rulesFor = fe₂.rulesFor)
+    (h : SlotsEq mode fe₁ fe₂ lv) :
     whnfBodyI mode fe₁ eager lv = whnfBodyI mode fe₂ eager lv := by
-  funext depth e; rw [whnfBodyI.eq_def, whnfBodyI.eq_def]; simp only [whnfLoopI_congr hfe h]
+  funext depth e; rw [whnfBodyI.eq_def, whnfBodyI.eq_def]; simp only [whnfLoopI_congr hfe hru h]
 
 /-- `ensureSortI` only threads `fe`. -/
 theorem ensureSortI_congr (_hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv) :
@@ -680,7 +711,8 @@ end Level
 
 /-- The entry points agree at every level, by induction on it (both
 towers at once: the eager entry point runs the eager tower's bodies). -/
-theorem slotsEq (hfe : fe₁.find? = fe₂.find?) (htb : fe₁.findTable? = fe₂.findTable?) :
+theorem slotsEq (hfe : fe₁.find? = fe₂.find?) (htb : fe₁.findTable? = fe₂.findTable?)
+    (hru : fe₁.rulesFor = fe₂.rulesFor) :
     ∀ lv, SlotsEq mode fe₁ fe₂ lv := by
   intro lv
   induction lv with
@@ -695,30 +727,31 @@ theorem slotsEq (hfe : fe₁.find? = fe₂.find?) (htb : fe₁.findTable? = fe�
     refine ⟨fun eager => ?_, fun eager => ?_, fun eager => ?_, fun eager => ?_, fun eager => ?_⟩
     · funext c d e; rw [whnfCoreI.eq_def, whnfCoreI.eq_def]
       simp only [whnfCoreBodyI_congr hfe htb ih]
-    · funext d e; rw [whnfI.eq_def, whnfI.eq_def]; simp only [whnfBodyI_congr hfe ih]
+    · funext d e; rw [whnfI.eq_def, whnfI.eq_def]; simp only [whnfBodyI_congr hfe hru ih]
     · funext io d e; rw [inferI.eq_def, inferI.eq_def]
       simp only [inferBodyI_congr hfe htb ih, inferBodyIOI_congr hfe htb ih]
     · funext d a b; rw [defeqI.eq_def, defeqI.eq_def]; simp only [defeqBodyI_congr hfe htb ih]
     · funext d a b; rw [defeqEI.eq_def, defeqEI.eq_def]; simp only [defeqBodyI_congr hfe htb ih]
 
-/-- **The knot reads the index only through `find?` and `findTable?`**:
+/-- **The knot reads the index only through `find?`, `findTable?` and the rule map**:
 its entry points, and `ensureSortI` on them, at every tower and level. -/
-theorem knotI_congr (hfe : fe₁.find? = fe₂.find?) (htb : fe₁.findTable? = fe₂.findTable?) :
+theorem knotI_congr (hfe : fe₁.find? = fe₂.find?) (htb : fe₁.findTable? = fe₂.findTable?)
+    (hru : fe₁.rulesFor = fe₂.rulesFor) :
     whnfCoreI mode fe₁ = whnfCoreI mode fe₂ ∧ whnfI mode fe₁ = whnfI mode fe₂ ∧
       inferI mode fe₁ = inferI mode fe₂ ∧ defeqI mode fe₁ = defeqI mode fe₂ ∧
       defeqEI mode fe₁ = defeqEI mode fe₂ ∧ ensureSortI mode fe₁ = ensureSortI mode fe₂ := by
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> funext eager lv
-  · exact (slotsEq hfe htb lv).1 eager
-  · exact (slotsEq hfe htb lv).2.1 eager
-  · exact (slotsEq hfe htb lv).2.2.1 eager
-  · exact (slotsEq hfe htb lv).2.2.2.1 eager
-  · exact (slotsEq hfe htb lv).2.2.2.2 eager
-  · exact ensureSortI_congr hfe (slotsEq hfe htb lv)
+  · exact (slotsEq hfe htb hru lv).1 eager
+  · exact (slotsEq hfe htb hru lv).2.1 eager
+  · exact (slotsEq hfe htb hru lv).2.2.1 eager
+  · exact (slotsEq hfe htb hru lv).2.2.2.1 eager
+  · exact (slotsEq hfe htb hru lv).2.2.2.2 eager
+  · exact ensureSortI_congr hfe (slotsEq hfe htb hru lv)
 
 /-- `opSIxC` reads `fe` only through `find?` and `findTable?`. -/
 theorem opSIxC_congr (hfe : fe₁.find? = fe₂.find?)
-    (htb : fe₁.findTable? = fe₂.findTable?) :
+    (htb : fe₁.findTable? = fe₂.findTable?) (hru : fe₁.rulesFor = fe₂.rulesFor) :
     opSIxC mode fe₁ = opSIxC mode fe₂ := by
-  funext d i; unfold opSIxC; simp only [knotI_congr hfe htb]
+  funext d i; unfold opSIxC; simp only [knotI_congr hfe htb hru]
 
 end ConLeche.Cached

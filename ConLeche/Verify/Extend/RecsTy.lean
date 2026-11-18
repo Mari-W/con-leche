@@ -44,14 +44,14 @@ theorem SwapPairTy.name_eq {c₀ c₃ : ConstantInfo} (h : SwapPairTy c₀ c₃)
   · exact hn.symm
 
 /-- The lookup correspondence of a type-and-rules swap. -/
-theorem swapTy_find?_corr {ts : List ProjTable} :
+theorem swapTy_find?_corr {ts : List ProjTable} {rs₀ rs₃ : List (Name × Name)} :
     ∀ {consts₀ consts₃ : List ConstantInfo},
     SwapTyList consts₀ consts₃ →
     ∀ n : Name,
-    (Env.mk consts₃ ts).find? n = (Env.mk consts₀ ts).find? n ∨
+    (Env.mk consts₃ ts rs₃).find? n = (Env.mk consts₀ ts rs₀).find? n ∨
     ∃ cv cv' mI rP isK rules rules',
-      (Env.mk consts₀ ts).find? n = some (.recInfo cv mI rP isK rules) ∧
-      (Env.mk consts₃ ts).find? n = some (.recInfo cv' mI rP isK rules') ∧
+      (Env.mk consts₀ ts rs₀).find? n = some (.recInfo cv mI rP isK rules) ∧
+      (Env.mk consts₃ ts rs₃).find? n = some (.recInfo cv' mI rP isK rules') ∧
       cv'.name = cv.name ∧ cv'.levelParams = cv.levelParams ∧ cv.name = n ∧
       reservedRecName cv.name = false := by
   intro consts₀ consts₃ hsw
@@ -61,10 +61,10 @@ theorem swapTy_find?_corr {ts : List ProjTable} :
     intro n
     by_cases hn : c₃.name = n
     · have hn₀ : c₀.name = n := by rw [SwapPairTy.name_eq hpair, hn]
-      have h₃ : (Env.mk (c₃ :: rest₃) ts).find? n = some c₃ := by
+      have h₃ : (Env.mk (c₃ :: rest₃) ts rs₃).find? n = some c₃ := by
         show (c₃ :: rest₃).find? (·.name == n) = some c₃
         rw [List.find?_cons_of_pos (by simp [hn])]
-      have h₀ : (Env.mk (c₀ :: rest₀) ts).find? n = some c₀ := by
+      have h₀ : (Env.mk (c₀ :: rest₀) ts rs₀).find? n = some c₀ := by
         show (c₀ :: rest₀).find? (·.name == n) = some c₀
         rw [List.find?_cons_of_pos (by simp [hn₀])]
       rcases hpair with rfl | ⟨cv, cv', mI, rP, isK, rules, rules', rfl, rfl, hnm, hlp, hres⟩
@@ -73,13 +73,13 @@ theorem swapTy_find?_corr {ts : List ProjTable} :
     · have hn₀ : ¬c₀.name = n := by
         rw [SwapPairTy.name_eq hpair]
         exact hn
-      have h₃ : (Env.mk (c₃ :: rest₃) ts).find? n =
-          (Env.mk rest₃ ts).find? n := by
+      have h₃ : (Env.mk (c₃ :: rest₃) ts rs₃).find? n =
+          (Env.mk rest₃ ts rs₃).find? n := by
         show (c₃ :: rest₃).find? (·.name == n) =
           rest₃.find? (·.name == n)
         rw [List.find?_cons_of_neg (by simp [hn])]
-      have h₀ : (Env.mk (c₀ :: rest₀) ts).find? n =
-          (Env.mk rest₀ ts).find? n := by
+      have h₀ : (Env.mk (c₀ :: rest₀) ts rs₀).find? n =
+          (Env.mk rest₀ ts rs₀).find? n := by
         show (c₀ :: rest₀).find? (·.name == n) =
           rest₀.find? (·.name == n)
         rw [List.find?_cons_of_neg (by simp [hn₀])]
@@ -104,25 +104,26 @@ theorem swapTy_mem_corr :
 
 /-- A type-and-rules swap induces the congruences. -/
 theorem SwapTyList.congr {consts₀ consts₃ : List ConstantInfo} {ts : List ProjTable}
+    {rs₀ rs₃ : List (Name × Name)}
     (hsw : SwapTyList consts₀ consts₃) :
-    SwapCongr (Env.mk consts₀ ts) (Env.mk consts₃ ts) := by
-  have hcorr := swapTy_find?_corr (ts := ts) hsw
+    SwapCongr (Env.mk consts₀ ts rs₀) (Env.mk consts₃ ts rs₃) := by
+  have hcorr := swapTy_find?_corr (ts := ts) (rs₀ := rs₀) (rs₃ := rs₃) hsw
   have hchk : ∀ (chk : Option ConstantInfo → Bool) (n : Name), reservedRecName n = true →
-      chk ((Env.mk consts₀ ts).find? n) = chk ((Env.mk consts₃ ts).find? n) := by
+      chk ((Env.mk consts₀ ts rs₀).find? n) = chk ((Env.mk consts₃ ts rs₃).find? n) := by
     intro chk n hn
     rcases hcorr n with heq | ⟨cv, cv', mI, rP, isK, rules, rules', h₀, h₃, -, -, hname, hres⟩
     · rw [heq]
     · rw [hname, hn] at hres
       exact absurd hres (by decide)
   have hfeq : ∀ n, reservedRecName n = true →
-      (Env.mk consts₀ ts).find? n = (Env.mk consts₃ ts).find? n := by
+      (Env.mk consts₀ ts rs₀).find? n = (Env.mk consts₃ ts rs₃).find? n := by
     intro n hn
     rcases hcorr n with heq | ⟨cv, cv', mI, rP, isK, rules, rules', h₀, h₃, -, -, hname, hres⟩
     · rw [heq]
     · rw [hname, hn] at hres
       exact absurd hres (by decide)
-  have hnat : natLitSupported (Env.mk consts₀ ts)
-      = natLitSupported (Env.mk consts₃ ts) := by
+  have hnat : natLitSupported (Env.mk consts₀ ts rs₀)
+      = natLitSupported (Env.mk consts₃ ts rs₃) := by
     unfold natLitSupported
     rw [hfeq natName (by decide), hfeq natZeroName (by decide), hfeq natSuccName (by decide)]
   refine ⟨?_, ?_, hnat, ?_, ?_, ?_, ?_, rfl⟩
@@ -167,8 +168,8 @@ theorem SwapTyList.congr {consts₀ consts₃ : List ConstantInfo} {ts : List Pr
 
 theorem SwapTyList.congrEnv {env₀ env₃ : Env} (hsw : SwapTyList env₀.consts env₃.consts)
     (ht : env₃.tables = env₀.tables) : SwapCongr env₀ env₃ := by
-  obtain ⟨c₀, t₀⟩ := env₀
-  obtain ⟨c₃, t₃⟩ := env₃
+  obtain ⟨c₀, t₀, r₀⟩ := env₀
+  obtain ⟨c₃, t₃, r₃⟩ := env₃
   simp only at ht hsw
   subst ht
   exact SwapTyList.congr hsw
@@ -181,6 +182,6 @@ theorem swapTy_find?_corrEnv {env₀ env₃ : Env} (hsw : SwapTyList env₀.cons
       env₃.find? n = some (.recInfo cv' mI rP isK rules') ∧
       cv'.name = cv.name ∧ cv'.levelParams = cv.levelParams ∧ cv.name = n ∧
       reservedRecName cv.name = false :=
-  swapTy_find?_corr (ts := []) hsw n
+  swapTy_find?_corr (ts := []) (rs₀ := []) (rs₃ := []) hsw n
 
 end ConLeche

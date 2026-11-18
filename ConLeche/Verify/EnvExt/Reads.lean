@@ -48,6 +48,8 @@ theorem StoredFacts.entryCtors {env : Env} (h : StoredFacts env) {T : Name} {i :
 structure EnvExt (env₁ env₂ : Env) : Prop where
   find : ∀ n ci, env₁.find? n = some ci → env₂.find? n = some ci
   table : ∀ T, (env₁.find? T).isSome = true → env₂.findTable? T = env₁.findTable? T
+  /-- the same rules fire at every head -/
+  rules : ∀ c, env₂.rulesFor c = env₁.rulesFor c
   facts : StoredFacts env₁
 
 /-- Resolution in `env`. -/
@@ -128,6 +130,31 @@ theorem res_instantiateList {env : Env} :
     rw [Expr.instantiateList_cons]
     exact res_instantiate1 (hvs v List.mem_cons_self) _ d
       (res_instantiateList (fun w hw => hvs w (List.mem_cons_of_mem _ hw)) (d + 1) he)
+
+/-- A subterm of the application tree resolves where the term does. -/
+theorem res_appSubterms {env : Env} (e : Expr) : ∀ {x : Expr}, x ∈ appSubterms e → Res env e →
+    Res env x := by
+  induction e with
+  | app f a ihf iha =>
+    intro x hx h
+    simp only [appSubterms, List.mem_cons, List.mem_append] at hx
+    rcases hx with rfl | hx | hx
+    · exact h
+    · exact ihf hx (by simp only [Res, Expr.constsResolve, Bool.and_eq_true] at h; exact h.1)
+    · exact iha hx (by simp only [Res, Expr.constsResolve, Bool.and_eq_true] at h; exact h.2)
+  | _ => intro x hx h; simp only [appSubterms, List.mem_singleton] at hx; subst hx; exact h
+
+/-- A rule registered at a head names a stored theorem. -/
+theorem find_of_mem_rulesFor {env : Env} {c t : Name} (h : t ∈ env.rulesFor c) :
+    (env.find? t).isSome = true := by
+  unfold Env.rulesFor at h
+  obtain ⟨r, -, hr⟩ := List.mem_filterMap.mp h
+  split at hr
+  · rename_i hc
+    obtain rfl := Option.some.inj hr
+    simp only [Bool.and_eq_true] at hc
+    exact hc.2
+  · exact nomatch hr
 
 theorem res_inst {env : Env} (ks : List Name) (us : List Level) {e : Expr} (h : Res env e) :
     Res env (e.instantiateLevelParams ks us) := by

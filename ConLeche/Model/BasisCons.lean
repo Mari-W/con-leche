@@ -65,14 +65,14 @@ theorem natHeads_cons_offNat (mp : EnvModelM V env)
     {c₀ : ConstantInfo} {A : (Name → Nat) → Term}
     (hnN : c₀.name ≠ natName) (hnZ : c₀.name ≠ natZeroName)
     (hnS : c₀.name ≠ natSuccName)
-    (m2 : EnvModel V ⟨c₀ :: env.consts, env.tables⟩)
+    (m2 : EnvModel V ⟨c₀ :: env.consts, env.tables, env.rules⟩)
     (hacval : m2.acval = acvalWith mp.base2.acval c₀.name A)
     (φ : Name → Nat) : NatHeads m2 φ := by
   intro hg ρ
   rw [hacval]
   -- the three lookups are the prefix's, so the guard reflects
   have hfind : ∀ p : Name, c₀.name ≠ p →
-      (⟨c₀ :: env.consts, env.tables⟩ : Env).find? p = env.find? p := by
+      (⟨c₀ :: env.consts, env.tables, env.rules⟩ : Env).find? p = env.find? p := by
     intro p hp
     show List.find? _ (c₀ :: env.consts) = _
     rw [List.find?_cons_of_neg (by simpa using hp)]

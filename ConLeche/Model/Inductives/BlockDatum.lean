@@ -146,7 +146,7 @@ theorem consBlockInds_constsResolve {p₁ : BlockShape} {isRec : Bool} :
   | [], _, _, _, h => h
   | cvT :: rest, i, env, e, h => by
     show e.constsResolve (ConLeche.consBlockInds p₁ isRec rest (i + 1)
-      ⟨.indInfo cvT (ConLeche.blockCapsAt p₁ i isRec) :: env.consts, env.tables⟩) = true
+      ⟨.indInfo cvT (ConLeche.blockCapsAt p₁ i isRec) :: env.consts, env.tables, env.rules⟩) = true
     exact consBlockInds_constsResolve rest (i + 1) _ e (Expr.constsResolve_mono h)
 
 /-- **A member's recursor name is reserved only if the member's is**:
@@ -247,7 +247,7 @@ theorem blockCtorFacts_of {envI : Env} {q : BlockShape} {F : Nat} {cvTa : Consta
 /-- A name found stays found across a cons. -/
 theorem find?_isSome_consB {c : ConstantInfo} {env : Env} {n : Name}
     (h : (env.find? n).isSome = true) :
-    (((⟨c :: env.consts, env.tables⟩ : Env)).find? n).isSome = true := by
+    (((⟨c :: env.consts, env.tables, env.rules⟩ : Env)).find? n).isSome = true := by
   rw [ConLeche.Env.find?_cons]
   split
   · rfl
@@ -261,7 +261,7 @@ theorem consBlockInds_find?_isSome_mono {p₁ : BlockShape} {isRec : Bool} :
   | [], _, _, _, h => h
   | cvT :: rest, i, env, n, h => by
     show ((ConLeche.consBlockInds p₁ isRec rest (i + 1)
-      ⟨.indInfo cvT (ConLeche.blockCapsAt p₁ i isRec) :: env.consts, env.tables⟩).find? n).isSome = true
+      ⟨.indInfo cvT (ConLeche.blockCapsAt p₁ i isRec) :: env.consts, env.tables, env.rules⟩).find? n).isSome = true
     exact consBlockInds_find?_isSome_mono rest (i + 1) _ n (find?_isSome_consB h)
 
 /-- **Every former is stored after the `k` conses.** -/
@@ -273,7 +273,7 @@ theorem consBlockInds_find?_isSome {p₁ : BlockShape} {isRec : Bool} :
   | cvT :: rest, i, 0, env, cvTa, h => by
     simp only [List.getElem?_cons_zero, Option.some.injEq] at h
     show ((ConLeche.consBlockInds p₁ isRec rest (i + 1)
-      ⟨.indInfo cvT (ConLeche.blockCapsAt p₁ i isRec) :: env.consts, env.tables⟩).find? cvTa.name).isSome
+      ⟨.indInfo cvT (ConLeche.blockCapsAt p₁ i isRec) :: env.consts, env.tables, env.rules⟩).find? cvTa.name).isSome
       = true
     refine consBlockInds_find?_isSome_mono rest (i + 1) _ cvTa.name ?_
     have hn : (ConstantInfo.indInfo cvT (ConLeche.blockCapsAt p₁ i isRec)).name = cvT.name := rfl
@@ -282,7 +282,7 @@ theorem consBlockInds_find?_isSome {p₁ : BlockShape} {isRec : Bool} :
   | cvT :: rest, i, j + 1, env, cvTa, h => by
     simp only [List.getElem?_cons_succ] at h
     show ((ConLeche.consBlockInds p₁ isRec rest (i + 1)
-      ⟨.indInfo cvT (ConLeche.blockCapsAt p₁ i isRec) :: env.consts, env.tables⟩).find? cvTa.name).isSome
+      ⟨.indInfo cvT (ConLeche.blockCapsAt p₁ i isRec) :: env.consts, env.tables, env.rules⟩).find? cvTa.name).isSome
       = true
     exact consBlockInds_find?_isSome rest (i + 1) j _ cvTa h
 
@@ -335,7 +335,7 @@ theorem lfpCover_formers (mp : EnvModelM V env) {envI : Env} {q : BlockShape} {i
         exact hfresh cv hcv
       show List.find? _ _ = _
       rw [henv]
-      exact find?_append_of_fresh hfr hf)
+      exact find?_append_of_fresh (ts := []) (rs := []) hfr hf)
     (fun n hn => hagX n fun cvTb hcvTb h => by
       rw [h, hfresh cvTb hcvTb] at hn
       exact nomatch hn)
@@ -404,7 +404,7 @@ theorem blockTablesStage_of {F : Nat} {env envI : Env}
     (hPos : ConLeche.PositivityRun (ConLeche.fueledOps .verified F) envI
       envI.find? q posKs.1 posKs.2.1 posKs.2.2)
     -- the input's coverage (the walk's container case reads the containers' clauses)
-    (hcovIn : LfpCover mp []) (hRan : FamilyRan mp) (hx : EnvExt env envI) :
+    (hcovIn : LfpCover mp []) (hRan : FamilyRan mp) (hx : FreshExt env envI) :
     ∃ (pk : Nat → BlockMemberPick) (uOf : Nat → (Name → Nat) → Nat)
       (ppsOf : Nat → (Name → Nat) → List Term)
       (mpI : EnvModelM V envI),
@@ -515,7 +515,7 @@ theorem blockTablesStage_of {F : Nat} {env envI : Env}
         obtain ⟨cvTb, hb, hn⟩ := hofDcl cvS hS
         rw [hn]; exact hmemNames cvTb hb)
       hnamesFresh hcovIn).imp
-      fun _ h => ⟨h.1, h.2.2, hRan.read hx.find hx.table fun D hD => by rw [← h.2.1]; exact hD⟩
+      fun _ h => ⟨h.1, h.2.2, hRan.read hx fun D hD => by rw [← h.2.1]; exact hD⟩
   -- ## the members' index telescopes, at the dummy carrier
   obtain ⟨uOf, hIdxOf, hUparams⟩ :=
     blockIdxFacts_of (isRec := isRec) (ppsOf := ppsOf) mpD hsorts

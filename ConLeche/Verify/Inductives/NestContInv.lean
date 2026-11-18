@@ -5,6 +5,7 @@ import ConLeche.Verify.Inductives.DirectInv
 import ConLeche.Verify.Inductives.NestCallSyn
 import ConLeche.Verify.Abstract
 public import ConLeche.Verify.Shift
+public import ConLeche.Verify.EnvWF
 
 public section
 
@@ -154,7 +155,8 @@ theorem familyTelescope_cases {ops : CheckerOps CheckM} {env : Env} {cv : Consta
     {caps : IndCaps} {ty : Expr} (h : familyTelescope ops env cv caps = .ok ty) :
     (formerDefHeaded cv = false ∧ ty = cv.type) ∨
     (formerDefHeaded cv = true ∧
-      ∃ cvR, reducedFormer ops env cv (caps.nparams + caps.nIdx) = .ok cvR ∧ ty = cvR.type) := by
+      ∃ cvR, reducedFormer (ops.below cv.name) env cv (caps.nparams + caps.nIdx) = .ok cvR ∧
+        ty = cvR.type) := by
   unfold familyTelescope at h
   split at h
   · rename_i hd
@@ -172,7 +174,7 @@ theorem familyTelescope_cases {ops : CheckerOps CheckM} {env : Env} {cv : Consta
 /-- A family's telescope is closed where its stored type is. -/
 theorem familyTelescope_hasFvar {ops : CheckerOps CheckM} {env : Env} {cv : ConstantVal}
     {caps : IndCaps} {ty : Expr}
-    (hw : ∀ d e w, ops.whnf env d e = .ok w → WScoped d e → WScoped d w)
+    (hw : ∀ d e w, ops.whnfB env cv.name d e = .ok w → WScoped d e → WScoped d w)
     (h : familyTelescope ops env cv caps = .ok ty)
     (hc : cv.type.hasFvar = false) : ty.hasFvar = false := by
   rcases familyTelescope_cases h with ⟨-, rfl⟩ | ⟨-, cvR, hr, rfl⟩
@@ -182,13 +184,59 @@ theorem familyTelescope_hasFvar {ops : CheckerOps CheckM} {env : Env} {cv : Cons
 /-- A family's telescope is scoped where its stored type is. -/
 theorem familyTelescope_bounded {ops : CheckerOps CheckM} {env : Env} {cv : ConstantVal}
     {caps : IndCaps} {ty : Expr}
-    (hw : ∀ d e w, ops.whnf env d e = .ok w → e.looseBVarsBounded 0 = true →
+    (hw : ∀ d e w, ops.whnfB env cv.name d e = .ok w → e.looseBVarsBounded 0 = true →
       w.looseBVarsBounded 0 = true)
     (h : familyTelescope ops env cv caps = .ok ty)
     (hc : cv.type.looseBVarsBounded 0 = true) : ty.looseBVarsBounded 0 = true := by
   rcases familyTelescope_cases h with ⟨-, rfl⟩ | ⟨-, cvR, hr, rfl⟩
   · exact hc
   · exact reducedFormer_looseBVars hw hr hc
+
+/-- Head normalization below a block keeps a term scoped. -/
+theorem fueledOps_whnfB_WScoped {mode : CheckMode} {env : Env} (henv : EnvWF env) {F : Nat}
+    {m : Name} {d : Nat} {e w : Expr} (h : (fueledOps mode F).whnfB env m d e = .ok w)
+    (hw : WScoped d e) : WScoped d w := by
+  revert h
+  simp only [fueledOps]
+  split
+  · rename_i env' hb
+    exact fun h => whnf_WScoped (henv.famBelow hb) F h hw
+  · exact fun h => nomatch h
+
+/-- Head normalization below a block keeps the bvar bound. -/
+theorem fueledOps_whnfB_looseBVars {mode : CheckMode} {env : Env} (henv : EnvWF env) {F : Nat}
+    {m : Name} {d : Nat} {e w : Expr} (h : (fueledOps mode F).whnfB env m d e = .ok w)
+    (hb : e.looseBVarsBounded 0 = true) : w.looseBVarsBounded 0 = true := by
+  revert h
+  simp only [fueledOps]
+  split
+  · rename_i env' hb'
+    exact fun h => whnf_looseBVars (henv.famBelow hb') F h hb
+  · exact fun h => nomatch h
+
+/-- **Head normalization keeps scoping**, at the environment and below every block. -/
+@[expose] def WhnfScoped (ops : CheckerOps CheckM) (env : Env) : Prop :=
+  (∀ dep e w, ops.whnf env dep e = .ok w → WScoped dep e → WScoped dep w) ∧
+    ∀ n dep e w, ops.whnfB env n dep e = .ok w → WScoped dep e → WScoped dep w
+
+/-- **Head normalization keeps the bvar bound**, at the environment and below every block. -/
+@[expose] def WhnfBounded (ops : CheckerOps CheckM) (env : Env) : Prop :=
+  (∀ dep e w, ops.whnf env dep e = .ok w → e.looseBVarsBounded 0 = true →
+      w.looseBVarsBounded 0 = true) ∧
+    ∀ n dep e w, ops.whnfB env n dep e = .ok w → e.looseBVarsBounded 0 = true →
+      w.looseBVarsBounded 0 = true
+
+/-- The fuelled operations keep scoping on a well-formed environment. -/
+theorem whnfScoped_fueledOps {mode : CheckMode} {env : Env} (henv : EnvWF env) (F : Nat) :
+    WhnfScoped (fueledOps mode F) env :=
+  ⟨fun _ _ _ h hw => whnf_WScoped henv F h hw,
+    fun _ _ _ _ h hw => fueledOps_whnfB_WScoped henv h hw⟩
+
+/-- The fuelled operations keep the bvar bound on a well-formed environment. -/
+theorem whnfBounded_fueledOps {mode : CheckMode} {env : Env} (henv : EnvWF env) (F : Nat) :
+    WhnfBounded (fueledOps mode F) env :=
+  ⟨fun _ _ _ h hb => whnf_looseBVars henv F h hb,
+    fun _ _ _ _ h hb => fueledOps_whnfB_looseBVars henv h hb⟩
 
 /-- **What `nestInstType` checks of a telescope**: the container is applied at its own level count,
 the telescope binds its parameters, its instantiation at the key is `cty`, a telescope ending in a

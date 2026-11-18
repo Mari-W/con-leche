@@ -245,7 +245,7 @@ theorem BlockCtorDataI.cross {m : EnvModel V env} {T : Name} {lps : List Name}
     (hfresh : env.find? c₀.name = none) (hT : T ≠ c₀.name)
     (hcb : ConstsBound env cvC.type)
     (hcbI : ∀ e ∈ idxArgs, ConstsBound env e)
-    (m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables⟩)
+    (m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables, env.rules⟩)
     (hac : m₂.acval = acvalWith m.acval c₀.name A) :
     BlockCtorDataI m₂ T lps cvC nP nF nIdx resSort isProp large idxArgs ds Es srcs
       fvsP xFvs xrest := by
@@ -327,7 +327,7 @@ theorem ctorsLoopAt
     (Inv : ∀ {env' : Env}, EnvModel V env' → Prop)
     (hInv : ∀ {env' : Env} (m' : EnvModel V env') (ctor : ConstantVal × Nat)
       (A : (Name → Nat) → Term)
-      (mC : EnvModel V ⟨.ctorInfo ctor.1 p.nP ctor.2 p.cvT.name :: env'.consts, env'.tables⟩),
+      (mC : EnvModel V ⟨.ctorInfo ctor.1 p.nP ctor.2 p.cvT.name :: env'.consts, env'.tables, env'.rules⟩),
       ctor ∈ ctorList → env'.find? ctor.1.name = none →
       mC.acval = acvalWith m'.acval ctor.1.name A → Inv m' → Inv mC)
     -- the block's capability record and the former's leaf
@@ -406,7 +406,7 @@ theorem ctorsLoopAt
       (fun ψ ρ hρ => hFssOkP ψ ρ ((hiff k ctor hcAk ψ ρ).mpr hρ)) (hIdx k ctor hcAk)
     -- the invariants at the extension
     have hcbC : ConstsBound env ctor.1.type := constsBound_of_constsResolve _ htr
-    have hfT' : (⟨.ctorInfo ctor.1 p.nP ctor.2 p.cvT.name :: env.consts, env.tables⟩ : Env).find? p.cvT.name
+    have hfT' : (⟨.ctorInfo ctor.1 p.nP ctor.2 p.cvT.name :: env.consts, env.tables, env.rules⟩ : Env).find? p.cvT.name
         = some (.indInfo cvS caps) := ConLeche.Env.find?_cons_of_fresh hfresh hfT
     have hFD' : FormerData mpC.base2 cvTa (p.nP + p.nIdx) p.resSort ppsAll :=
       hFD.cross (c₀ := .ctorInfo ctor.1 p.nP ctor.2 p.cvT.name) hfresh hcbT mpC.base2 hacC
@@ -1210,7 +1210,7 @@ theorem stageFixTable (mp : EnvModelM V env)
           SpineFit ρ ((((ds ψ).drop nP)).take j) as →
           interp V (consList as ρ) ((((ds ψ).drop nP)).getD j default)
             ∈ˢ (univ ((sorts.getD j .zero).eval ψ) : V)) :
-    ∃ mp' : EnvModelM V ⟨env.consts, ⟨T, lps, nP, cvCa.name, nF, bodies⟩ :: env.tables⟩,
+    ∃ mp' : EnvModelM V ⟨env.consts, ⟨T, lps, nP, cvCa.name, nF, bodies⟩ :: env.tables, env.rules⟩,
       env.findTable? T = none ∧ mp'.base2.acval = mp.base2.acval := by
   have hwf' := ConLeche.direct_table_wf mp.base2.wf hTbl
   obtain ⟨-, hTs, hT0⟩ := ConLeche.checkStructProjTable_inv hTbl
@@ -1285,21 +1285,21 @@ theorem stageFixTable (mp : EnvModelM V env)
   have hcbC : ConstsBound env cvCa.type :=
     constsBound_of_constsResolve _ (mp.base2.wf.consts _ (ConLeche.Env.find?_mem hfC)).2.2.1
   -- the lookups at the extension
-  have hfT₂ : (⟨env.consts, tbl :: env.tables⟩ : Env).find? T
+  have hfT₂ : (⟨env.consts, tbl :: env.tables, env.rules⟩ : Env).find? T
       = some (.indInfo cvS caps) := hfT
   have hlpsS : cvS.levelParams = lps := hD.lps.trans hlpsT
-  have hfC₂ : (⟨env.consts, tbl :: env.tables⟩ : Env).find? cvCa.name
+  have hfC₂ : (⟨env.consts, tbl :: env.tables, env.rules⟩ : Env).find? cvCa.name
       = some (.ctorInfo cvCa nP nF iT) := hfC
-  have hfTbl₂ : (⟨env.consts, tbl :: env.tables⟩ : Env).findTable? T = some tbl := by
+  have hfTbl₂ : (⟨env.consts, tbl :: env.tables, env.rules⟩ : Env).findTable? T = some tbl := by
     rw [ConLeche.Env.findTable?_pushTable, ite_eq_left ⟨rfl, hTs⟩]
   have hprev₂ : ∀ j, j < nF →
-      ∃ entry, (⟨env.consts, tbl :: env.tables⟩ : Env).findProj? T j
+      ∃ entry, (⟨env.consts, tbl :: env.tables, env.rules⟩ : Env).findProj? T j
         = some entry :=
     fun j hj => ⟨tbl.entry j, ConLeche.Env.findProj?_of_table hfTbl₂ hj⟩
   -- the head data at every field
   have hhead : ConLeche.TableHead env tbl :=
     ⟨hresT, hresR, hresC, ⟨cvS, caps, hfT, hlpsS⟩, ⟨cvCa, iT, hfC, hlpsC, hstripC⟩⟩
-  suffices hlaw : ∀ m₂ : EnvModel V ⟨env.consts, tbl :: env.tables⟩,
+  suffices hlaw : ∀ m₂ : EnvModel V ⟨env.consts, tbl :: env.tables, env.rules⟩,
       m₂.acval = mp.base2.acval → ∀ φ : Name → Nat,
         TowerTableLaw m₂ φ tbl.structName tbl ∧
         ∀ i, i < tbl.numFields → TowerEntryLaw m₂ φ tbl.structName i (tbl.entry i) by
@@ -1319,7 +1319,7 @@ theorem stageFixTable (mp : EnvModelM V env)
     hFD.pushTable (t := tbl) hT0 hcbT m₂ hac
   have hD₂ : FormerDeclared m₂ cvS cvTa := hD.pushTable hT0 m₂ hac
   -- the constructor type's reading at the extension
-  have hCDread₂ : ∀ ψ, denote m₂.acval ⟨env.consts, tbl :: env.tables⟩ ψ 0 cvCa.type
+  have hCDread₂ : ∀ ψ, denote m₂.acval ⟨env.consts, tbl :: env.tables, env.rules⟩ ψ 0 cvCa.type
       = some (mkPisAV (ds ψ) (ctorBodyAVI m₂ T nP nF ψ (Es ψ))) := by
     intro ψ
     have hbody : ctorBodyAVI m₂ T nP nF ψ (Es ψ)
@@ -1347,7 +1347,7 @@ theorem stageFixTable (mp : EnvModelM V env)
     · -- (D) the coherence, at an η family: a subject that is not the point
       -- is no squash instance's
       intro heta cvC nPc nFc iT' hfC'
-      have hfC'' : (⟨env.consts, tbl :: env.tables⟩ : Env).find? cvCa.name
+      have hfC'' : (⟨env.consts, tbl :: env.tables, env.rules⟩ : Env).find? cvCa.name
           = some (.ctorInfo cvC nPc nFc iT') := hfC'
       rw [hfC₂] at hfC''
       obtain ⟨rfl, -, -, -⟩ := ConstantInfo.ctorInfo.inj (Option.some.inj hfC'')
@@ -1406,7 +1406,7 @@ theorem stageFixTable (mp : EnvModelM V env)
           refine wellDenoted_projNV_succ_fibre (fun _ => hokB _ _ hsat) trivial ?_ ?_
           · rw [interp_bvar]; exact hx
           · rw [List.length_drop, hCDlen, Nat.add_sub_cancel_left]; exact hj)
-      have hread : denote m₂.acval ⟨env.consts, tbl :: env.tables⟩ φ 0
+      have hread : denote m₂.acval ⟨env.consts, tbl :: env.tables, env.rules⟩ φ 0
           (ConLeche.projTele ((tbl.entry i).numParams + 1)
             ((tbl.entry i).body.instantiateLevelParams (tbl.entry i).levelParams us))
           = some (mkPisAV (List.replicate (nP + 1) (.sort 0)) fdomA) := by
@@ -1452,7 +1452,7 @@ theorem stageFixTable (mp : EnvModelM V env)
             rcases hor with hg | hxne
             · rcases hg with ⟨cvT', caps', s, hT', hs, hz⟩ | hr | ⟨cvT', caps', u, hT', ht, hu⟩
               · exfalso
-                have hT'' : (⟨env.consts, tbl :: env.tables⟩ : Env).find? T
+                have hT'' : (⟨env.consts, tbl :: env.tables, env.rules⟩ : Env).find? T
                     = some (.indInfo cvT' caps') := hT'
                 rw [hfT₂] at hT''
                 obtain ⟨rfl, rfl⟩ : cvS = cvT' ∧ caps = caps' := by
@@ -1460,7 +1460,7 @@ theorem stageFixTable (mp : EnvModelM V env)
                 rw [hZ hp s hs] at hz
                 exact nomatch hz
               · exact hr
-              · have hT'' : (⟨env.consts, tbl :: env.tables⟩ : Env).find? T
+              · have hT'' : (⟨env.consts, tbl :: env.tables, env.rules⟩ : Env).find? T
                     = some (.indInfo cvT' caps') := hT'
                 rw [hfT₂] at hT''
                 obtain ⟨rfl, rfl⟩ : cvS = cvT' ∧ caps = caps' := by
@@ -1471,7 +1471,7 @@ theorem stageFixTable (mp : EnvModelM V env)
                   exact spineFit_of_wellDenoted_mkAppN_lam (lds := pps _) (b := B) (σ := ρ)
                     hokApp hneApp (by rw [hB]) (hlenVs.trans (hFD.len _).symm)
                 obtain ⟨Ts, Tr, hTs, hTr, hTeq⟩ := hD₂.read (Level.substFn φ lps us)
-                have hread : denote m₂.acval ⟨env.consts, tbl :: env.tables⟩ φ 0
+                have hread : denote m₂.acval ⟨env.consts, tbl :: env.tables, env.rules⟩ φ 0
                     (cvS.type.instantiateLevelParams cvS.levelParams us) = some Ts := by
                   rw [hlpsS, denotePInstLevels m₂ φ lps us 0, hTs]
                 have htw := ht _ hread ρ

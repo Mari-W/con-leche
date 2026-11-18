@@ -294,7 +294,7 @@ well-formed environment its type resolves at well formed (the bare chain's step)
 theorem recStage_bareCons_envWF (h : RecStageG mode F env p rs) {r} (hr : r ∈ rs) (m : Nat)
     {env' : Env} (henv : EnvWF env') (hres : r.1.type.constsResolve env' = true) :
     EnvWF ⟨.recInfo r.1 (p.majorIdxAt m) (p.rulePrefixAt m) false [] :: env'.consts,
-      env'.tables⟩ := by
+      env'.tables, env'.rules⟩ := by
   obtain ⟨h1, h2, -, h4, -⟩ := recStage_facts h r hr
   exact EnvWF.cons (litShapeAt_of_reservedRec (recStage_reserved h r hr) _ rfl) henv
     (structConstWF h1 h2 (Expr.constsResolve_mono hres) h4 (fun _ _ _ heq => nomatch heq)

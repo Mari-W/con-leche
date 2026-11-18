@@ -246,7 +246,7 @@ theorem whnf_sort (env : Env) (F d : Nat) (u : Level) :
   -- budget is `irreducible`, so peel it with its positivity witness)
   obtain ⟨k, hk⟩ := whnfLoopFuel_succ
   rw [whnf_succ]
-  show whnfLoop (pureFns mode eager env (F + 1)) env d whnfLoopFuel _ = _
+  show whnfLoop (pureFns mode eager env (F + 1)) env d whnfLoopFuel ruleFireBudget _ = _
   rw [hk]
   rfl
 

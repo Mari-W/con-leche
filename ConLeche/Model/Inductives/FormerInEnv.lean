@@ -60,7 +60,7 @@ theorem FormerDeclared.refl {env : Env} {m : EnvModel V env} {cv : ConstantVal} 
 /-- A declared former's facts across a cons of a fresh constant. -/
 theorem FormerDeclared.cross {env : Env} {m : EnvModel V env} {cvS cvTa : ConstantVal}
     (h : FormerDeclared m cvS cvTa) {c₀ : ConstantInfo}
-    (hfresh : env.find? c₀.name = none) (m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables⟩)
+    (hfresh : env.find? c₀.name = none) (m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables, env.rules⟩)
     {A : (Name → Nat) → Term} (hac : m₂.acval = acvalWith m.acval c₀.name A) :
     FormerDeclared m₂ cvS cvTa := by
   refine ⟨h.name, h.lps, h.fvar, h.defined, h.bounded, Expr.constsResolve_mono h.resolve, h.shape,
@@ -74,10 +74,10 @@ theorem FormerDeclared.cross {env : Env} {m : EnvModel V env} {cvS cvTa : Consta
 /-- A declared former's facts across a pushed table. -/
 theorem FormerDeclared.pushTable {env : Env} {m : EnvModel V env} {cvS cvTa : ConstantVal}
     (h : FormerDeclared m cvS cvTa) {t : ConLeche.ProjTable}
-    (hT : env.findTable? t.structName = none) (m₂ : EnvModel V ⟨env.consts, t :: env.tables⟩)
+    (hT : env.findTable? t.structName = none) (m₂ : EnvModel V ⟨env.consts, t :: env.tables, env.rules⟩)
     (hac : m₂.acval = m.acval) : FormerDeclared m₂ cvS cvTa := by
   have hres : ∀ {e : Expr}, e.constsResolve env = true →
-      e.constsResolve ⟨env.consts, t :: env.tables⟩ = true :=
+      e.constsResolve ⟨env.consts, t :: env.tables, env.rules⟩ = true :=
     Expr.constsResolve_of_find fun n hn => by rw [Env.find?_pushTable]; exact hn
   refine ⟨h.name, h.lps, h.fvar, h.defined, h.bounded, hres h.resolve, h.shape, fun ψ => ?_, h.readFvar,
     h.readDefined, h.readBounded, hres h.readResolve, h.shows⟩
@@ -94,7 +94,7 @@ def FormerInEnv {env : Env} (m : EnvModel V env) (cvTa : ConstantVal) (caps : In
 /-- A stored former across a cons of a fresh constant. -/
 theorem FormerInEnv.cross {env : Env} {m : EnvModel V env} {cvTa : ConstantVal} {caps : IndCaps}
     (h : FormerInEnv m cvTa caps) {c₀ : ConstantInfo}
-    (hfresh : env.find? c₀.name = none) (m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables⟩)
+    (hfresh : env.find? c₀.name = none) (m₂ : EnvModel V ⟨c₀ :: env.consts, env.tables, env.rules⟩)
     {A : (Name → Nat) → Term} (hac : m₂.acval = acvalWith m.acval c₀.name A) :
     FormerInEnv m₂ cvTa caps := by
   obtain ⟨cvS, hf, hD⟩ := h

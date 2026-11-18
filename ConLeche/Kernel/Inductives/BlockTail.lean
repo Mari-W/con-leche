@@ -87,7 +87,7 @@ def consBlockRecsT
     consBlockRecsT p (m + 1) rest
       ⟨.recInfo cv (p.majorIdxAt m) (p.rulePrefixAt m)
         (recKExpected p M) (generatedRules (p.rulePrefixAt m) M rhss)
-        :: env.consts, env.tables⟩
+        :: env.consts, env.tables, env.rules⟩
 
 /-- **The checks of the block's projection tables** (`blockTables`), at the environment holding
 the formers and the constructors. -/

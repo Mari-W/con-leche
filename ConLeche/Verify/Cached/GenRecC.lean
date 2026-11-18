@@ -1432,7 +1432,20 @@ theorem checkBlockTailS_run
       = (mkFEnv (consBlockRecsT p 0 out
           (consBlockCtors p.nP p.ctorGroups env₁))).env := by
     rw [env_overlay_pushAll _ hovl, pushAll_blockRecInfosTF_mkFEnv]
-  rw [sharedOpsC_congr hf htb,
+  have hfb : ∀ n, FEnv.BelowReads (((mkFEnv (consBlockCtors p.nP p.ctorGroups env₁)).overlay
+      (blockRecInfosTF p 0 out).reverse).famBelow n)
+      ((mkFEnv (consBlockRecsT p 0 out (consBlockCtors p.nP p.ctorGroups env₁))).famBelow n) := by
+    intro n
+    rw [famBelow_overlay_pushAll hovl, pushAll_blockRecInfosTF_mkFEnv]
+    exact FEnv.BelowReads.refl _
+  have hru : ((mkFEnv (consBlockCtors p.nP p.ctorGroups env₁)).overlay
+      (blockRecInfosTF p 0 out).reverse).rulesFor
+      = (mkFEnv (consBlockRecsT p 0 out (consBlockCtors p.nP p.ctorGroups env₁))).rulesFor := by
+    funext c
+    unfold FEnv.rulesFor
+    rw [hf, ← pushAll_blockRecInfosTF_mkFEnv, FEnv.base_pushAll]
+    rfl
+  rw [sharedOpsC_congr hf hru htb hfb,
     streamRecsCheck_congr hf he] at h
   obtain ⟨uK, sK, hKrun, hK⟩ := bindC_ok h
   obtain ⟨hsK, hKp⟩ := streamKCheck_run hKrun

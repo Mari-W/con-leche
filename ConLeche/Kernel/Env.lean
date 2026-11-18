@@ -226,6 +226,12 @@ structure IndCaps where
   check (`blockCapsAt`).  `false` claims nothing.  The ι step's case split
   reads it in place of the walk to the family's sort. -/
   neverZero : Bool := false
+  /-- **How many of its block's constants are installed before this former**
+  (its index among the block's formers, which come first, `blockConstants`):
+  with the former's own entry it locates the environment its block was checked
+  at, where its telescope is read (`Env.famBelow`).  A function of the
+  declaration alone. -/
+  blockPos : Nat := 0
   deriving DecidableEq, Repr, Inhabited
 
 /-- **One structure's projection table** (task #175 S1, 2026-09-06):
@@ -455,16 +461,22 @@ only for its own, fresh, structure-like members).
 
 The tables are not constants (task #362): no `.const` names one, they
 are read by `.proj` nodes alone, keyed on the structure's name
-(`findTable?`). -/
+(`findTable?`).
+
+The rewrite rules are the theorems registered to rewrite terms headed by a
+constant, each entry `(head, theorem)`, newest first (`rulesFor`).  Only a
+stored theorem fires (`Red.rewrite` accepts any stored theorem); no
+declaration registers one yet. -/
 structure Env where
   consts : List ConstantInfo
   tables : List ProjTable
+  rules : List (Name × Name)
   deriving Repr, Inhabited
 
 namespace Env
 
 /-- The empty environment; the starting point of every checker run. -/
-def empty : Env := ⟨[], []⟩
+def empty : Env := ⟨[], [], []⟩
 
 def find? (env : Env) (n : Name) : Option ConstantInfo :=
   env.consts.find? (·.name == n)
@@ -483,6 +495,11 @@ def findProj? (env : Env) (T : Name) (i : Nat) : Option ProjEntry :=
   match env.findTable? T with
   | some tbl => if i < tbl.numFields then some (tbl.entry i) else none
   | none => none
+
+/-- **The rules registered for the head constant `c`**, newest first: the
+theorems named by the rule table under `c` that the environment stores. -/
+def rulesFor (env : Env) (c : Name) : List Name :=
+  env.rules.filterMap fun r => if r.1 == c && (env.find? r.2).isSome then some r.2 else none
 
 end Env
 

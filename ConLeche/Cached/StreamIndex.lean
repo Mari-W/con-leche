@@ -83,7 +83,7 @@ def StreamIndex.freeze (I : StreamIndex) : FrozenIndex :=
 record's first counter and its position. -/
 def FrozenIndex.view (F : FrozenIndex) (k : Nat) : FEnv :=
   let c := F.I.firsts.getD k F.I.next
-  ⟨⟨[], []⟩, ∅, { F.I.base with below := c, belowRec := k }, [], ∅,
+  ⟨⟨[], [], []⟩, ∅, { F.I.base with below := c, belowRec := k }, [], ∅,
     fromLe F.natFrom c, fromLe F.strFrom c,
     by
       rw [F.natFrom_eq, findIn_empty, natLitStoredBy_all]

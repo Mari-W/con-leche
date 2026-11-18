@@ -1,7 +1,6 @@
 module
 
 public import ConLeche.Kernel.Inductives.RecCheck
-public import ConLeche.Kernel.DeclCheck
 
 @[expose] public section
 

@@ -38,6 +38,12 @@ structure FBase where
   tbls : Std.HashMap Name (Nat × ProjTable) := {}
   below : Nat := 0
   belowRec : Nat := 0
+  /-- A view below a block (`FEnv.below`): a table is answered only where
+  its bodies resolve in the view (`FEnv.findTable?`, `Env.liveTables`). -/
+  chk : Bool := false
+  /-- The rewrite rules by head constant (`Env.rules`), newest first; a rule
+  fires only where its theorem is stored (`FEnv.rulesFor`). -/
+  rls : Std.HashMap Name (List Name) := {}
 
 /-- The base layer's lookup: a visible entry's constant. -/
 def FBase.find? (b : @& FBase) (n : Name) : Option ConstantInfo :=
@@ -248,9 +254,15 @@ def mkTblsGo : List ProjTable → Std.HashMap Name ProjTable
   | [] => ∅
   | t :: ts => (mkTblsGo ts).insert t.structName t
 
+/-- The rule map's build, from the back: each head's theorems newest first, as `Env.rulesFor`
+reads them. -/
+def mkRlsGo : List (Name × Name) → Std.HashMap Name (List Name)
+  | [] => ∅
+  | (c, t) :: rs => (mkRlsGo rs).insert c (t :: (mkRlsGo rs).getD c [])
+
 /-- Build the index of `env`. -/
 def mkFEnv (env : Env) : FEnv :=
-  FEnv.ofParts env (mkIdxGo env.consts) {} [] (mkTblsGo env.tables)
+  FEnv.ofParts env (mkIdxGo env.consts) { rls := mkRlsGo env.rules } [] (mkTblsGo env.tables)
 
 namespace FEnv
 
@@ -350,13 +362,13 @@ theorem push_flags (fe : FEnv) (ci : ConstantInfo) (h : (!fe.strLit && litName c
   · exact hs ▸ push_flags_of_strLit fe ci hs
 
 /-- The index of the cons-extended environment (`push_mkFEnv`:
-`FEnv.push (mkFEnv env) ci = mkFEnv ⟨ci :: env.consts, env.tables⟩`).
+`FEnv.push (mkFEnv env) ci = mkFEnv ⟨ci :: env.consts, env.tables, env.rules⟩`).
 The literal flags are recomputed only at one of their ten names (`litName`) and only while string
 literals are not yet expandable: every other push leaves them as they are (`push_flags`), so once
 the string-support constants are in, a push tests one `Bool`. -/
 def push (fe : FEnv) (ci : ConstantInfo) : FEnv :=
   let idx := fe.idx.insert ci.name ci
-  ⟨⟨ci :: fe.env.consts, fe.env.tables⟩, idx, fe.base, fe.ovl, fe.tbls,
+  ⟨⟨ci :: fe.env.consts, fe.env.tables, fe.env.rules⟩, idx, fe.base, fe.ovl, fe.tbls,
     if !fe.strLit && litName ci.name then natLitStoredBy (findIn idx fe.base fe.ovl) else fe.natLit,
     if !fe.strLit && litName ci.name then strLitStoredBy (findIn idx fe.base fe.ovl) else fe.strLit,
     by
@@ -372,10 +384,10 @@ def push (fe : FEnv) (ci : ConstantInfo) : FEnv :=
 
 /-- **Push a projection table** (task #362): the table component
 extended, the constant index untouched (`pushTable_mkFEnv`:
-`FEnv.pushTable (mkFEnv env) t = mkFEnv ⟨env.consts, t :: env.tables⟩`,
+`FEnv.pushTable (mkFEnv env) t = mkFEnv ⟨env.consts, t :: env.tables, env.rules⟩`,
 definitionally). -/
 def pushTable (fe : FEnv) (t : ProjTable) : FEnv :=
-  ⟨⟨fe.env.consts, t :: fe.env.tables⟩, fe.idx, fe.base, fe.ovl, fe.tbls.insert t.structName t,
+  ⟨⟨fe.env.consts, t :: fe.env.tables, fe.env.rules⟩, fe.idx, fe.base, fe.ovl, fe.tbls.insert t.structName t,
     fe.natLit, fe.strLit, fe.natLit_eq, fe.strLit_eq⟩
 
 /-- Install a list of tables, head first (as `FEnv.pushAll` pushes
@@ -401,7 +413,7 @@ def pushDelta (L : List ConstantInfo) (Q : List ProjTable) (fe : FEnv) : FEnv :=
 (`find?_overlay`, for an `fe` without an overlay), with the index SHARED, not mutated -- two live
 environments, one bucket array.  Read-only: nothing pushes onto it. -/
 def overlay (fe : FEnv) (new : List ConstantInfo) : FEnv :=
-  ofParts ⟨new ++ fe.env.consts, fe.env.tables⟩ fe.idx fe.base (new ++ fe.ovl) fe.tbls
+  ofParts ⟨new ++ fe.env.consts, fe.env.tables, fe.env.rules⟩ fe.idx fe.base (new ++ fe.ovl) fe.tbls
 
 /-- The table map's lookup, ungated: a miss in the map falls through to
 the base layer (empty but in a view of a stream's index). -/
@@ -410,11 +422,81 @@ def rawTable? (fe : FEnv) (T : Name) : Option ProjTable :=
   | some t => some t
   | none => fe.base.findTable? T
 
+end FEnv
+
+/-- Indexed `Expr.constsResolve` (same clauses, lookups through the
+index). -/
+def Expr.constsResolveF (fe : FEnv) : Expr → Bool
+  | .bvar _ | .sort _ => true
+  | .lit (.natVal _) =>
+    (fe.find? natName).isSome && (fe.find? natZeroName).isSome &&
+      (fe.find? natSuccName).isSome
+  | .lit (.strVal _) =>
+    (fe.find? natName).isSome && (fe.find? natZeroName).isSome &&
+      (fe.find? natSuccName).isSome && (fe.find? stringName).isSome &&
+      (fe.find? stringOfListName).isSome && (fe.find? listName).isSome &&
+      (fe.find? listNilName).isSome && (fe.find? listConsName).isSome &&
+      (fe.find? charName).isSome && (fe.find? charOfNatName).isSome
+  | .const n _ => (fe.find? n).isSome
+  | .fvar _ ty => ty.constsResolveF fe
+  | .app f a => f.constsResolveF fe && a.constsResolveF fe
+  | .lam ty body | .forallE ty body =>
+    ty.constsResolveF fe && body.constsResolveF fe
+  | .letE ty val body =>
+    ty.constsResolveF fe && val.constsResolveF fe &&
+      body.constsResolveF fe
+  | .proj s _ e => (fe.find? s).isSome && e.constsResolveF fe
+
+namespace FEnv
+
 /-- **The table lookup** (task #362): `T`'s table, visible exactly
 where the constant `T` is (`= Env.findTable?` for `mkFEnv`,
-`mkFEnv_findTable?`). -/
+`mkFEnv_findTable?`).  A view below a block (`FBase.chk`) answers a table
+only where its bodies resolve there (`Env.liveTables`). -/
 def findTable? (fe : FEnv) (T : Name) : Option ProjTable :=
-  if (fe.find? T).isSome then fe.rawTable? T else none
+  if (fe.find? T).isSome then
+    if fe.base.chk then (fe.rawTable? T).filter (fun t => t.bodies.all (·.constsResolveF fe))
+    else fe.rawTable? T
+  else none
+
+/-- Off a view below a block, the table lookup is gated by the constant alone. -/
+theorem findTable?_of_chk {fe : FEnv} (h : fe.base.chk = false) (T : Name) :
+    fe.findTable? T = if (fe.find? T).isSome then fe.rawTable? T else none := by
+  simp only [findTable?, h, Bool.false_eq_true, ↓reduceIte]
+
+/-- **The view under the `k` newest constants pushed onto this index** (`env`; all of them for
+`mkFEnv`), continuing into the frozen layer by its counter: the tables as they are, each answered
+only where it is live there (`FBase.chk`). -/
+def dropTop (fe : FEnv) (k : Nat) : FEnv :=
+  if k ≤ fe.env.consts.length then
+    let cs := fe.env.consts.drop k
+    ofParts ⟨cs, fe.env.tables, fe.env.rules⟩ (mkIdxGo cs) { fe.base with chk := true } [] fe.tbls
+  else
+    ofParts ⟨[], fe.env.tables, fe.env.rules⟩ ∅
+      { fe.base with below := fe.base.below - (k - fe.env.consts.length), chk := true } [] fe.tbls
+
+/-- **The view below the first entry named `n`, less `k` more constants** (`Env.suffixAfter`,
+`Env.cutAt`).  The entry is among the constants pushed onto this index, or in the frozen layer,
+whose counter then bounds the view.  Where `n` has no entry the view holds no constant. -/
+def below (fe : FEnv) (n : Name) (k : Nat) : FEnv :=
+  match fe.env.consts.findIdx? (·.name == n) with
+  | some j => fe.dropTop (j + 1 + k)
+  | none =>
+    let c := match fe.base.idx[n]? with
+      | some (c, _) => if c < fe.base.below then c - k else 0
+      | none => 0
+    ofParts ⟨[], fe.env.tables, fe.env.rules⟩ ∅ { fe.base with below := c, chk := true } [] fe.tbls
+
+/-- **The rules registered for the head constant `c`** (`Env.rulesFor` through the index):
+newest first, each theorem stored here. -/
+def rulesFor (fe : FEnv) (c : Name) : List Name :=
+  (fe.base.rls.getD c []).filter fun t => (fe.find? t).isSome
+
+/-- **Where the family named `n` has its telescope read** (`Env.famBelow` through the index). -/
+def famBelow (fe : FEnv) (n : Name) : Option FEnv :=
+  match fe.find? n with
+  | some (.indInfo _ caps) => some (fe.below n caps.blockPos)
+  | _ => none
 
 /-- Indexed projection-table lookup (`= Env.findProj?` for `mkFEnv`). -/
 def findProj? (fe : FEnv) (T : Name) (i : Nat) : Option ProjEntry :=

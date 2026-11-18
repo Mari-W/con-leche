@@ -49,19 +49,35 @@ variable {mode : CheckMode}
 
 /-! ## Stage 1: the k formers consed at once -/
 
+/-- A block's capability record counts the formers installed before this one. -/
+theorem blockCapsAt_blockPos (p : BlockShape) (i : Nat) (isRec : Bool) :
+    (blockCapsAt p i isRec).blockPos = i := by
+  unfold blockCapsAt
+  split <;> rfl
+
+/-- The cut below the newest family's block is reached. -/
+theorem Env.Reach.push_head {c : ConstantInfo} {L : List ConstantInfo} {cv : ConstantVal}
+    {caps : IndCaps} (hc : c = .indInfo cv caps) : Env.Reach (c :: L) (L.drop caps.blockPos) := by
+  subst hc
+  have h := Env.Reach.step (L := ConstantInfo.indInfo cv caps :: L)
+    (n := (ConstantInfo.indInfo cv caps).name) (cv := cv) (caps := caps) .top (by simp)
+  rwa [Env.suffixAfter_cons, ite_eq_left rfl] at h
+
 /-- **One former's cons keeps well-formedness**: the stored former is a
-checked constant. -/
+checked constant, and its block's environment, the `i` formers below it off, is a reached cut. -/
 theorem envWF_cons_blockInd {p₁ : BlockShape} {isRec : Bool} {i : Nat} {env : Env}
     {cvTa : ConstantVal} (henv : EnvWF env)
     (h1 : cvTa.type.hasFvar = false)
     (h2 : cvTa.type.allLevelParamsDefined cvTa.levelParams = true)
     (h3 : cvTa.type.constsResolve env = true)
     (h4 : cvTa.type.looseBVarsBounded 0 = true) (hs : LitShapeAt cvTa)
-    (hz : (blockCapsAt p₁ i isRec).neverZero = true → (formerZ cvTa).isNever = true) :
-    EnvWF ⟨.indInfo cvTa (blockCapsAt p₁ i isRec) :: env.consts, env.tables⟩ :=
+    (hz : (blockCapsAt p₁ i isRec).neverZero = true → (formerZ cvTa).isNever = true)
+    (hh : Env.Reach env.consts (env.consts.drop i)) :
+    EnvWF ⟨.indInfo cvTa (blockCapsAt p₁ i isRec) :: env.consts, env.tables, env.rules⟩ :=
   EnvWF.cons (hs _ rfl) henv (structConstWF h1 h2 (Expr.constsResolve_mono h3) h4
     (fun _ _ _ heq => nomatch heq) (fun _ _ _ _ _ heq => nomatch heq))
     (fun cv caps heq => by cases heq; exact hz)
+    (hb := fun cv caps heq => by cases heq; rw [blockCapsAt_blockPos]; exact hh)
 
 /-- What a block's capability record says of the family's sort. -/
 theorem blockCapsAt_neverZero (p : BlockShape) (i : Nat) (isRec : Bool) :
@@ -79,19 +95,24 @@ theorem envWF_consBlockInds {p₁ : BlockShape} {isRec : Bool} :
         cvTa.type.looseBVarsBounded 0 = true ∧ LitShapeAt cvTa) →
       (∀ j cvTa, formers[j]? = some cvTa →
         (blockCapsAt p₁ (i + j) isRec).neverZero = true → (formerZ cvTa).isNever = true) →
+      Env.Reach env.consts (env.consts.drop i) →
       EnvWF (consBlockInds p₁ isRec formers i env)
-  | [], _, _, henv, _, _ => henv
-  | cvTa :: rest, i, env, henv, hall, hz => by
+  | [], _, _, henv, _, _, _ => henv
+  | cvTa :: rest, i, env, henv, hall, hz, hh => by
     simp only [consBlockInds]
-    refine envWF_consBlockInds ?_ ?_ ?_
+    refine envWF_consBlockInds ?_ ?_ ?_ ?_
     · obtain ⟨h1, h2, h3, h4, h5⟩ := hall cvTa List.mem_cons_self
-      exact envWF_cons_blockInd henv h1 h2 h3 h4 h5 (hz 0 cvTa rfl)
+      exact envWF_cons_blockInd henv h1 h2 h3 h4 h5 (hz 0 cvTa rfl) hh
     · intro cvTa' hc'
       obtain ⟨h1, h2, h3, h4, h5⟩ := hall cvTa' (List.mem_cons_of_mem _ hc')
       exact ⟨h1, h2, Expr.constsResolve_mono h3, h4, h5⟩
     · intro j cv hj
       rw [show i + 1 + j = i + (j + 1) by omega]
       exact hz (j + 1) cv hj
+    · have h := Env.Reach.push_head (L := env.consts) (rfl :
+        ConstantInfo.indInfo cvTa (blockCapsAt p₁ i isRec) = _)
+      rw [blockCapsAt_blockPos] at h
+      simpa [List.drop_succ_cons] using h
 
 /-- A member's declared former is the one its check reads, or checked apart. -/
 @[expose] def MemberDeclaredWF (env : Env) (ms : MemberShape) : Prop :=
@@ -186,11 +207,12 @@ theorem checkBlockInds_cons_envWF {env envI : Env}
     (hdecl : ∀ ms ∈ p.members, MemberDeclaredWF env ms)
     (h : checkBlockInds (fueledOps mode F) env p isRec = .ok (envI, p₁))
     {j : Nat} {cvS : ConstantVal} (hj : (p.members.map (·.declared))[j]? = some cvS)
-    {env' : Env} (henv : EnvWF env') (hres : cvS.type.constsResolve env' = true) :
-    EnvWF ⟨.indInfo cvS (blockCapsAt p₁ j isRec) :: env'.consts, env'.tables⟩ := by
+    {env' : Env} (henv : EnvWF env') (hres : cvS.type.constsResolve env' = true)
+    (hh : Env.Reach env'.consts (env'.consts.drop j)) :
+    EnvWF ⟨.indInfo cvS (blockCapsAt p₁ j isRec) :: env'.consts, env'.tables, env'.rules⟩ := by
   obtain ⟨h1, h2, -, h4, h5⟩ :=
     (checkBlockInds_declaredFacts hdecl h).1 cvS (List.mem_of_getElem? hj)
-  exact envWF_cons_blockInd henv h1 h2 hres h4 h5 (blockInds_neverZero h hj)
+  exact envWF_cons_blockInd henv h1 h2 hres h4 h5 (blockInds_neverZero h hj) hh
 
 /-- **Stage 1 at the run level**: the environment holding the k formers
 is well-formed, and every checked former's type is closed. -/
@@ -202,8 +224,8 @@ theorem direct_block_inds_wf {env envI : Env} (henv : EnvWF env)
   obtain ⟨hfacts, hclosed⟩ := checkBlockInds_declaredFacts hdecl h
   obtain ⟨-, -, -, -, -, -, -, hcons, -, -, -⟩ := checkBlockInds_shape h
   rw [hcons]
-  exact ⟨envWF_consBlockInds henv hfacts fun j cv hj => by
-    rw [Nat.zero_add]; exact blockInds_neverZero h hj, hclosed⟩
+  exact ⟨envWF_consBlockInds henv hfacts (fun j cv hj => by
+    rw [Nat.zero_add]; exact blockInds_neverZero h hj) (by simpa using Env.Reach.top), hclosed⟩
 
 /-! ## Stage 1b: the constructors consed, member by member -/
 
@@ -320,8 +342,8 @@ theorem TableWF.mono {envA envB : Env}
 /-- Conses of the SAME name over dominating environments dominate. -/
 theorem find?_cons_mono {c c' : ConstantInfo} {envA envB : Env} (hn : c.name = c'.name)
     (hf : ∀ n, (envA.find? n).isSome = true → (envB.find? n).isSome = true) :
-    ∀ n, (Env.find? ⟨c :: envA.consts, envA.tables⟩ n).isSome = true →
-      (Env.find? ⟨c' :: envB.consts, envB.tables⟩ n).isSome = true := by
+    ∀ n, (Env.find? ⟨c :: envA.consts, envA.tables, envA.rules⟩ n).isSome = true →
+      (Env.find? ⟨c' :: envB.consts, envB.tables, envB.rules⟩ n).isSome = true := by
   intro n h
   rw [Env.find?_cons] at h
   rw [Env.find?_cons, ← hn]
@@ -349,7 +371,7 @@ premises, discharged per instance. -/
   | _, [], env => env
   | m, r :: rest, env =>
     consBlockRecsR R q (m + 1) rest
-      ⟨.recInfo r.1 (q.majorIdxAt m) (q.rulePrefixAt m) (R (m) r).1 (R (m) r).2 :: env.consts, env.tables⟩
+      ⟨.recInfo r.1 (q.majorIdxAt m) (q.rulePrefixAt m) (R (m) r).1 (R (m) r).2 :: env.consts, env.tables, env.rules⟩
 
 /-- The recursors' conses leave the tables alone. -/
 theorem consBlockRecsR_tables
@@ -432,8 +454,26 @@ theorem find?_consBlockRecsR_of_bare
     simp only [List.map_cons, consBlockRecsBare] at h
     simp only [consBlockRecsR]
     refine find?_consBlockRecsR_of_bare
-      (envA := ⟨.recInfo r0.1 (q.majorIdxAt m) (q.rulePrefixAt m) false [] :: envA.consts, envA.tables⟩) ?_ n h
+      (envA := ⟨.recInfo r0.1 (q.majorIdxAt m) (q.rulePrefixAt m) false [] :: envA.consts, envA.tables, envA.rules⟩) ?_ n h
     exact find?_cons_mono rfl hf
+
+/-- The recursors consed on top of the constants, none of them a family. -/
+theorem consBlockRecsR_split
+    {R : Nat → ConstantVal × List Expr × Nat × List (ConstantVal × Nat) → Bool × List RecRule}
+    {q : BlockShape} :
+    ∀ (m : Nat) (rs : List (ConstantVal × List Expr × Nat × List (ConstantVal × Nat))) (env : Env),
+      ∃ new, (consBlockRecsR R q m rs env).consts = new ++ env.consts ∧
+        ∀ c ∈ new, ∀ cv caps, c ≠ .indInfo cv caps
+  | _, [], _ => ⟨[], rfl, fun _ h => nomatch h⟩
+  | m, r :: rest, env => by
+    obtain ⟨new, h, hn⟩ := consBlockRecsR_split (R := R) (q := q) (m + 1) rest
+      ⟨.recInfo r.1 (q.majorIdxAt m) (q.rulePrefixAt m) (R m r).1 (R m r).2 :: env.consts,
+        env.tables, env.rules⟩
+    refine ⟨new ++ [.recInfo r.1 (q.majorIdxAt m) (q.rulePrefixAt m) (R m r).1 (R m r).2],
+      by simp only [consBlockRecsR]; rw [h]; simp, fun c hc cv caps => ?_⟩
+    rcases List.mem_append.mp hc with hc | hc
+    · exact hn c hc cv caps
+    · rw [List.mem_singleton.mp hc]; exact fun h => ConstantInfo.noConfusion h
 
 /-- **What the recursors' cons holds**: the `k` recursor records, each
 with its rules at its absolute position, and what was stored below
@@ -503,9 +543,11 @@ theorem envWF_consBlockRecsR
       ((consBlockRecsBare q 0 (rs.map fun r => (r.1, r.2.2.1)) env).find? n).isSome = true →
       ((consBlockRecsR R q 0 rs env).find? n).isSome = true :=
     find?_consBlockRecsR_of_bare (fun _ hn => hn)
-  refine ⟨fun c hc => ?_, fun c hc => ?_, fun t ht => TableWF.mono hdomEnv
-    (henv.tables t (by rw [consBlockRecsR_tables] at ht; exact ht)), fun c hc => ?_,
-    fun c hc => ?_, fun c hc => ?_⟩
+  obtain ⟨new, hsplit, hnew⟩ := consBlockRecsR_split (R := R) (q := q) 0 rs env
+  refine EnvWF.of_append henv hsplit hnew (fun c hc => ?_) (fun c hc => ?_)
+    (fun t ht => TableWF.mono hdomEnv
+    (henv.tables t (by rw [consBlockRecsR_tables] at ht; exact ht))) (fun c hc => ?_)
+    (fun c hc => ?_) (fun c hc => ?_)
   rotate_left
   · rcases mem_consBlockRecsR hc with hc' | ⟨j, r, hr, rfl⟩
     · exact henv.shapes c hc'
