@@ -115664,3 +115664,84 @@ README anchors, `ConLeche/Cached/ParsedC.lean#L320-L321` (now L325-L326) and
 `ConLeche/Model/StreamConsts.lean#L220-L225` (now L224-L229), left for the maintainer. Arena
 tutorial 90/92, e2e 619/619 with the nine new fixtures, olean gate 122/122, self-check 55 841
 declarations, axioms pinned, trusted and `--jobs` sweeps without divergence.
+
+## User rewrite rules in `whnfCore` (2026-11-18, rewrite-rules, item 1 of the parity pass)
+
+The rules fire in `whnfCoreBody` now, where the C++ kernel's hook sits. At a stuck application
+the body tries ι and then the rules (`iotaThenRule`, official `reduce_recursor`, ι and then
+`reduce_rewrite`), and a bare constant tries the rules whose left side is that constant (official
+`whnf_core`'s `Const` case). `whnfStep` and `whnfLoop` are back to their shape before the rules.
+So a rule fires before `reduceNat` and before δ, and inside `isDefEq` it fires in the cheap
+`whnfCore` before lazy δ unfolds a definition head. The fixture `rewrite_rule_conv`
+(`rr_use : (n : Nat) → rrT n → rrFn := fun n g => g` under `rrT_eq`) accepts, and
+`rewrite_rule_conv_omitted` (no rule in force) rejects. Before, a rule on a definition never
+fired in a conversion check.
+
+**The order is per prefix.** The specification's application clause is chained, one argument at a
+time, so at `f a b` it tries `f a` before `f a b`. A rule of arity 1 fires on the prefix and the
+reduct is applied to `b`. The official kernel matches each rule against a prefix of the whole
+spine, in priority order. The two orders differ only for a head with rules of different arities
+that both match, where con-leche fires the shorter one first. Both are sound, and a confluent rule
+set gives the same normal form. Before this change a rule fired only at its exact arity, so
+`rrT_eq` never fired on `rrT n x`.
+
+**The budget is the cached loop's.** `whnfCoreLoopI` carries a firing counter, `ruleFireBudget =
+2^16` per loop, so per `whnfCore` call, and throws `ruleBudgetError` past it. A firing step
+returns the new `WhnfStep.fire t e` (the theorem and the reduct) so the loop can count it. The
+specification's mirrors return it too and continue it like `.cont` (`WhnfStep.run`,
+`whnfCore_of_stepW_fire`). The specification has no budget. Its knot fuel bounds it, and the
+cached triple constrains no exception. The official kernel counts per outermost `whnf_core`/`whnf`
+call, nested calls included. con-leche's nested `whnfCore` calls (a spine head, a projection's
+scrutinee, a major) count on their own loop. So con-leche can accept a term whose nested calls
+fire more than `2^16` rules together, which the official kernel rejects. Every firing is a proved
+equation, so this is no soundness question. A rule cycle that passes through a nested call is not
+caught by any one counter and runs into the external timeout. The pure checker in the tests runs
+no looping case (`RewriteTests.lean`).
+
+**Cached.** A spine head or a bare constant with rules (`noRulesC`) is no easy case, no stuck
+head and no cheap-safe step. The constant arm of `whnfCoreStepI` fires through `rewriteStepI`. The
+argument loop `whnfAppI` tries the head constant's rules after a failed ι at every prefix
+(`whnfAppRuleI`, mutual with it, as the pure mirror `whnfAppRuleW` is with `whnfAppW`). The
+stuck-spine shortcut (`whnfAppW_stuck`, `Runs.whnfCore_stuckHead`) and the cheap-mode memo
+(`whnfCore_cheapHead`, `whnfCoreStepW_cheap`) take `noRulesC (mkFEnv env) h` as a hypothesis,
+which `rewriteStep_noRules` turns into a `none` rule step. The memo policy is unchanged otherwise.
+A firing step's term is a key exactly where its `.cont` would be. `KnotCongr` gained the rule map
+for the `whnfCore` family. `whnfLoopI` is back to its shape before the rules.
+
+**Proofs.** Every consumer of `whnfCoreBody` has the two arms through `whnfCore_const_inv` and
+`iotaThenRule_inv` (scope, leaves, bound variables, member freedom, shift, the extension
+relation, the `Red` bridge, `atF`, the pair projections). The rule lemmas that the `whnfStep`
+consumers had (`rewriteStep_WScoped`, `rewriteStep_shift`, `rewriteStep_rel`, …) moved to them.
+`model_exists`, `no_False_declaration` and `main_oleans_no_False` keep their axioms.
+
+**Cost.** `perf stat -e instructions:u` against the build before the change gives +0.4% to +0.5% on
+`nat_divmod_ok`, `stored_rec_outparam` and `natop_perturbed_used_later` (0.38 to 0.51 G), -0.1%
+on `wide_ok`, +0.1% to +0.35% on the rule fixtures, and -11.5% on `rewrite_rule_priority`. The
+cost without rules is the rule-map lookup at every constant the `whnfCore` loop meets
+(`noRulesC`). On the self-check export (598 G instructions, `--jobs=1`) the change costs +0.19%.
+Results in `_tmp/r4/perf-*.txt`.
+
+`Model/RuleStep.lean` no longer imports `Model/Cover` (the shake gate found it unused once the
+rule lemmas moved).
+
+In the playground check (`just e2e`) `E2E.LeftZero` and `E2E.Global` now accept (pinned 1, target
+0), `E2E.Plain` accepts, `E2E.Literal` still rejects (item 2).
+
+Gates (item 1). `lake build` and `lake test` warning-free, `tests/shake.sh` passes (667/667
+allowlisted, none demotable), `tests/arena.sh` exits 0 (log `_tmp/r4/i1c-arena.log`, e2e 621/621
+with the two new fixtures, self-check 55 902 declarations, axioms pinned, olean gate 122/122,
+tutorial 90/92 as before, trusted and `--jobs` sweeps without divergence). The anchors that moved
+in `OVERVIEW.md` and the whitepaper were repointed and their expectations regenerated.
+
+**Matching up to whnf (item 2) is open.** The official matcher retries a failed constant pattern
+once on the argument's `whnf`, a literal turned into `Nat.zero`/`Nat.succ`. The firing then
+rewrites the redex `e` by a rule instance `l` whose arguments are reducts of `e`'s. The model has
+no argument congruence for `Red`. `RedSem a a'` equates the readings only where `a` is not the
+point, and a term reading as the point can reduce to one that is not (a β-redex out of its
+domain). So `⟦e⟧ = ⟦l⟧` needs, at each retried position, the position's domain type `T` with
+`⟦a⟧ ∈ T` (the head's graph at a non-point application, as `arg_mem_of_head` does for
+`Nat.succ`) and `⟦a'⟧ ∈ T` (from a typing of `l`, today the full-grade `Infer l A`, after the
+install-time law a law about `l`'s subterms), and then `IsTy.eq_of_ne_pt`. That is a new
+`Red.rewrite` premise relating `e` to `l` position by position, its soundness lemma, a monadic
+matcher (`whnf` inside) with its cached twin and every consumer lemma (shift, scope, leaves,
+member freedom, extension, `atF`, pair projections, bridge, cached simulation). Not started.

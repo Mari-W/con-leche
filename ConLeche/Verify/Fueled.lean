@@ -683,6 +683,22 @@ theorem rewriteStep_atF (d : Nat) (e : Expr) (F : Nat) :
   · exact rewriteRules_atF d e F _
   · rfl
 
+theorem iotaThenRule_atF (d : Nat) (e : Expr) (F : Nat) :
+    (iotaThenRule mode (fueledFns mode eager env) env d e).val F =
+      iotaThenRule mode (pureFns mode eager env F) env d e := by
+  unfold iotaThenRule
+  rw [FueledM.atF_bind, iotaRec_atF]
+  congr 1
+  funext o
+  cases o with
+  | some e'' => rfl
+  | none =>
+    dsimp only
+    rw [FueledM.atF_bind, rewriteStep_atF]
+    congr 1
+    funext o'
+    cases o' <;> rfl
+
 /-- The level-4 cascade, parameterized over one extra alternative so
 that the loop-body lemmas can feed in their continuation hypothesis
 (`atF_step4k`) without duplicating the rewrite list. -/
@@ -711,6 +727,7 @@ macro "atF_core4" x:tactic : tactic =>
     | (rw [majorToCtor_atF])
     | (rw [stuckIrrel_atF])
     | (rw [iotaRec_atF])
+    | (rw [iotaThenRule_atF])
     | (rw [projLitToCtor_atF])
     | (rw [defeqSpine_atF])
     | (rw [defeqArg_atF])
@@ -751,29 +768,23 @@ theorem whnfCoreBody_atF (c : Bool) (d : Nat) (e : Expr) (F : Nat) :
   atF_tac4
 
 theorem whnfStep_atF (d : Nat) (k : Expr → FueledM Expr)
-    (kF : Expr → CheckM Expr) (hk : ∀ e, (k e).val F = kF e)
-    (kr : Name → Expr → FueledM Expr) (krF : Name → Expr → CheckM Expr)
-    (hkr : ∀ t e, (kr t e).val F = krF t e) (e : Expr) :
-    (whnfStep (fueledFns mode eager env) env d k kr e).val F =
-      whnfStep (pureFns mode eager env F) env d kF krF e := by
+    (kF : Expr → CheckM Expr) (hk : ∀ e, (k e).val F = kF e) (e : Expr) :
+    (whnfStep (fueledFns mode eager env) env d k e).val F =
+      whnfStep (pureFns mode eager env F) env d kF e := by
   unfold whnfStep
-  atF_core4 (first | rw [hk] | rw [hkr])
+  atF_tac4k hk
 
 theorem whnfLoop_atF (d : Nat) (F : Nat) :
-    ∀ (n fires : Nat) (e : Expr),
-      (whnfLoop (fueledFns mode eager env) env d n fires e).val F =
-        whnfLoop (pureFns mode eager env F) env d n fires e
-  | 0, _, _ => rfl
-  | n + 1, fires, e => whnfStep_atF d _ _ (fun e' => whnfLoop_atF d F n fires e') _ _
-      (fun t e' => by
-        cases fires with
-        | zero => rfl
-        | succ f => exact whnfLoop_atF d F n f e') e
+    ∀ (n : Nat) (e : Expr),
+      (whnfLoop (fueledFns mode eager env) env d n e).val F =
+        whnfLoop (pureFns mode eager env F) env d n e
+  | 0, _ => rfl
+  | n + 1, e => whnfStep_atF d _ _ (fun e' => whnfLoop_atF d F n e') e
 
 theorem whnfBody_atF (d : Nat) (e : Expr) (F : Nat) :
     (whnfBody (fueledFns mode eager env) env d e).val F =
       whnfBody (pureFns mode eager env F) env d e :=
-  whnfLoop_atF d F whnfLoopFuel ruleFireBudget e
+  whnfLoop_atF d F whnfLoopFuel e
 
 theorem inferBody_atF (d : Nat) (e : Expr) (F : Nat) :
     (inferBody (fueledFns mode eager env) env d e).val F =

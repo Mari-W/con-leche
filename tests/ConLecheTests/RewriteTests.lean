@@ -18,7 +18,7 @@ check one declaration against it with both checkers, the pure one (`checkDecl` a
 the cached one (`declStep` at the environment's index). The rule `code = Fn` with
 `Fn := T → T` makes `code` a function type for `whnf`, so `g a` with `g : code` types. An
 argument of the wrong type stays rejected, a rule whose sides have different types never fires,
-and a rule that rewrites a term to itself exhausts the firing budget.
+and a rule that rewrites a term to itself exhausts the cached loop's firing budget.
 -/
 
 namespace ConLecheTests.Rewrite
@@ -93,9 +93,8 @@ binder the left side does not bind). -/
 -- a rule whose right side has another type fails its typing check and never fires
 #guard pureV [(nm "code", nm "code_bad")] declY == "function expected"
 #guard cachedV [(nm "code", nm "code_bad")] declY == "function expected"
--- a looping rule set is rejected by the firing budget, naming the rule
-#guard pureV [(nm "code", nm "code_refl")] declY ==
-  "rewrite rule budget exhausted: code_refl would fire past 65536 firings"
+-- a looping rule set is rejected by the cached loop's firing budget, naming the rule (the
+-- specification has no budget: its knot fuel, `2^62` levels, bounds it, so it is not run here)
 #guard cachedV [(nm "code", nm "code_refl")] declY ==
   "rewrite rule budget exhausted: code_refl would fire past 65536 firings"
 
@@ -127,10 +126,9 @@ The same declarations as records: a rule is registered (`rewriteDecl`) and fires
 -- priority: the higher rule is tried first
 #guard seqV [reg "code_eq" 2000, reg "code_refl" 1000,
     .useRules [nm "code_eq", nm "code_refl"], declY] == ("ok", "ok")
-#guard seqV [reg "code_eq" 1000, reg "code_refl" 2000,
-    .useRules [nm "code_eq", nm "code_refl"], declY] ==
-  ("rewrite rule budget exhausted: code_refl would fire past 65536 firings",
-   "rewrite rule budget exhausted: code_refl would fire past 65536 firings")
+#guard verdict (·.1) (cachedSeq [reg "code_eq" 1000, reg "code_refl" 2000,
+    .useRules [nm "code_eq", nm "code_refl"], declY]) ==
+  "rewrite rule budget exhausted: code_refl would fire past 65536 firings"
 -- equal priorities: `Name.cmp` (`code_eq` before `code_refl`)
 #guard seqV [reg "code_refl", reg "code_eq", .useRules [nm "code_refl", nm "code_eq"], declY] ==
   ("ok", "ok")

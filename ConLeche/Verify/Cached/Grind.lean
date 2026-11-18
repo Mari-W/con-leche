@@ -279,12 +279,16 @@ theorem AllWS.mono {d d' : Nat} {xs : List Expr} (hle : d ≤ d') (h : AllWS d x
 @[expose] def StepWS (d : Nat) : WhnfStep → Prop
   | .done e => Expr.WScoped d e
   | .cont e => Expr.WScoped d e
+  | .fire _ e => Expr.WScoped d e
 
 @[conleche_grind =] theorem StepWS.done_eq (d : Nat) (e : Expr) :
     StepWS d (.done e) = Expr.WScoped d e := rfl
 
 @[conleche_grind =] theorem StepWS.cont_eq (d : Nat) (e : Expr) :
     StepWS d (.cont e) = Expr.WScoped d e := rfl
+
+@[conleche_grind =] theorem StepWS.fire_eq (d : Nat) (t : Name) (e : Expr) :
+    StepWS d (.fire t e) = Expr.WScoped d e := rfl
 
 /-- Every element of the list satisfies `P` (a named predicate, so that
 no `∀` reaches `grind`; `P` is itself a named predicate, never a

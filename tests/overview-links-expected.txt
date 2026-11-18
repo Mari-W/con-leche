@@ -283,12 +283,12 @@
    363  theorem checkDecls_envWF {maxNatSize : Nat} {ds : Array Declaration} {env' : Env}
    364      (h : checkDecls .verified pins maxNatSize ds = .ok env') : EnvWF env' := by
 
-== ConLeche/Verify/Cached/KnotCongr.lean#L738-L742
-   738  theorem knotI_congr (hfe : fe₁.find? = fe₂.find?) (htb : fe₁.findTable? = fe₂.findTable?)
-   739      (hru : fe₁.rulesFor = fe₂.rulesFor) :
-   740      whnfCoreI mode fe₁ = whnfCoreI mode fe₂ ∧ whnfI mode fe₁ = whnfI mode fe₂ ∧
-   741        inferI mode fe₁ = inferI mode fe₂ ∧ defeqI mode fe₁ = defeqI mode fe₂ ∧
-   742        defeqEI mode fe₁ = defeqEI mode fe₂ ∧ ensureSortI mode fe₁ = ensureSortI mode fe₂ := by
+== ConLeche/Verify/Cached/KnotCongr.lean#L749-L753
+   749  theorem knotI_congr (hfe : fe₁.find? = fe₂.find?) (htb : fe₁.findTable? = fe₂.findTable?)
+   750      (hru : fe₁.rulesFor = fe₂.rulesFor) :
+   751      whnfCoreI mode fe₁ = whnfCoreI mode fe₂ ∧ whnfI mode fe₁ = whnfI mode fe₂ ∧
+   752        inferI mode fe₁ = inferI mode fe₂ ∧ defeqI mode fe₁ = defeqI mode fe₂ ∧
+   753        defeqEI mode fe₁ = defeqEI mode fe₂ ∧ ensureSortI mode fe₁ = ensureSortI mode fe₂ := by
 
 == ConLeche/Kernel/TypeChecker.lean#L29-L54
     29  def whnfCore (env : Env) (fuel depth : Nat) (e : Expr) (cheap : Bool := false) :
@@ -318,13 +318,13 @@
     53  def ensureSortCore (env : Env) (fuel depth : Nat) (e : Expr) : CheckM Level :=
     54    ensureSort (pureFns mode eager env fuel) env depth e
 
-== ConLeche/Kernel/Core.lean#L1961-L1966
-  1961        whnf := fun _ _ => throw (.internal "fuel exhausted: whnf")
-  1962        infer := fun _ _ => throw (.internal "fuel exhausted: infer")
-  1963        defeq := fun _ _ _ => throw (.internal "fuel exhausted: defeq")
-  1964        defeqE := fun _ _ _ => throw (.internal "fuel exhausted: defeq")
-  1965        inferIO := fun _ _ => throw (.internal "fuel exhausted: infer") }
-  1966    | fuel + 1 =>
+== ConLeche/Kernel/Core.lean#L1973-L1978
+  1973        whnf := fun _ _ => throw (.internal "fuel exhausted: whnf")
+  1974        infer := fun _ _ => throw (.internal "fuel exhausted: infer")
+  1975        defeq := fun _ _ _ => throw (.internal "fuel exhausted: defeq")
+  1976        defeqE := fun _ _ _ => throw (.internal "fuel exhausted: defeq")
+  1977        inferIO := fun _ _ => throw (.internal "fuel exhausted: infer") }
+  1978    | fuel + 1 =>
 
 == ConLeche/Model/Fold.lean#L452-L459
    452  theorem no_proof_of_False_pure (V : Type w) [SetTheory V]
@@ -367,44 +367,44 @@
 == ConLeche/Kernel/Env.lean#L55
     55  inductive CheckMode where
 
-== ConLeche/Kernel/Core.lean#L1219
-  1219  def whnfBody (r : CoreFns m) (env : Env) : Nat → Expr → m Expr :=
+== ConLeche/Kernel/Core.lean#L1231
+  1231  def whnfBody (r : CoreFns m) (env : Env) : Nat → Expr → m Expr :=
 
-== ConLeche/Kernel/Core.lean#L1493
-  1493  def defeqSpine (r : CoreFns m) (env : Env) (depth : Nat) (a b : Expr) :
+== ConLeche/Kernel/Core.lean#L1505
+  1505  def defeqSpine (r : CoreFns m) (env : Env) (depth : Nat) (a b : Expr) :
 
-== ConLeche/Kernel/Core.lean#L1928-L1946
-  1928  def defeqBody (eager : Bool) (r : CoreFns m) (env : Env) : Nat → Expr → Expr → m Bool :=
-  1929    fun depth a b => do
-  1930      if a == b then pure true else
-  1931      match ctorTargetFor env eager a b with
-  1932      | some c =>
-  1933        let w ← r.whnf depth a
-  1934        match ctorHeadAgainst env c w with
-  1935        | some true => defeqLazy mode eager r env depth w b
-  1936        | some false => pure false
-  1937        | none => defeqLazy mode eager r env depth a b
-  1938      | none =>
-  1939      match ctorTargetFor env eager b a with
-  1940      | some c =>
-  1941        let w ← r.whnf depth b
-  1942        match ctorHeadAgainst env c w with
-  1943        | some true => defeqLazy mode eager r env depth a w
-  1944        | some false => pure false
-  1945        | none => defeqLazy mode eager r env depth a b
-  1946      | none => defeqLazy mode eager r env depth a b
+== ConLeche/Kernel/Core.lean#L1940-L1958
+  1940  def defeqBody (eager : Bool) (r : CoreFns m) (env : Env) : Nat → Expr → Expr → m Bool :=
+  1941    fun depth a b => do
+  1942      if a == b then pure true else
+  1943      match ctorTargetFor env eager a b with
+  1944      | some c =>
+  1945        let w ← r.whnf depth a
+  1946        match ctorHeadAgainst env c w with
+  1947        | some true => defeqLazy mode eager r env depth w b
+  1948        | some false => pure false
+  1949        | none => defeqLazy mode eager r env depth a b
+  1950      | none =>
+  1951      match ctorTargetFor env eager b a with
+  1952      | some c =>
+  1953        let w ← r.whnf depth b
+  1954        match ctorHeadAgainst env c w with
+  1955        | some true => defeqLazy mode eager r env depth a w
+  1956        | some false => pure false
+  1957        | none => defeqLazy mode eager r env depth a b
+  1958      | none => defeqLazy mode eager r env depth a b
 
-== ConLeche/Kernel/Core.lean#L1403
-  1403  def inferBodyIO (r : CoreFns m) (env : Env) : Nat → Expr → m Expr :=
+== ConLeche/Kernel/Core.lean#L1415
+  1415  def inferBodyIO (r : CoreFns m) (env : Env) : Nat → Expr → m Expr :=
 
-== ConLeche/Kernel/Core.lean#L1515
-  1515  def defeqBindersInner (r : CoreFns m) (lam : Bool) (depth : Nat) (b₁ b₂ : Expr) : m Bool := do
+== ConLeche/Kernel/Core.lean#L1527
+  1527  def defeqBindersInner (r : CoreFns m) (lam : Bool) (depth : Nat) (b₁ b₂ : Expr) : m Bool := do
 
 == ConLeche/Verify/Cached/BridgeC.lean#L290
    290  theorem checkDeclStepC_run {env : Env} (henv : EnvWF env) {pd : Declaration}
 
-== ConLeche/Kernel/Core.lean#L2006
-  2006  @[irreducible, noinline] def checkFuel : Nat := 4611686018427387904  -- 2^62
+== ConLeche/Kernel/Core.lean#L2018
+  2018  @[irreducible, noinline] def checkFuel : Nat := 4611686018427387904  -- 2^62
 
 == ConLeche/Kernel/Exclusive.lean#L6-L42
      6  # `withExclusive`: the reference-count read behind the walk memo
@@ -1314,9 +1314,9 @@
     37  record installs nothing and any use of it declines
     38  (`sorryAxName`, `ConLeche/Kernel/Basis/Names.lean`).
 
-== ConLeche/Kernel/Core.lean#L1269-L1270
-  1269    match env.find? entry.structName with
-  1270    | some (.indInfo cvT caps) => do
+== ConLeche/Kernel/Core.lean#L1281-L1282
+  1281    match env.find? entry.structName with
+  1282    | some (.indInfo cvT caps) => do
 
 >>> README.md
 

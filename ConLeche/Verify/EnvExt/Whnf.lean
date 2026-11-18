@@ -541,50 +541,6 @@ theorem reduceProjCore_rel (mode : CheckMode) {sn : Name} (i : Nat) {c : Expr}
         (Option.some.inj h) ▸ res_getD (res_getAppArgs hc') res_bvar) fun _ => Rel.ok resO_none
     | _ => exact Rel.ok resO_none
 
-theorem whnfCoreBody_rel (mode : CheckMode) (c : Bool) {e : Expr} (he : Res env₁ e) :
-    Rel (Res env₁) (whnfCoreBody mode r₂ env₂ c d e) (whnfCoreBody mode r₁ env₁ c d e) := by
-  match e, he with
-  | .sort _, he | .fvar _ _, he | .forallE _ _, he | .lam _ _, he | .const _ _, he
-  | .lit _, he => exact Rel.ok he
-  | .bvar _, _ => exact Rel.err _
-  | .letE _ v b, he =>
-    obtain ⟨-, hv, hb⟩ := res_let.mp he
-    exact K.whnfCore c d (res_instantiate1 hv b 0 hb)
-  | .app f a, he =>
-    obtain ⟨hf, ha⟩ := res_app.mp he
-    refine Rel.bind (K.whnfCore c d hf) fun f' hf' => ?_
-    have hrest : Rel (Res env₁)
-        (do match ← iotaRec mode r₂ env₂ d (.app f' a) with
-          | some e'' => r₂.whnfCore c d e''
-          | none => pure (.app f' a))
-        (do match ← iotaRec mode r₁ env₁ d (.app f' a) with
-          | some e'' => r₁.whnfCore c d e''
-          | none => pure (.app f' a)) := by
-      refine Rel.bind (iotaRec_rel K d hx mode (res_app.mpr ⟨hf', ha⟩)) fun o ho => ?_
-      cases o with
-      | none => exact Rel.ok (res_app.mpr ⟨hf', ha⟩)
-      | some e'' => exact K.whnfCore c d (ho _ rfl)
-    cases f' with
-    | lam t body => exact K.whnfCore c d (res_instantiate1 ha body 0 (res_lam.mp hf').2)
-    | _ => exact hrest
-  | .proj sn i pe, he =>
-    obtain ⟨hsn, hpe⟩ := res_proj.mp he
-    have hrest : ∀ c', Res env₁ c' → Rel (Res env₁)
-        (do match ← reduceProjCore mode r₂ env₂ d sn i c' with
-          | some m' => r₂.whnfCore c d m'
-          | none => pure (.proj sn i pe))
-        (do match ← reduceProjCore mode r₁ env₁ d sn i c' with
-          | some m' => r₁.whnfCore c d m'
-          | none => pure (.proj sn i pe)) := by
-      intro c' hc'
-      refine Rel.bind (reduceProjCore_rel K d hx mode i hsn hc') fun o ho => ?_
-      cases o with
-      | none => exact Rel.ok he
-      | some m' => exact K.whnfCore c d (ho _ rfl)
-    cases c with
-    | true => exact Rel.bind (K.whnfCore true d hpe) hrest
-    | false => exact Rel.bind (K.whnf d hpe) hrest
-
 /-- **A rule's firing at an extension is its firing at the prefix**: the theorem is the
 prefix's, every run of the firing is on resolved terms, and the right side resolves. -/
 theorem rewriteAttempt_rel {e : Expr} (he : Res env₁ e) {t : Name}
@@ -654,10 +610,71 @@ theorem rewriteStep_rel {e : Expr} (he : Res env₁ e) :
     exact rewriteRules_rel K d hx he _ fun t ht => find_of_mem_rulesFor ht
   · exact Rel.ok fun _ _ h => nomatch h
 
-theorem whnfLoop_rel : ∀ (n fires : Nat) {e : Expr}, Res env₁ e →
-    Rel (Res env₁) (whnfLoop r₂ env₂ d n fires e) (whnfLoop r₁ env₁ d n fires e)
-  | 0, _, _, _ => Rel.err _
-  | n + 1, fires, e, he => by
+theorem iotaThenRule_rel (mode : CheckMode) {e : Expr} (he : Res env₁ e) :
+    Rel (ResO env₁) (iotaThenRule mode r₂ env₂ d e) (iotaThenRule mode r₁ env₁ d e) := by
+  unfold iotaThenRule
+  refine Rel.bind (iotaRec_rel K d hx mode he) fun o ho => ?_
+  cases o with
+  | some e'' => exact Rel.ok ho
+  | none =>
+    refine Rel.bind (rewriteStep_rel K d hx he) fun ro hro => ?_
+    cases ro with
+    | some te => exact Rel.ok fun x h => (Option.some.inj h) ▸ hro te.1 te.2 rfl
+    | none => exact Rel.ok resO_none
+
+theorem whnfCoreBody_rel (mode : CheckMode) (c : Bool) {e : Expr} (he : Res env₁ e) :
+    Rel (Res env₁) (whnfCoreBody mode r₂ env₂ c d e) (whnfCoreBody mode r₁ env₁ c d e) := by
+  match e, he with
+  | .sort _, he | .fvar _ _, he | .forallE _ _, he | .lam _ _, he
+  | .lit _, he => exact Rel.ok he
+  | .const n us, he =>
+    refine Rel.bind (rewriteStep_rel K d hx he) fun ro hro => ?_
+    cases ro with
+    | some te => exact K.whnfCore c d (hro te.1 te.2 rfl)
+    | none => exact Rel.ok he
+  | .bvar _, _ => exact Rel.err _
+  | .letE _ v b, he =>
+    obtain ⟨-, hv, hb⟩ := res_let.mp he
+    exact K.whnfCore c d (res_instantiate1 hv b 0 hb)
+  | .app f a, he =>
+    obtain ⟨hf, ha⟩ := res_app.mp he
+    refine Rel.bind (K.whnfCore c d hf) fun f' hf' => ?_
+    have hrest : Rel (Res env₁)
+        (do match ← iotaThenRule mode r₂ env₂ d (.app f' a) with
+          | some e'' => r₂.whnfCore c d e''
+          | none => pure (.app f' a))
+        (do match ← iotaThenRule mode r₁ env₁ d (.app f' a) with
+          | some e'' => r₁.whnfCore c d e''
+          | none => pure (.app f' a)) := by
+      refine Rel.bind (iotaThenRule_rel K d hx mode (res_app.mpr ⟨hf', ha⟩)) fun o ho => ?_
+      cases o with
+      | none => exact Rel.ok (res_app.mpr ⟨hf', ha⟩)
+      | some e'' => exact K.whnfCore c d (ho _ rfl)
+    cases f' with
+    | lam t body => exact K.whnfCore c d (res_instantiate1 ha body 0 (res_lam.mp hf').2)
+    | _ => exact hrest
+  | .proj sn i pe, he =>
+    obtain ⟨hsn, hpe⟩ := res_proj.mp he
+    have hrest : ∀ c', Res env₁ c' → Rel (Res env₁)
+        (do match ← reduceProjCore mode r₂ env₂ d sn i c' with
+          | some m' => r₂.whnfCore c d m'
+          | none => pure (.proj sn i pe))
+        (do match ← reduceProjCore mode r₁ env₁ d sn i c' with
+          | some m' => r₁.whnfCore c d m'
+          | none => pure (.proj sn i pe)) := by
+      intro c' hc'
+      refine Rel.bind (reduceProjCore_rel K d hx mode i hsn hc') fun o ho => ?_
+      cases o with
+      | none => exact Rel.ok he
+      | some m' => exact K.whnfCore c d (ho _ rfl)
+    cases c with
+    | true => exact Rel.bind (K.whnfCore true d hpe) hrest
+    | false => exact Rel.bind (K.whnf d hpe) hrest
+
+theorem whnfLoop_rel : ∀ (n : Nat) {e : Expr}, Res env₁ e →
+    Rel (Res env₁) (whnfLoop r₂ env₂ d n e) (whnfLoop r₁ env₁ d n e)
+  | 0, _, _ => Rel.err _
+  | n + 1, e, he => by
     simp only [whnfLoop, whnfStep]
     refine Rel.bind (K.whnfCore false d he) fun e₁ he₁ => ?_
     refine Rel.bind (reduceNat_rel K d hx he₁) fun o ho => ?_
@@ -666,23 +683,13 @@ theorem whnfLoop_rel : ∀ (n fires : Nat) {e : Expr}, Res env₁ e →
       dsimp only
       split
       · exact Rel.ok (ho _ rfl)
-      · exact whnfLoop_rel n fires (ho _ rfl)
+      · exact whnfLoop_rel n (ho _ rfl)
     | none =>
       dsimp only
-      refine Rel.bind (rewriteStep_rel K d hx he₁) fun ro hro => ?_
-      cases ro with
-      | some te =>
-        obtain ⟨t, e₂⟩ := te
-        dsimp only
-        cases fires with
-        | zero => exact Rel.err _
-        | succ f => exact whnfLoop_rel n f (hro t e₂ rfl)
-      | none =>
-        dsimp only
-        rw [unfoldDefinition_ext hx he₁]
-        cases hu : unfoldDefinition env₁ e₁ with
-        | none => exact Rel.ok he₁
-        | some e₂ => exact whnfLoop_rel n fires (res_unfoldDefinition hx he₁ hu)
+      rw [unfoldDefinition_ext hx he₁]
+      cases hu : unfoldDefinition env₁ e₁ with
+      | none => exact Rel.ok he₁
+      | some e₂ => exact whnfLoop_rel n (res_unfoldDefinition hx he₁ hu)
 
 omit hx in
 theorem ensureSort_rel {e : Expr} (he : Res env₁ e) :

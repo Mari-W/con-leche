@@ -1,6 +1,5 @@
 module
 
-public import ConLeche.Model.Cover
 public import ConLeche.Model.Install
 import ConLeche.Model.RecRulesCons
 public import ConLeche.Model.Inductives.FamilyRan

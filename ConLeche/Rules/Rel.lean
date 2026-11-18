@@ -171,8 +171,8 @@ inductive Red (env : Env) : Nat → Expr → Expr → Prop where
       Red env d b wb → rawNatLit? wb = some n₂ →
       natOpResult c n₁ n₂ = some r →
       Red env d (.app (.app (.const c []) a) b) r
-  /-- **A user rewrite rule** (planned site: `whnfStep`, next to
-  `reduceNat`): a stored theorem `h : ∀ xs, @Eq A l r` at levels `us`,
+  /-- **A user rewrite rule** (`whnfCoreBody`'s `.const` clause, and its
+  `.app` clause after ι, `iotaThenRule`): a stored theorem `h : ∀ xs, @Eq A l r` at levels `us`,
   its telescope applied to `args` under the full-grade certificate,
   rewrites the left side to the right side, both instantiated at `args`.
   The left side has a constant head, so a ∀ or a sort never rewrites

@@ -41,7 +41,7 @@ theorem bridgeAt (env : Env) :
     intro eager
     obtain ⟨hwc, hw, hd, hi, hio⟩ := ih eager
     have hdE : DefEqBridge .verified true env fuel := (ih true).2.2.1
-    exact ⟨whnfCore_bridge_succ hwc hw hd hi hio, whnf_bridge_succ hwc hw hd hi,
+    exact ⟨whnfCore_bridge_succ hwc hw hd hi hio, whnf_bridge_succ hwc hw,
       defeq_bridge_succ hwc hw hd hi hio, infer_bridge_succ hw hd hdE hi hio,
       inferIO_bridge_succ hw hio⟩
 

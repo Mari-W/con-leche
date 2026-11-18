@@ -70,6 +70,27 @@ private theorem ne_lam_of_getAppFn {v h : Expr} (hv : v.getAppFn = h)
   subst hv
   exact nomatch hh
 
+/-- At a spine whose head no rule rewrites (`noRulesC`) the rewrite step answers `none`. -/
+theorem rewriteStep_noRules {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
+    {r : CoreFns m} {d : Nat} {x h : Expr} (hx : x.getAppFn = h)
+    (hn : noRulesC (mkFEnv env) h = true) : rewriteStep r env d x = pure none := by
+  unfold rewriteStep
+  rw [hx]
+  cases h with
+  | const c us =>
+    simp only [noRulesC, mkFEnv_rulesFor, List.isEmpty_iff] at hn
+    show rewriteRules r env d x (env.rulesFor c) = _
+    rw [hn]
+    rfl
+  | _ => rfl
+
+/-- The rule arm of the spine loop at a head no rule rewrites is the loop itself. -/
+theorem whnfAppRuleW_noRules {d : Nat} {fa : Expr} {rest : List Expr}
+    (h : rewriteStep (fueledFns .verified eager env) env d fa = pure none) :
+    whnfAppRuleW .verified (fueledFns .verified eager env) env d fa rest =
+      whnfAppW .verified (fueledFns .verified eager env) env d fa rest := by
+  rw [whnfAppRuleW_eq, h, FueledM.pure_bind_eq]
+
 /-- The ι target of a spine head: the spine length `mI + 1` at which the ι step can
 fire, where the head is a stored recursor at its own number of levels. -/
 def iotaTarget (env : Env) (h : Expr) : Option Nat :=
@@ -160,7 +181,8 @@ private theorem iotaRec_none_of_target {d : Nat} {x h : Expr} (hx : x.getAppFn =
     whnfStuckTail h L k none = pure (.done (Expr.mkAppN h L)) := rfl
 
 /-- Away from the ι target the spine loop only rebuilds the spine. -/
-private theorem whnfAppW_noIota {d : Nat} {h : Expr} (hh : isStuckHeadC h = true) :
+private theorem whnfAppW_noIota {d : Nat} {h : Expr} (hh : isStuckHeadC h = true)
+    (hnr : noRulesC (mkFEnv env) h = true) :
     ∀ (args : List Expr) (v : Expr), v.getAppFn = h →
       (∀ k, iotaTarget env h = some k →
         k ≤ v.getAppArgs.length ∨ v.getAppArgs.length + args.length < k) →
@@ -173,7 +195,9 @@ private theorem whnfAppW_noIota {d : Nat} {h : Expr} (hh : isStuckHeadC h = true
       simp [Expr.getAppArgs]
     rw [iotaRec_none_of_target (show (Expr.app v a).getAppFn = h from hv) ?_,
       FueledM.pure_bind_eq]
-    · refine whnfAppW_noIota hh rest (.app v a) hv ?_
+    · rw [whnfAppRuleW_noRules
+        (rewriteStep_noRules (show (Expr.app v a).getAppFn = h from hv) hnr)]
+      refine whnfAppW_noIota hh hnr rest (.app v a) hv ?_
       intro k hk'
       rw [hlen]
       rcases hk k hk' with h₁ | h₁
@@ -184,7 +208,8 @@ private theorem whnfAppW_noIota {d : Nat} {h : Expr} (hh : isStuckHeadC h = true
       rcases hk _ heq with h₁ | h₁ <;> (try simp only [List.length_cons] at h₁) <;> omega
 
 /-- Up to the ι target the spine loop tries ι there once, and then only rebuilds. -/
-private theorem whnfAppW_iota {d : Nat} {h : Expr} (hh : isStuckHeadC h = true) {k : Nat}
+private theorem whnfAppW_iota {d : Nat} {h : Expr} (hh : isStuckHeadC h = true)
+    (hnr : noRulesC (mkFEnv env) h = true) {k : Nat}
     (htk : iotaTarget env h = some k) :
     ∀ (args : List Expr) (v : Expr), v.getAppFn = h →
       v.getAppArgs.length < k → k ≤ v.getAppArgs.length + args.length →
@@ -209,21 +234,27 @@ private theorem whnfAppW_iota {d : Nat} {h : Expr} (hh : isStuckHeadC h = true) 
       cases o with
       | some e'' => rfl
       | none =>
-        refine whnfAppW_noIota hh rest (.app v a) hv ?_
+        show whnfAppRuleW .verified (fueledFns .verified eager env) env d (.app v a) rest = _
+        rw [whnfAppRuleW_noRules
+          (rewriteStep_noRules (show (Expr.app v a).getAppFn = h from hv) hnr)]
+        refine whnfAppW_noIota hh hnr rest (.app v a) hv ?_
         intro k' hk'
         rw [htk] at hk'; cases hk'
         left; omega
     · rw [iotaRec_none_of_target (show (Expr.app v a).getAppFn = h from hv)
         (by rw [htk, hnum]; intro h'; cases h'; omega), FueledM.pure_bind_eq]
+      rw [whnfAppRuleW_noRules
+        (rewriteStep_noRules (show (Expr.app v a).getAppFn = h from hv) hnr)]
       have hkm : k - v.getAppArgs.length = (k - (Expr.app v a).getAppArgs.length) + 1 := by
         rw [hnum]; omega
-      rw [whnfAppW_iota hh htk rest (.app v a) hv (by omega)
+      rw [whnfAppW_iota hh hnr htk rest (.app v a) hv (by omega)
         (by simp only [List.length_cons] at h₂; omega), hkm]
       rfl
 
 /-- **The spine loop at a stuck head**, read the stuck arm's way: the ι step at its target
 prefix, and otherwise the spine itself. -/
-theorem whnfAppW_stuck {d : Nat} {h : Expr} (hh : isStuckHeadC h = true) (L : List Expr) :
+theorem whnfAppW_stuck {d : Nat} {h : Expr} (hh : isStuckHeadC h = true)
+    (hnr : noRulesC (mkFEnv env) h = true) (L : List Expr) :
     whnfAppW .verified (fueledFns .verified eager env) env d h L =
       match iotaTarget env h with
       | some k =>
@@ -236,17 +267,17 @@ theorem whnfAppW_stuck {d : Nat} {h : Expr} (hh : isStuckHeadC h = true) (L : Li
   have hfn := isStuckHeadC_getAppFn hh
   cases htk : iotaTarget env h with
   | none =>
-    refine whnfAppW_noIota hh L h hfn ?_
+    refine whnfAppW_noIota hh hnr L h hfn ?_
     intro k hk; rw [htk] at hk; cases hk
   | some k =>
     dsimp only
     by_cases hkn : k ≤ L.length
-    · rw [ite_eq_left hkn, whnfAppW_iota hh htk L h hfn (by rw [h0]; exact iotaTarget_pos htk)
+    · rw [ite_eq_left hkn, whnfAppW_iota hh hnr htk L h hfn (by rw [h0]; exact iotaTarget_pos htk)
         (by rw [h0]; simpa using hkn), h0]
       simp only [List.length_nil, Nat.sub_zero]
       congr 1
     · rw [ite_eq_right hkn]
-      refine whnfAppW_noIota hh L h hfn ?_
+      refine whnfAppW_noIota hh hnr L h hfn ?_
       intro k' hk'; rw [htk] at hk'; cases hk'
       right; rw [h0]; simp only [List.length_nil]; omega
 
@@ -306,414 +337,37 @@ theorem reduceProjCoreC_spec (ih : SSimC mode eager env f) {d : Nat} {sn : Name}
   sym only [conleche_grind, reduceProjCore, mkFEnv_findProj?, projCertAtF_mkFEnv] =>
     vcgen [reduceProjCoreI.eq_def, projLitToCtorC_spec ih] <;> finish
 
-/-! ### The argument loop, by `vcgen` and `grind`
+/-- The spine head is the constant `c`, at any levels. -/
+@[expose] def HeadIs (c : Name) : Expr → Prop
+  | .const c' _ => c' = c
+  | _ => False
 
-Each walk below is `sym only [conleche_grind, …] => vcgen […] <;> finish`
-(`ConLeche/Verify/Cached/Grind.lean`).  The cached loops match their
-head on `.lam`, and the equation compiler states their `a :: rest` step
-as one equation per arm, the fall-through one conditional, which `vcgen`
-skips; the unconditional `eq_def` unfolds them instead (`whnfAppI`'s by
-`rw` before `sym`).
-`vcgen` splits the `match`
-and hands each arm its fall-through hypothesis; the pure mirrors'
-own equation lemmas (`betaPeelW.eq_*`, `whnfAppW.eq_*`, the fall-through
-one included) go into the `sym` list, and `grind` discharges the
-fall-through premise from the arm's hypothesis. -/
+@[conleche_grind =] theorem HeadIs.const_eq (c c' : Name) (us : List Level) :
+    HeadIs c (.const c' us) = (c' = c) := rfl
 
-/-- The peel step's scope: a binder peeled off a well-scoped
-instantiated lambda, instantiated with one more well-scoped argument. -/
-theorem wscoped_peel {d : Nat} {ty body a : Expr} {acc : List Expr}
-    (hw : Expr.WScoped d ((Expr.lam ty body).instantiateList acc)) (ha : Expr.WScoped d a) :
-    Expr.WScoped d (body.instantiateList (a :: acc)) := by
-  rw [instList_lam, Expr.WScoped] at hw
-  rw [Expr.instantiateList_cons]
-  exact Expr.WScoped.instantiate1_gen ha 0 hw.2
-grind_pattern [conleche_grind] wscoped_peel =>
-  Expr.WScoped d ((Expr.lam ty body).instantiateList acc), body.instantiateList (a :: acc)
+/-- The rewrite step at a spine headed by the constant `c` reads `c`'s rules. -/
+theorem rewriteStep_head {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
+    {r : CoreFns m} {d : Nat} {e : Expr} {c : Name} {us : List Level}
+    (h : e.getAppFn = .const c us) : rewriteStep r env d e = rewriteRules r env d e (env.rulesFor c) := by
+  unfold rewriteStep; rw [h]
+grind_pattern [conleche_grind] rewriteStep_head => rewriteStep r env d e, Expr.const c us where
+  guard e.getAppFn = .const c us
 
-/-- The peel loop simulates its pure mirror: the peeled range
-`args[j:i]` is the mirror's accumulator, innermost first. -/
-theorem betaPeelC_spec (lv : Nat) {d : Nat} :
-    ∀ (n : Nat) {args : Array Expr} {j i : Nat} {t : Expr} {s₀ : CState},
-      args.size - i = n → j ≤ i → CSOK mode eager env s₀ →
-      Expr.WScoped d (t.instantiateList (args.extract j i).toList.reverse) →
-      AllWS d args.toList →
-      ⦃fun s => s = s₀⦄ betaPeelI mode (mkFEnv env) eager lv d t j args i
-      ⦃fun v s' => CSOK mode eager env s' ∧
-          Runs (betaPeelW mode (fueledFns mode eager env) env d t
-            (args.extract j i).toList.reverse (args.toList.drop i)) v ∧
-          StepWS d v; ⊤⦄ := by
-  intro n
-  induction n with
-  | zero =>
-    intro args j i t s₀ hn _ hs _ _
-    sym only [conleche_grind, betaPeelW.eq_1, Expr.instantiateRevRange_spec,
-        toList_drop_of_ge (A := args) (i := i) (by omega)] =>
-      vcgen [betaPeelI.eq_def] <;> finish
-  | succ n ihr =>
-    intro args j i t s₀ hn hj hs _ _
-    sym only [conleche_grind, betaPeelW.eq_2, betaPeelW.eq_3, Expr.instantiateRevRange_spec,
-        toList_drop_of_lt (A := args) (i := i) (by omega),
-        extract_rev_succ (A := args) (s := j) (i := i) hj (by omega)] =>
-      vcgen [betaPeelI.eq_def, ihr (args := args) (j := j) (i := i + 1) (by omega) (by omega)] <;>
-        finish
+theorem rewriteStep_headIs {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
+    {r : CoreFns m} {d : Nat} {e : Expr} {c : Name} (h : HeadIs c e.getAppFn) :
+    rewriteStep r env d e = rewriteRules r env d e (env.rulesFor c) := by
+  unfold rewriteStep
+  revert h
+  cases e.getAppFn with
+  | const c' us => rintro rfl; rfl
+  | _ => intro h; exact h.elim
 
-/-- The bulk-beta argument loop simulates its pure mirror. -/
-theorem whnfAppC_spec (ih : SSimC .verified eager env f)
-    (henv : EnvWF env) {d : Nat} :
-    ∀ (n : Nat) {args : Array Expr} {i : Nat} {v : Expr} {s₀ : CState},
-      args.size - i = n → CSOK .verified eager env s₀ →
-      Expr.WScoped d v → AllWS d args.toList →
-      ⦃fun s => s = s₀⦄ whnfAppI .verified (mkFEnv env) eager f d v args i
-      ⦃fun w s' => CSOK .verified eager env s' ∧
-          Runs (whnfAppW .verified (fueledFns .verified eager env) env d v (args.toList.drop i)) w ∧
-          StepWS d w; ⊤⦄ := by
-  intro n
-  induction n with
-  | zero =>
-    intro args i v s₀ hn _ _ _
-    sym only [conleche_grind, whnfAppW.eq_1, toList_drop_of_ge (A := args) (i := i) (by omega)] =>
-      vcgen [whnfAppI.eq_def] <;> finish
-  | succ n ihr =>
-    intro args i _ _ hn _ _ _
-    rw [whnfAppI.eq_def]
-    sym only [conleche_grind, whnfAppW.eq_2, whnfAppW.eq_3,
-        toList_drop_of_lt (A := args) (i := i) (by omega),
-        getAppFn_getAppFn', iotaNumArgs_eq_length, List.take_length, iotaRec_notconst,
-        Expr.mkAppN_getApp, extract_rev_single (A := args) (i := i) (by omega)] =>
-      vcgen [iotaRecC_spec ih henv,
-        betaPeelC_spec (mode := .verified) f n (args := args) (j := i) (i := i + 1) (by omega)
-          (by omega),
-        ihr (args := args) (i := i + 1) (by omega)] <;> finish
-
-/-- A stuck head is its own head normal form. -/
-theorem Runs.whnfCore_stuckHead {c : Bool} {d : Nat} {h : Expr} (hh : isStuckHeadC h = true) :
-    Runs ((fueledFns .verified eager env).whnfCore c d h) h :=
-  ⟨1, by cases h <;> first | rfl | exact nomatch hh⟩
-
-/-- The stuck arm simulates the mirror's application step: the head is its own head
-normal form, and the spine loop at it is the stuck arm's reading (`whnfAppW_stuck`). -/
-theorem whnfStuckC_spec (ih : SSimC .verified eager env f)
-    (henv : EnvWF env) {c : Bool} {d : Nat} {i : Expr} {s₀ : CState}
-    (hs : CSOK .verified eager env s₀) (hw : Expr.WScoped d i)
-    (hh : isStuckHeadC i.getAppFn = true) :
-    ⦃fun s => s = s₀⦄
-      whnfStuckI .verified (mkFEnv env) eager f d
-        i.getAppFn i
-    ⦃fun v s' => CSOK .verified eager env s' ∧
-      Runs ((fueledFns .verified eager env).whnfCore c d i.getAppFn >>= fun v =>
-        whnfAppW .verified (fueledFns .verified eager env) env d v i.getAppArgs) v ∧
-      StepWS d v; ⊤⦄ := by
-  have hfn := isStuckHeadC_getAppFn hh
-  have hwa : AllWS d i.getAppArgs := allWS_getAppArgs hw
-  sym only [conleche_grind, Runs.whnfCore_stuckHead (eager := eager) (env := env) (c := c)
-      (d := d) hh, whnfAppW_stuck (eager := eager) (env := env) (d := d) hh,
-      iotaNumArgs_eq_length, Expr.mkAppN_getApp, iotaTarget_notconst] =>
-    vcgen [whnfStuckI.eq_def, iotaRecC_spec ih henv] <;> finish
-
-/-- One head-normalization step simulates its pure mirror. -/
-theorem whnfCoreStepC_spec (ih : SSimC .verified eager env f)
-    (henv : EnvWF env) {c : Bool} {d : Nat} {i : Expr} {s₀ : CState} (hs : CSOK .verified eager env s₀)
-    (hw : Expr.WScoped d i) :
-    ⦃fun s => s = s₀⦄
-      whnfCoreStepI .verified (mkFEnv env) eager f c d i.getAppFn i
-    ⦃fun v s' => CSOK .verified eager env s' ∧
-      Runs (whnfCoreStepW .verified (fueledFns .verified eager env) env c d i) v ∧ StepWS d v; ⊤⦄ := by
-  sym only [conleche_grind, whnfCoreStepW, List.drop_zero] =>
-    vcgen [whnfCoreStepI.eq_def, inst1M_spec hs, ih.whnfCore_spec, ih.whnf_spec,
-      reduceProjCoreC_spec ih, whnfAppC_spec ih henv _ (Nat.sub_zero _),
-      whnfStuckC_spec (c := c) ih henv] <;> finish
-
-/-! ### The head-normalization loop and its memo policy
-
-The cached loop (`whnfCoreLoopI`) looks every key up and stores the
-keys of a chain at its end.  Its answer is stated against the chained
-`whnfCore` directly: a hit is the backed `CSOK` clause, an answering
-step is `whnfCore_of_stepW_done` and a continuing one
-`whnfCore_of_stepW_cont`.  The keys waiting for the answer satisfy
-`PendOK`: each answers what the current term answers. -/
-
-/-- An easy case is its own whnfCore answer (`whnfCoreBody`'s value arms). -/
-theorem Runs.whnfCore_easy {c : Bool} {d : Nat} {i : Expr} (h : whnfCoreEasy i = true) :
-    Runs ((fueledFns mode eager env).whnfCore c d i) i :=
-  ⟨1, by cases i <;> first | rfl | exact nomatch h⟩
-grind_pattern [conleche_grind] Runs.whnfCore_easy =>
-  Runs ((fueledFns mode eager env).whnfCore c d i) i
-
-/-- A full whnfCore memo hit answers the fueled whnfCore, well scoped. -/
-theorem CSOK.whnfCore_hit (henv : EnvWF env) {s : CState} {d : Nat} {i r : Expr}
-    (hs : CSOK mode eager env s) (hl : s.whnfCoreC[i]? = some r) (hw : Expr.WScoped d i) :
-    Runs ((fueledFns mode eager env).whnfCore false d i) r ∧ Expr.WScoped d r := by
-  obtain ⟨F, hall⟩ := hs.whnfCoreC i r hl
-  have hrun := hall d hw.to_wscopedB
-  exact ⟨⟨F, hrun⟩, whnfCore_WScoped henv F hrun hw⟩
-grind_pattern [conleche_grind] CSOK.whnfCore_hit =>
-  CSOK mode eager env s, s.whnfCoreC[i]?, Runs ((fueledFns mode eager env).whnfCore false d i) r
-
-/-- A cheap whnfCore memo hit answers the fueled cheap whnfCore. -/
-theorem CSOK.whnfCoreCheap_hit (henv : EnvWF env) {s : CState} {d : Nat} {i r : Expr}
-    (hs : CSOK mode eager env s) (hl : s.whnfCoreCheapC[i]? = some r) (hw : Expr.WScoped d i) :
-    Runs ((fueledFns mode eager env).whnfCore true d i) r ∧ Expr.WScoped d r := by
-  obtain ⟨F, hall⟩ := hs.whnfCoreCheapC i r hl
-  have hrun := hall d hw.to_wscopedB
-  exact ⟨⟨F, hrun⟩, whnfCore_WScoped henv F hrun hw⟩
-grind_pattern [conleche_grind] CSOK.whnfCoreCheap_hit =>
-  CSOK mode eager env s, s.whnfCoreCheapC[i]?, Runs ((fueledFns mode eager env).whnfCore true d i) r
-
-/-- A continuing step: the term answers what its continuation answers. -/
-theorem Runs.whnfCore_of_cont {c : Bool} {d : Nat} {e e' v : Expr}
-    (hs : Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.cont e'))
-    (hk : Runs ((fueledFns mode eager env).whnfCore c d e') v) :
-    Runs ((fueledFns mode eager env).whnfCore c d e) v := by
-  obtain ⟨F, hF⟩ := hs
-  obtain ⟨G, hG⟩ := hk
-  exact whnfCore_of_stepW_cont hF hG
-grind_pattern [conleche_grind] Runs.whnfCore_of_cont =>
-  Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.cont e'),
-  Runs ((fueledFns mode eager env).whnfCore c d e') v
-
-/-- An answering step: its answer is the term's. -/
-theorem Runs.whnfCore_of_done {c : Bool} {d : Nat} {e v : Expr}
-    (hs : Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.done v)) :
-    Runs ((fueledFns mode eager env).whnfCore c d e) v := by
-  obtain ⟨F, hF⟩ := hs
-  exact whnfCore_of_stepW_done hF
-grind_pattern [conleche_grind] Runs.whnfCore_of_done =>
-  Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.done v),
-  (fueledFns mode eager env).whnfCore c d e
-
-/-- A lambda or a stuck head is its own head normal form in both modes. -/
-private theorem whnfCore_cheapHead {c : Bool} {d : Nat} {h : Expr}
-    (hh : (match h with | .lam .. => true | h => isStuckHeadC h) = true) :
-    (fueledFns mode eager env).whnfCore true d h = (fueledFns mode eager env).whnfCore c d h := by
-  apply Subtype.ext; funext F
-  cases F with
-  | zero => rfl
-  | succ F => cases h <;> first | rfl | exact nomatch hh
-
-/-- A step the two modes take alike (`whnfCoreCheapSafeC`) is the same step
-in the cheap mode. -/
-theorem whnfCoreStepW_cheap {c : Bool} {d : Nat} {e : Expr}
-    (h : whnfCoreCheapSafeC e.getAppFn e = true) :
-    whnfCoreStepW mode (fueledFns mode eager env) env true d e
-      = whnfCoreStepW mode (fueledFns mode eager env) env c d e := by
-  cases e with
-  | app f a =>
-    simp only [whnfCoreStepW]
-    rw [whnfCore_cheapHead (c := c) h]
-  | letE _ _ _ => rfl
-  | _ => exact nomatch h
-
-/-- The keys pending in the loop: each, well scoped, answers what `e`
-answers (in the mode `c`). -/
-@[expose] def PendOK (mode : CheckMode) (eager : Bool) (env : Env) (c : Bool) (d : Nat)
-    (pend : List Expr) (e : Expr) : Prop :=
-  ∀ k ∈ pend, Expr.WScoped d k ∧ ∀ v, Runs ((fueledFns mode eager env).whnfCore c d e) v →
-    Runs ((fueledFns mode eager env).whnfCore c d k) v
-
-@[conleche_grind] theorem PendOK.nil {c : Bool} {d : Nat} {e : Expr} :
-    PendOK mode eager env c d [] e := by
-  intro k hk; exact nomatch hk
-
-/-- The term itself joins its pending keys. -/
-theorem PendOK.self {c : Bool} {d : Nat} {pend : List Expr} {e : Expr}
-    (hp : PendOK mode eager env c d pend e) (hw : Expr.WScoped d e) :
-    PendOK mode eager env c d (e :: pend) e := by
-  intro k hk
-  rcases List.mem_cons.mp hk with rfl | hk
-  · exact ⟨hw, fun _ h => h⟩
-  · exact hp k hk
-grind_pattern [conleche_grind] PendOK.self =>
-  PendOK mode eager env c d pend e, PendOK mode eager env c d (e :: pend) e
-
-/-- Past a continuing step, the pending keys answer what the
-continuation answers. -/
-theorem PendOK.cont {c : Bool} {d : Nat} {pend : List Expr} {e e' : Expr}
-    (hp : PendOK mode eager env c d pend e)
-    (hs : Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.cont e')) :
-    PendOK mode eager env c d pend e' :=
-  fun k hk => ⟨(hp k hk).1, fun _ h => (hp k hk).2 _ (Runs.whnfCore_of_cont hs h)⟩
-grind_pattern [conleche_grind] PendOK.cont =>
-  PendOK mode eager env c d pend e,
-  Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.cont e'),
-  PendOK mode eager env c d pend e'
-
-/-- The cheap-mode keys past a step the two modes take alike. -/
-theorem PendOK.contCheap {c : Bool} {d : Nat} {pend : List Expr} {e e' : Expr}
-    (hp : PendOK mode eager env true d pend e) (hsafe : whnfCoreCheapSafeC e.getAppFn e = true)
-    (hs : Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.cont e')) :
-    PendOK mode eager env true d pend e' := by
-  rw [← whnfCoreStepW_cheap hsafe] at hs
-  exact PendOK.cont hp hs
-grind_pattern [conleche_grind] PendOK.contCheap =>
-  PendOK mode eager env true d pend e,
-  Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.cont e'),
-  PendOK mode eager env true d pend e'
-
-/-- An answering step the two modes take alike answers the cheap mode too. -/
-theorem Runs.whnfCore_of_doneCheap {c : Bool} {d : Nat} {e v : Expr}
-    (hsafe : whnfCoreCheapSafeC e.getAppFn e = true)
-    (hs : Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.done v)) :
-    Runs ((fueledFns mode eager env).whnfCore true d e) v := by
-  rw [← whnfCoreStepW_cheap hsafe] at hs
-  exact Runs.whnfCore_of_done hs
-grind_pattern [conleche_grind] Runs.whnfCore_of_doneCheap =>
-  Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.done v),
-  (fueledFns mode eager env).whnfCore true d e
-
-/-- A memo whose entries are backed keeps them so under inserting
-backed keys, one answer for all. -/
-private theorem foldl_insert_backed {P : Expr → Expr → Prop} {v : Expr} :
-    ∀ {pend : List Expr} {m : Std.HashMap Expr Expr}, (∀ k w, m[k]? = some w → P k w) →
-      (∀ k ∈ pend, P k v) →
-      ∀ k w, (pend.foldl (fun m k => m.insert k v) m)[k]? = some w → P k w
-  | [], _, hm, _ => hm
-  | k :: rest, _, hm, hp =>
-    foldl_insert_backed (pend := rest) (HashMap.insert_backed hm (hp k (.head _)))
-      (fun k' hk' => hp k' (.tail _ hk'))
-
-/-- A pending key, answered by `v` at `e`, is a backed memo entry. -/
-private theorem PendOK.backed (henv : EnvWF env) {c : Bool} {d : Nat} {pend : List Expr}
-    {e v : Expr} (hp : PendOK mode eager env c d pend e)
-    (hv : Runs ((fueledFns mode eager env).whnfCore c d e) v) :
-    ∀ k ∈ pend, ∃ F, ∀ d', (Expr.wscopedB d' k) = true →
-      whnfCore mode eager env F d' k c = .ok v := by
-  intro k hk
-  obtain ⟨hw, hrun⟩ := hp k hk
-  obtain ⟨F, hF⟩ := hrun v hv
-  exact ⟨F, fun d' hd' => by rw [whnfCore_depth_inv henv F hd' hw.to_wscopedB]; exact hF⟩
-
-/-- A finished chain's store keeps the invariant: its full keys answer
-`v` in the full mode, its cheap keys in the cheap mode. -/
-theorem CSOK.chainStored (henv : EnvWF env) {s : CState} {d : Nat} {pend pendC : List Expr}
-    {e v : Expr} (hs : CSOK mode eager env s)
-    (hp : PendOK mode eager env false d pend e)
-    (hv : Runs ((fueledFns mode eager env).whnfCore false d e) v)
-    (hpc : PendOK mode eager env true d pendC e)
-    (hvc : Runs ((fueledFns mode eager env).whnfCore true d e) v) :
-    CSOK mode eager env (storeChain s pend pendC v) :=
-  { hs with
-    whnfCoreC := foldl_insert_backed hs.whnfCoreC (hp.backed henv hv)
-    whnfCoreCheapC := foldl_insert_backed hs.whnfCoreCheapC (hpc.backed henv hvc) }
-grind_pattern [conleche_grind] CSOK.chainStored =>
-  CSOK mode eager env s, PendOK mode eager env false d pend e,
-  PendOK mode eager env true d pendC e, storeChain s pend pendC v
-
-/-- A store with no cheap keys (the chain took a step the modes take
-differently, or ended at a hit). -/
-theorem CSOK.chainStored_nil (henv : EnvWF env) {s : CState} {d : Nat} {pend : List Expr}
-    {e v : Expr} (hs : CSOK mode eager env s)
-    (hp : PendOK mode eager env false d pend e)
-    (hv : Runs ((fueledFns mode eager env).whnfCore false d e) v) :
-    CSOK mode eager env (storeChain s pend [] v) :=
-  { hs with
-    whnfCoreC := foldl_insert_backed hs.whnfCoreC (hp.backed henv hv)
-    whnfCoreCheapC := hs.whnfCoreCheapC }
-grind_pattern [conleche_grind] CSOK.chainStored_nil =>
-  CSOK mode eager env s, PendOK mode eager env false d pend e, storeChain s pend [] v
-
-/-- The loop's continuing arm: the keys it passes on, the term joining
-them where it is stored, answer what the continuation answers. -/
-theorem PendOK.push {b : Bool} {c : Bool} {d : Nat} {pend : List Expr}
-    {e e' : Expr} (hp : PendOK mode eager env c d pend e) (hw : Expr.WScoped d e)
-    (hs : Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.cont e')) :
-    PendOK mode eager env c d (pushKey b e pend) e' := by
-  unfold pushKey
-  split
-  · exact PendOK.cont (hp.self hw) hs
-  · exact PendOK.cont hp hs
-grind_pattern [conleche_grind] PendOK.push =>
-  PendOK mode eager env c d (pushKey b e pend) e',
-  Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.cont e')
-
-/-- The loop's continuing arm, cheap keys: kept past a step the two
-modes take alike, dropped past any other. -/
-theorem PendOK.pushCheap {b : Bool} {c : Bool} {d : Nat} {pend : List Expr}
-    {e e' : Expr} (hp : PendOK mode eager env true d pend e) (hw : Expr.WScoped d e)
-    (hs : Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.cont e')) :
-    PendOK mode eager env true d (pushCheapKey (whnfCoreCheapSafeC e.getAppFn e) b e pend) e' := by
-  unfold pushCheapKey pushKey
-  split
-  · rename_i hsafe
-    split
-    · exact PendOK.contCheap (hp.self hw) hsafe hs
-    · exact PendOK.contCheap hp hsafe hs
-  · exact PendOK.nil
-grind_pattern [conleche_grind] PendOK.pushCheap =>
-  PendOK mode eager env true d (pushCheapKey (whnfCoreCheapSafeC e.getAppFn e) b e pend) e',
-  Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.cont e')
-
-/-- The loop's answering arm in the full mode: the chain's keys, the term
-joining them where it is stored, stored with the answer. -/
-theorem CSOK.chainStoredDone (henv : EnvWF env) {b c : Bool} {s : CState}
-    {d : Nat} {pend pendC : List Expr} {e v : Expr} (hs : CSOK mode eager env s)
-    (hc : c = false)
-    (hp : PendOK mode eager env c d pend e) (hpc : PendOK mode eager env true d pendC e)
-    (hw : Expr.WScoped d e)
-    (hst : Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.done v)) :
-    CSOK mode eager env (storeChain s (pushKey b e pend) (pushCheapKey (whnfCoreCheapSafeC e.getAppFn e) b e pendC) v) := by
-  subst hc
-  have hv := Runs.whnfCore_of_done hst
-  have hp' : PendOK mode eager env false d (pushKey b e pend) e := by
-    unfold pushKey
-    split
-    · exact hp.self hw
-    · exact hp
-  unfold pushCheapKey
-  split
-  · rename_i hsafe
-    have hvc := Runs.whnfCore_of_doneCheap hsafe hst
-    refine CSOK.chainStored henv hs hp' hv ?_ hvc
-    unfold pushKey
-    split
-    · exact hpc.self hw
-    · exact hpc
-  · exact CSOK.chainStored_nil henv hs hp' hv
-grind_pattern [conleche_grind] CSOK.chainStoredDone =>
-  storeChain s (pushKey b e pend) (pushCheapKey (whnfCoreCheapSafeC e.getAppFn e) b e pendC) v,
-  Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.done v)
-
-/-- The head-normalization *loop* answers the chained `whnfCore` of its
-term, by induction on the shared step budget (task #106); a step's
-outcome is the same on both sides, a continuation re-enters the loop
-(task #342 R2), and the memo is looked up at every key and written with
-the chain's keys at its end. -/
-theorem whnfCoreLoopC_spec (ih : SSimC .verified eager env f)
-    (henv : EnvWF env) {c : Bool} {d : Nat} (n : Nat) :
-    ∀ {pend pendC : List Expr} {i : Expr} {s₀ : CState}, CSOK .verified eager env s₀ →
-      Expr.WScoped d i → PendOK .verified eager env c d pend i →
-      PendOK .verified eager env true d pendC i →
-      ⦃fun s => s = s₀⦄
-        whnfCoreLoopI .verified (mkFEnv env) eager f c d n pend pendC i
-      ⦃fun v s' => CSOK .verified eager env s' ∧
-        Runs ((fueledFns .verified eager env).whnfCore c d i) v ∧
-        Expr.WScoped d v; ⊤⦄ := by
-  induction n with
-  | zero =>
-    intro pend pendC i s₀ hs hw hp hpc
-    sym only [conleche_grind] => vcgen [whnfCoreLoopI.eq_def] <;> finish
-  | succ n ihn =>
-    intro pend pendC i s₀ hs hw hp hpc
-    sym only [conleche_grind, CSOK.chainStored henv, CSOK.chainStored_nil henv,
-        CSOK.chainStoredDone henv, CSOK.whnfCore_hit henv, CSOK.whnfCoreCheap_hit henv] =>
-      vcgen [whnfCoreLoopI.eq_def, storeChainI, whnfCoreLookupI,
-        whnfCoreStepC_spec ih henv, ihn] <;> finish
-
-/-- The cached head-normalization body answers the chained `whnfCore`:
-the loop with no key pending. -/
-theorem whnfCoreBodyC_spec (ih : SSimC .verified eager env f)
-    (henv : EnvWF env) (c : Bool) :
-    BodySpec .verified eager env (whnfCoreBodyI .verified (mkFEnv env) eager f c)
-      (fun d i => (fueledFns .verified eager env).whnfCore c d i) := by
-  intro s₀ d i hs hw
-  sym only [conleche_grind] =>
-    vcgen [whnfCoreBodyI.eq_def, whnfCoreLoopC_spec ih henv] <;> finish
-
-end Walks
-
-section Walks2
-
-variable {env : Env} {f : Nat}
+theorem rewriteStep_notconst {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
+    {r : CoreFns m} {d : Nat} {e : Expr} (h : ∀ c us, e.getAppFn = .const c us → False) :
+    rewriteStep r env d e = pure none := by
+  unfold rewriteStep; split
+  · next h' => exact (h _ _ h').elim
+  · rfl
 
 /-- A rule firing's scope side condition: the reduct is well-scoped. -/
 @[expose] def RuleWS (d : Nat) : Option (Name × Expr) → Prop
@@ -813,78 +467,555 @@ theorem rewriteStepC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d : 
   | const c ls => exact rewriteRulesC_spec ih henv hw _ hs
   | _ => sym only [conleche_grind] => vcgen <;> finish
 
-/-! The reduction step's arms, one guarded equation each (the pure side's nested matches never
-reach `grind`). -/
 
-theorem whnfStep_lit {d : Nat} {k : Expr → FueledM Expr} {kr : Name → Expr → FueledM Expr}
-    {e e₁ e₂ v : Expr} (h₁ : Runs ((fueledFns mode eager env).whnfCore false d e) e₁)
-    (h₂ : Runs (reduceNat (fueledFns mode eager env) env d e₁) (some e₂)) :
-    Runs (whnfStep (fueledFns mode eager env) env d k kr e) v =
-      Runs (if e₂.isLit then pure e₂ else k e₂) v := by
-  unfold whnfStep
-  rw [Runs.bind_eq v h₁, Runs.bind_eq v h₂]
+/-! ### The argument loop, by `vcgen` and `grind`
 
-theorem whnfStep_fire {d : Nat} {k : Expr → FueledM Expr} {kr : Name → Expr → FueledM Expr}
-    {e e₁ v : Expr} {t : Name} {e₂ : Expr}
-    (h₁ : Runs ((fueledFns mode eager env).whnfCore false d e) e₁)
-    (h₂ : Runs (reduceNat (fueledFns mode eager env) env d e₁) none)
-    (h₃ : Runs (rewriteStep (fueledFns mode eager env) env d e₁) (some (t, e₂))) :
-    Runs (whnfStep (fueledFns mode eager env) env d k kr e) v = Runs (kr t e₂) v := by
-  unfold whnfStep
-  rw [Runs.bind_eq v h₁, Runs.bind_eq v h₂]
-  exact Runs.bind_eq v h₃
+Each walk below is `sym only [conleche_grind, …] => vcgen […] <;> finish`
+(`ConLeche/Verify/Cached/Grind.lean`).  The cached loops match their
+head on `.lam`, and the equation compiler states their `a :: rest` step
+as one equation per arm, the fall-through one conditional, which `vcgen`
+skips; the unconditional `eq_def` unfolds them instead (`whnfAppI`'s by
+`rw` before `sym`).
+`vcgen` splits the `match`
+and hands each arm its fall-through hypothesis; the pure mirrors'
+own equation lemmas (`betaPeelW.eq_*`, `whnfAppW.eq_*`, the fall-through
+one included) go into the `sym` list, and `grind` discharges the
+fall-through premise from the arm's hypothesis. -/
 
-theorem whnfStep_delta {d : Nat} {k : Expr → FueledM Expr} {kr : Name → Expr → FueledM Expr}
-    {e e₁ e₂ v : Expr} (h₁ : Runs ((fueledFns mode eager env).whnfCore false d e) e₁)
-    (h₂ : Runs (reduceNat (fueledFns mode eager env) env d e₁) none)
-    (h₃ : Runs (rewriteStep (fueledFns mode eager env) env d e₁) none)
-    (hu : unfoldDefinition env e₁ = some e₂) :
-    Runs (whnfStep (fueledFns mode eager env) env d k kr e) v = Runs (k e₂) v := by
-  unfold whnfStep
-  rw [Runs.bind_eq v h₁, Runs.bind_eq v h₂]
-  show Runs (_ >>= _) v = _
-  rw [Runs.bind_eq v h₃]
-  show Runs (match unfoldDefinition env e₁ with | some e₂ => k e₂ | none => pure e₁) v = _
-  rw [hu]
+/-- The peel step's scope: a binder peeled off a well-scoped
+instantiated lambda, instantiated with one more well-scoped argument. -/
+theorem wscoped_peel {d : Nat} {ty body a : Expr} {acc : List Expr}
+    (hw : Expr.WScoped d ((Expr.lam ty body).instantiateList acc)) (ha : Expr.WScoped d a) :
+    Expr.WScoped d (body.instantiateList (a :: acc)) := by
+  rw [instList_lam, Expr.WScoped] at hw
+  rw [Expr.instantiateList_cons]
+  exact Expr.WScoped.instantiate1_gen ha 0 hw.2
+grind_pattern [conleche_grind] wscoped_peel =>
+  Expr.WScoped d ((Expr.lam ty body).instantiateList acc), body.instantiateList (a :: acc)
 
-theorem whnfStep_fix {d : Nat} {k : Expr → FueledM Expr} {kr : Name → Expr → FueledM Expr}
-    {e e₁ v : Expr} (h₁ : Runs ((fueledFns mode eager env).whnfCore false d e) e₁)
-    (h₂ : Runs (reduceNat (fueledFns mode eager env) env d e₁) none)
-    (h₃ : Runs (rewriteStep (fueledFns mode eager env) env d e₁) none)
-    (hu : unfoldDefinition env e₁ = none) :
-    Runs (whnfStep (fueledFns mode eager env) env d k kr e) v = (e₁ = v) := by
-  unfold whnfStep
-  rw [Runs.bind_eq v h₁, Runs.bind_eq v h₂]
-  show Runs (_ >>= _) v = _
-  rw [Runs.bind_eq v h₃]
-  show Runs (match unfoldDefinition env e₁ with | some e₂ => k e₂ | none => pure e₁) v = _
-  rw [hu]
-  exact Runs.pure_eq e₁ v
+/-- The peel loop simulates its pure mirror: the peeled range
+`args[j:i]` is the mirror's accumulator, innermost first. -/
+theorem betaPeelC_spec (lv : Nat) {d : Nat} :
+    ∀ (n : Nat) {args : Array Expr} {j i : Nat} {t : Expr} {s₀ : CState},
+      args.size - i = n → j ≤ i → CSOK mode eager env s₀ →
+      Expr.WScoped d (t.instantiateList (args.extract j i).toList.reverse) →
+      AllWS d args.toList →
+      ⦃fun s => s = s₀⦄ betaPeelI mode (mkFEnv env) eager lv d t j args i
+      ⦃fun v s' => CSOK mode eager env s' ∧
+          Runs (betaPeelW mode (fueledFns mode eager env) env d t
+            (args.extract j i).toList.reverse (args.toList.drop i)) v ∧
+          StepWS d v; ⊤⦄ := by
+  intro n
+  induction n with
+  | zero =>
+    intro args j i t s₀ hn _ hs _ _
+    sym only [conleche_grind, betaPeelW.eq_1, Expr.instantiateRevRange_spec,
+        toList_drop_of_ge (A := args) (i := i) (by omega)] =>
+      vcgen [betaPeelI.eq_def] <;> finish
+  | succ n ihr =>
+    intro args j i t s₀ hn hj hs _ _
+    sym only [conleche_grind, betaPeelW.eq_2, betaPeelW.eq_3, Expr.instantiateRevRange_spec,
+        toList_drop_of_lt (A := args) (i := i) (by omega),
+        extract_rev_succ (A := args) (s := j) (i := i) hj (by omega)] =>
+      vcgen [betaPeelI.eq_def, ihr (args := args) (j := j) (i := i + 1) (by omega) (by omega)] <;>
+        finish
+
+/-- Away from a constant head the rule arm of the spine loop is the loop itself. -/
+theorem whnfAppRuleW_notconst {d : Nat} {fa : Expr} {rest : List Expr}
+    (h : ∀ c us, fa.getAppFn = .const c us → False) :
+    whnfAppRuleW .verified (fueledFns .verified eager env) env d fa rest =
+      whnfAppW .verified (fueledFns .verified eager env) env d fa rest :=
+  whnfAppRuleW_noRules (rewriteStep_notconst h)
+
+/-- The rule arm of the argument loop simulates its pure mirror, given the loop's simulation
+one argument on (`happ`). -/
+theorem whnfAppRuleC_spec (ih : SSimC .verified eager env f) (henv : EnvWF env) {d : Nat}
+    {args : Array Expr} {i : Nat}
+    (happ : ∀ {v : Expr} {s₀ : CState}, CSOK .verified eager env s₀ →
+      Expr.WScoped d v → AllWS d args.toList →
+      ⦃fun s => s = s₀⦄ whnfAppI .verified (mkFEnv env) eager f d v args (i + 1)
+      ⦃fun w s' => CSOK .verified eager env s' ∧
+          Runs (whnfAppW .verified (fueledFns .verified eager env) env d v
+            (args.toList.drop (i + 1))) w ∧
+          StepWS d w; ⊤⦄)
+    {fa : Expr} {c : Name} {s₀ : CState} (hfa : HeadIs c fa.getAppFn)
+    (hs : CSOK .verified eager env s₀) (hw : Expr.WScoped d fa) (ha : AllWS d args.toList) :
+    ⦃fun s => s = s₀⦄ whnfAppRuleI .verified (mkFEnv env) eager f d fa c args i
+    ⦃fun w s' => CSOK .verified eager env s' ∧
+        Runs (whnfAppRuleW .verified (fueledFns .verified eager env) env d fa
+          (args.toList.drop (i + 1))) w ∧
+        StepWS d w; ⊤⦄ := by
+  sym only [conleche_grind, whnfAppRuleW_eq, rewriteStep_headIs (r := fueledFns .verified eager env)
+      (d := d) hfa, mkFEnv_rulesFor] =>
+    vcgen [whnfAppRuleI.eq_def, rewriteRulesC_spec ih henv hw, happ] <;> finish
+
+/-- The bulk-beta argument loop simulates its pure mirror. -/
+theorem whnfAppC_spec (ih : SSimC .verified eager env f)
+    (henv : EnvWF env) {d : Nat} :
+    ∀ (n : Nat) {args : Array Expr} {i : Nat} {v : Expr} {s₀ : CState},
+      args.size - i = n → CSOK .verified eager env s₀ →
+      Expr.WScoped d v → AllWS d args.toList →
+      ⦃fun s => s = s₀⦄ whnfAppI .verified (mkFEnv env) eager f d v args i
+      ⦃fun w s' => CSOK .verified eager env s' ∧
+          Runs (whnfAppW .verified (fueledFns .verified eager env) env d v (args.toList.drop i)) w ∧
+          StepWS d w; ⊤⦄ := by
+  intro n
+  induction n with
+  | zero =>
+    intro args i v s₀ hn _ _ _
+    sym only [conleche_grind, whnfAppW.eq_1, toList_drop_of_ge (A := args) (i := i) (by omega)] =>
+      vcgen [whnfAppI.eq_def] <;> finish
+  | succ n ihr =>
+    intro args i _ _ hn _ _ _
+    rw [whnfAppI.eq_def]
+    sym only [conleche_grind, whnfAppW.eq_2, whnfAppW.eq_3,
+        toList_drop_of_lt (A := args) (i := i) (by omega),
+        getAppFn_getAppFn', iotaNumArgs_eq_length, List.take_length, iotaRec_notconst,
+        whnfAppRuleW_notconst,
+        Expr.mkAppN_getApp, extract_rev_single (A := args) (i := i) (by omega)] =>
+      vcgen [iotaRecC_spec ih henv,
+        betaPeelC_spec (mode := .verified) f n (args := args) (j := i) (i := i + 1) (by omega)
+          (by omega),
+        whnfAppRuleC_spec ih henv (ihr (args := args) (i := i + 1) (by omega)),
+        ihr (args := args) (i := i + 1) (by omega)] <;> finish
+
+/-- A stuck head is its own head normal form. -/
+theorem Runs.whnfCore_stuckHead {c : Bool} {d : Nat} {h : Expr} (hh : isStuckHeadC h = true)
+    (hnr : noRulesC (mkFEnv env) h = true) :
+    Runs ((fueledFns .verified eager env).whnfCore c d h) h := by
+  refine ⟨1, ?_⟩
+  cases h with
+  | const n us =>
+    show whnfCoreBody .verified (pureFns .verified eager env 0) env c d (.const n us) = _
+    simp only [whnfCoreBody]
+    rw [rewriteStep_noRules (r := pureFns .verified eager env 0) (d := d) rfl hnr]
+    rfl
+  | _ => first | rfl | exact nomatch hh
+
+/-- The stuck arm simulates the mirror's application step: the head is its own head
+normal form, and the spine loop at it is the stuck arm's reading (`whnfAppW_stuck`). -/
+theorem whnfStuckC_spec (ih : SSimC .verified eager env f)
+    (henv : EnvWF env) {c : Bool} {d : Nat} {i : Expr} {s₀ : CState}
+    (hs : CSOK .verified eager env s₀) (hw : Expr.WScoped d i)
+    (hh' : (isStuckHeadC i.getAppFn && noRulesC (mkFEnv env) i.getAppFn) = true) :
+    ⦃fun s => s = s₀⦄
+      whnfStuckI .verified (mkFEnv env) eager f d
+        i.getAppFn i
+    ⦃fun v s' => CSOK .verified eager env s' ∧
+      Runs ((fueledFns .verified eager env).whnfCore c d i.getAppFn >>= fun v =>
+        whnfAppW .verified (fueledFns .verified eager env) env d v i.getAppArgs) v ∧
+      StepWS d v; ⊤⦄ := by
+  have hh : isStuckHeadC i.getAppFn = true := (Bool.and_eq_true _ _ ▸ hh').1
+  have hnr : noRulesC (mkFEnv env) i.getAppFn = true := (Bool.and_eq_true _ _ ▸ hh').2
+  have hfn := isStuckHeadC_getAppFn hh
+  have hwa : AllWS d i.getAppArgs := allWS_getAppArgs hw
+  sym only [conleche_grind, Runs.whnfCore_stuckHead (eager := eager) (env := env) (c := c)
+      (d := d) hh hnr, whnfAppW_stuck (eager := eager) (env := env) (d := d) hh hnr,
+      iotaNumArgs_eq_length, Expr.mkAppN_getApp, iotaTarget_notconst] =>
+    vcgen [whnfStuckI.eq_def, iotaRecC_spec ih henv] <;> finish
+
+/-- One head-normalization step simulates its pure mirror. -/
+theorem whnfCoreStepC_spec (ih : SSimC .verified eager env f)
+    (henv : EnvWF env) {c : Bool} {d : Nat} {i : Expr} {s₀ : CState} (hs : CSOK .verified eager env s₀)
+    (hw : Expr.WScoped d i) :
+    ⦃fun s => s = s₀⦄
+      whnfCoreStepI .verified (mkFEnv env) eager f c d i.getAppFn i
+    ⦃fun v s' => CSOK .verified eager env s' ∧
+      Runs (whnfCoreStepW .verified (fueledFns .verified eager env) env c d i) v ∧ StepWS d v; ⊤⦄ := by
+  sym only [conleche_grind, whnfCoreStepW, List.drop_zero] =>
+    vcgen [whnfCoreStepI.eq_def, inst1M_spec hs, ih.whnfCore_spec, ih.whnf_spec,
+      reduceProjCoreC_spec ih, whnfAppC_spec ih henv _ (Nat.sub_zero _),
+      whnfStuckC_spec (c := c) ih henv, rewriteStepC_spec ih henv] <;> finish
+
+/-! ### The head-normalization loop and its memo policy
+
+The cached loop (`whnfCoreLoopI`) looks every key up and stores the
+keys of a chain at its end.  Its answer is stated against the chained
+`whnfCore` directly: a hit is the backed `CSOK` clause, an answering
+step is `whnfCore_of_stepW_done` and a continuing one
+`whnfCore_of_stepW_cont`.  The keys waiting for the answer satisfy
+`PendOK`: each answers what the current term answers. -/
+
+/-- An easy case is its own whnfCore answer (`whnfCoreBody`'s value arms). -/
+theorem Runs.whnfCore_easy {c : Bool} {d : Nat} {i : Expr}
+    (h : (whnfCoreEasy i && noRulesC (mkFEnv env) i) = true) :
+    Runs ((fueledFns mode eager env).whnfCore c d i) i := by
+  refine ⟨1, ?_⟩
+  cases i with
+  | const n us =>
+    show whnfCoreBody mode (pureFns mode eager env 0) env c d (.const n us) = _
+    simp only [whnfCoreBody]
+    rw [rewriteStep_noRules (r := pureFns mode eager env 0) (d := d) rfl
+      (Bool.and_eq_true _ _ ▸ h).2]
+    rfl
+  | _ => first | rfl | exact nomatch h
+grind_pattern [conleche_grind] Runs.whnfCore_easy =>
+  Runs ((fueledFns mode eager env).whnfCore c d i) i
+
+/-- A full whnfCore memo hit answers the fueled whnfCore, well scoped. -/
+theorem CSOK.whnfCore_hit (henv : EnvWF env) {s : CState} {d : Nat} {i r : Expr}
+    (hs : CSOK mode eager env s) (hl : s.whnfCoreC[i]? = some r) (hw : Expr.WScoped d i) :
+    Runs ((fueledFns mode eager env).whnfCore false d i) r ∧ Expr.WScoped d r := by
+  obtain ⟨F, hall⟩ := hs.whnfCoreC i r hl
+  have hrun := hall d hw.to_wscopedB
+  exact ⟨⟨F, hrun⟩, whnfCore_WScoped henv F hrun hw⟩
+grind_pattern [conleche_grind] CSOK.whnfCore_hit =>
+  CSOK mode eager env s, s.whnfCoreC[i]?, Runs ((fueledFns mode eager env).whnfCore false d i) r
+
+/-- A cheap whnfCore memo hit answers the fueled cheap whnfCore. -/
+theorem CSOK.whnfCoreCheap_hit (henv : EnvWF env) {s : CState} {d : Nat} {i r : Expr}
+    (hs : CSOK mode eager env s) (hl : s.whnfCoreCheapC[i]? = some r) (hw : Expr.WScoped d i) :
+    Runs ((fueledFns mode eager env).whnfCore true d i) r ∧ Expr.WScoped d r := by
+  obtain ⟨F, hall⟩ := hs.whnfCoreCheapC i r hl
+  have hrun := hall d hw.to_wscopedB
+  exact ⟨⟨F, hrun⟩, whnfCore_WScoped henv F hrun hw⟩
+grind_pattern [conleche_grind] CSOK.whnfCoreCheap_hit =>
+  CSOK mode eager env s, s.whnfCoreCheapC[i]?, Runs ((fueledFns mode eager env).whnfCore true d i) r
+
+/-- A continuing step: the term answers what its continuation answers. -/
+theorem Runs.whnfCore_of_cont {c : Bool} {d : Nat} {e e' v : Expr}
+    (hs : Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.cont e'))
+    (hk : Runs ((fueledFns mode eager env).whnfCore c d e') v) :
+    Runs ((fueledFns mode eager env).whnfCore c d e) v := by
+  obtain ⟨F, hF⟩ := hs
+  obtain ⟨G, hG⟩ := hk
+  exact whnfCore_of_stepW_cont hF hG
+grind_pattern [conleche_grind] Runs.whnfCore_of_cont =>
+  Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.cont e'),
+  Runs ((fueledFns mode eager env).whnfCore c d e') v
+
+/-- A firing step: the term answers what its continuation answers. -/
+theorem Runs.whnfCore_of_fire {c : Bool} {d : Nat} {e e' v : Expr} {t : Name}
+    (hs : Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.fire t e'))
+    (hk : Runs ((fueledFns mode eager env).whnfCore c d e') v) :
+    Runs ((fueledFns mode eager env).whnfCore c d e) v := by
+  obtain ⟨F, hF⟩ := hs
+  obtain ⟨G, hG⟩ := hk
+  exact whnfCore_of_stepW_fire hF hG
+grind_pattern [conleche_grind] Runs.whnfCore_of_fire =>
+  Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.fire t e'),
+  Runs ((fueledFns mode eager env).whnfCore c d e') v
+
+/-- An answering step: its answer is the term's. -/
+theorem Runs.whnfCore_of_done {c : Bool} {d : Nat} {e v : Expr}
+    (hs : Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.done v)) :
+    Runs ((fueledFns mode eager env).whnfCore c d e) v := by
+  obtain ⟨F, hF⟩ := hs
+  exact whnfCore_of_stepW_done hF
+grind_pattern [conleche_grind] Runs.whnfCore_of_done =>
+  Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.done v),
+  (fueledFns mode eager env).whnfCore c d e
+
+/-- A lambda or a stuck head no rule rewrites is its own head normal form in both modes. -/
+private theorem whnfCore_cheapHead {c : Bool} {d : Nat} {h : Expr}
+    (hh : (match h with | .lam .. => true | h => isStuckHeadC h) = true)
+    (hnr : noRulesC (mkFEnv env) h = true) :
+    (fueledFns mode eager env).whnfCore true d h = (fueledFns mode eager env).whnfCore c d h := by
+  apply Subtype.ext; funext F
+  cases F with
+  | zero => rfl
+  | succ F =>
+    cases h with
+    | const n us =>
+      show whnfCoreBody mode (pureFns mode eager env F) env true d (.const n us) =
+        whnfCoreBody mode (pureFns mode eager env F) env c d (.const n us)
+      simp only [whnfCoreBody]
+      rw [rewriteStep_noRules (r := pureFns mode eager env F) (d := d) rfl hnr]
+      rfl
+    | _ => first | rfl | exact nomatch hh
+
+/-- A step the two modes take alike (`whnfCoreCheapSafeC`) is the same step
+in the cheap mode. -/
+theorem whnfCoreStepW_cheap {c : Bool} {d : Nat} {e : Expr}
+    (h' : (whnfCoreCheapSafeC e.getAppFn e && noRulesC (mkFEnv env) e.getAppFn) = true) :
+    whnfCoreStepW mode (fueledFns mode eager env) env true d e
+      = whnfCoreStepW mode (fueledFns mode eager env) env c d e := by
+  have h := (Bool.and_eq_true _ _ ▸ h').1
+  have hnr := (Bool.and_eq_true _ _ ▸ h').2
+  cases e with
+  | app f a =>
+    simp only [whnfCoreStepW]
+    rw [whnfCore_cheapHead (c := c) h hnr]
+  | letE _ _ _ => rfl
+  | _ => exact nomatch h
+
+/-- The keys pending in the loop: each, well scoped, answers what `e`
+answers (in the mode `c`). -/
+@[expose] def PendOK (mode : CheckMode) (eager : Bool) (env : Env) (c : Bool) (d : Nat)
+    (pend : List Expr) (e : Expr) : Prop :=
+  ∀ k ∈ pend, Expr.WScoped d k ∧ ∀ v, Runs ((fueledFns mode eager env).whnfCore c d e) v →
+    Runs ((fueledFns mode eager env).whnfCore c d k) v
+
+@[conleche_grind] theorem PendOK.nil {c : Bool} {d : Nat} {e : Expr} :
+    PendOK mode eager env c d [] e := by
+  intro k hk; exact nomatch hk
+
+/-- The term itself joins its pending keys. -/
+theorem PendOK.self {c : Bool} {d : Nat} {pend : List Expr} {e : Expr}
+    (hp : PendOK mode eager env c d pend e) (hw : Expr.WScoped d e) :
+    PendOK mode eager env c d (e :: pend) e := by
+  intro k hk
+  rcases List.mem_cons.mp hk with rfl | hk
+  · exact ⟨hw, fun _ h => h⟩
+  · exact hp k hk
+grind_pattern [conleche_grind] PendOK.self =>
+  PendOK mode eager env c d pend e, PendOK mode eager env c d (e :: pend) e
+
+/-- Past a continuing step, the pending keys answer what the
+continuation answers. -/
+theorem PendOK.cont {c : Bool} {d : Nat} {pend : List Expr} {e e' : Expr}
+    (hp : PendOK mode eager env c d pend e)
+    (hs : Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.cont e')) :
+    PendOK mode eager env c d pend e' :=
+  fun k hk => ⟨(hp k hk).1, fun _ h => (hp k hk).2 _ (Runs.whnfCore_of_cont hs h)⟩
+grind_pattern [conleche_grind] PendOK.cont =>
+  PendOK mode eager env c d pend e,
+  Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.cont e'),
+  PendOK mode eager env c d pend e'
+
+/-- Past a firing step, the pending keys answer what the continuation answers. -/
+theorem PendOK.fire {c : Bool} {d : Nat} {pend : List Expr} {e e' : Expr} {t : Name}
+    (hp : PendOK mode eager env c d pend e)
+    (hs : Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.fire t e')) :
+    PendOK mode eager env c d pend e' :=
+  fun k hk => ⟨(hp k hk).1, fun _ h => (hp k hk).2 _ (Runs.whnfCore_of_fire hs h)⟩
+
+/-- The cheap-mode keys past a step the two modes take alike. -/
+theorem PendOK.contCheap {c : Bool} {d : Nat} {pend : List Expr} {e e' : Expr}
+    (hp : PendOK mode eager env true d pend e) (hsafe : (whnfCoreCheapSafeC e.getAppFn e && noRulesC (mkFEnv env) e.getAppFn) = true)
+    (hs : Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.cont e')) :
+    PendOK mode eager env true d pend e' := by
+  rw [← whnfCoreStepW_cheap hsafe] at hs
+  exact PendOK.cont hp hs
+grind_pattern [conleche_grind] PendOK.contCheap =>
+  PendOK mode eager env true d pend e,
+  Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.cont e'),
+  PendOK mode eager env true d pend e'
+
+/-- The cheap-mode keys past a firing step the two modes take alike. -/
+theorem PendOK.fireCheap {c : Bool} {d : Nat} {pend : List Expr} {e e' : Expr} {t : Name}
+    (hp : PendOK mode eager env true d pend e)
+    (hsafe : (whnfCoreCheapSafeC e.getAppFn e && noRulesC (mkFEnv env) e.getAppFn) = true)
+    (hs : Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.fire t e')) :
+    PendOK mode eager env true d pend e' := by
+  rw [← whnfCoreStepW_cheap hsafe] at hs
+  exact PendOK.fire hp hs
+
+/-- An answering step the two modes take alike answers the cheap mode too. -/
+theorem Runs.whnfCore_of_doneCheap {c : Bool} {d : Nat} {e v : Expr}
+    (hsafe : (whnfCoreCheapSafeC e.getAppFn e && noRulesC (mkFEnv env) e.getAppFn) = true)
+    (hs : Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.done v)) :
+    Runs ((fueledFns mode eager env).whnfCore true d e) v := by
+  rw [← whnfCoreStepW_cheap hsafe] at hs
+  exact Runs.whnfCore_of_done hs
+grind_pattern [conleche_grind] Runs.whnfCore_of_doneCheap =>
+  Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.done v),
+  (fueledFns mode eager env).whnfCore true d e
+
+/-- A memo whose entries are backed keeps them so under inserting
+backed keys, one answer for all. -/
+private theorem foldl_insert_backed {P : Expr → Expr → Prop} {v : Expr} :
+    ∀ {pend : List Expr} {m : Std.HashMap Expr Expr}, (∀ k w, m[k]? = some w → P k w) →
+      (∀ k ∈ pend, P k v) →
+      ∀ k w, (pend.foldl (fun m k => m.insert k v) m)[k]? = some w → P k w
+  | [], _, hm, _ => hm
+  | k :: rest, _, hm, hp =>
+    foldl_insert_backed (pend := rest) (HashMap.insert_backed hm (hp k (.head _)))
+      (fun k' hk' => hp k' (.tail _ hk'))
+
+/-- A pending key, answered by `v` at `e`, is a backed memo entry. -/
+private theorem PendOK.backed (henv : EnvWF env) {c : Bool} {d : Nat} {pend : List Expr}
+    {e v : Expr} (hp : PendOK mode eager env c d pend e)
+    (hv : Runs ((fueledFns mode eager env).whnfCore c d e) v) :
+    ∀ k ∈ pend, ∃ F, ∀ d', (Expr.wscopedB d' k) = true →
+      whnfCore mode eager env F d' k c = .ok v := by
+  intro k hk
+  obtain ⟨hw, hrun⟩ := hp k hk
+  obtain ⟨F, hF⟩ := hrun v hv
+  exact ⟨F, fun d' hd' => by rw [whnfCore_depth_inv henv F hd' hw.to_wscopedB]; exact hF⟩
+
+/-- A finished chain's store keeps the invariant: its full keys answer
+`v` in the full mode, its cheap keys in the cheap mode. -/
+theorem CSOK.chainStored (henv : EnvWF env) {s : CState} {d : Nat} {pend pendC : List Expr}
+    {e v : Expr} (hs : CSOK mode eager env s)
+    (hp : PendOK mode eager env false d pend e)
+    (hv : Runs ((fueledFns mode eager env).whnfCore false d e) v)
+    (hpc : PendOK mode eager env true d pendC e)
+    (hvc : Runs ((fueledFns mode eager env).whnfCore true d e) v) :
+    CSOK mode eager env (storeChain s pend pendC v) :=
+  { hs with
+    whnfCoreC := foldl_insert_backed hs.whnfCoreC (hp.backed henv hv)
+    whnfCoreCheapC := foldl_insert_backed hs.whnfCoreCheapC (hpc.backed henv hvc) }
+grind_pattern [conleche_grind] CSOK.chainStored =>
+  CSOK mode eager env s, PendOK mode eager env false d pend e,
+  PendOK mode eager env true d pendC e, storeChain s pend pendC v
+
+/-- A store with no cheap keys (the chain took a step the modes take
+differently, or ended at a hit). -/
+theorem CSOK.chainStored_nil (henv : EnvWF env) {s : CState} {d : Nat} {pend : List Expr}
+    {e v : Expr} (hs : CSOK mode eager env s)
+    (hp : PendOK mode eager env false d pend e)
+    (hv : Runs ((fueledFns mode eager env).whnfCore false d e) v) :
+    CSOK mode eager env (storeChain s pend [] v) :=
+  { hs with
+    whnfCoreC := foldl_insert_backed hs.whnfCoreC (hp.backed henv hv)
+    whnfCoreCheapC := hs.whnfCoreCheapC }
+grind_pattern [conleche_grind] CSOK.chainStored_nil =>
+  CSOK mode eager env s, PendOK mode eager env false d pend e, storeChain s pend [] v
+
+/-- The loop's continuing arm: the keys it passes on, the term joining
+them where it is stored, answer what the continuation answers. -/
+theorem PendOK.push {b : Bool} {c : Bool} {d : Nat} {pend : List Expr}
+    {e e' : Expr} (hp : PendOK mode eager env c d pend e) (hw : Expr.WScoped d e)
+    (hs : Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.cont e')) :
+    PendOK mode eager env c d (pushKey b e pend) e' := by
+  unfold pushKey
+  split
+  · exact PendOK.cont (hp.self hw) hs
+  · exact PendOK.cont hp hs
+grind_pattern [conleche_grind] PendOK.push =>
+  PendOK mode eager env c d (pushKey b e pend) e',
+  Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.cont e')
+
+/-- The loop's firing arm: as its continuing arm. -/
+theorem PendOK.pushFire {b : Bool} {c : Bool} {d : Nat} {pend : List Expr}
+    {e e' : Expr} {t : Name} (hp : PendOK mode eager env c d pend e) (hw : Expr.WScoped d e)
+    (hs : Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.fire t e')) :
+    PendOK mode eager env c d (pushKey b e pend) e' := by
+  unfold pushKey
+  split
+  · exact PendOK.fire (hp.self hw) hs
+  · exact PendOK.fire hp hs
+grind_pattern [conleche_grind] PendOK.pushFire =>
+  PendOK mode eager env c d (pushKey b e pend) e',
+  Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.fire t e')
+
+/-- The loop's firing arm, cheap keys. -/
+theorem PendOK.pushCheapFire {b : Bool} {c : Bool} {d : Nat} {pend : List Expr}
+    {e e' : Expr} {t : Name} (hp : PendOK mode eager env true d pend e) (hw : Expr.WScoped d e)
+    (hs : Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.fire t e')) :
+    PendOK mode eager env true d
+      (pushCheapKey (whnfCoreCheapSafeC e.getAppFn e && noRulesC (mkFEnv env) e.getAppFn) b e
+        pend) e' := by
+  unfold pushCheapKey pushKey
+  split
+  · rename_i hsafe
+    split
+    · exact PendOK.fireCheap (hp.self hw) hsafe hs
+    · exact PendOK.fireCheap hp hsafe hs
+  · exact PendOK.nil
+grind_pattern [conleche_grind] PendOK.pushCheapFire =>
+  PendOK mode eager env true d
+    (pushCheapKey (whnfCoreCheapSafeC e.getAppFn e && noRulesC (mkFEnv env) e.getAppFn) b e pend)
+    e',
+  Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.fire t e')
+
+/-- The loop's continuing arm, cheap keys: kept past a step the two
+modes take alike, dropped past any other. -/
+theorem PendOK.pushCheap {b : Bool} {c : Bool} {d : Nat} {pend : List Expr}
+    {e e' : Expr} (hp : PendOK mode eager env true d pend e) (hw : Expr.WScoped d e)
+    (hs : Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.cont e')) :
+    PendOK mode eager env true d (pushCheapKey (whnfCoreCheapSafeC e.getAppFn e && noRulesC (mkFEnv env) e.getAppFn) b e pend) e' := by
+  unfold pushCheapKey pushKey
+  split
+  · rename_i hsafe
+    split
+    · exact PendOK.contCheap (hp.self hw) hsafe hs
+    · exact PendOK.contCheap hp hsafe hs
+  · exact PendOK.nil
+grind_pattern [conleche_grind] PendOK.pushCheap =>
+  PendOK mode eager env true d (pushCheapKey (whnfCoreCheapSafeC e.getAppFn e && noRulesC (mkFEnv env) e.getAppFn) b e pend) e',
+  Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.cont e')
+
+/-- The loop's answering arm in the full mode: the chain's keys, the term
+joining them where it is stored, stored with the answer. -/
+theorem CSOK.chainStoredDone (henv : EnvWF env) {b c : Bool} {s : CState}
+    {d : Nat} {pend pendC : List Expr} {e v : Expr} (hs : CSOK mode eager env s)
+    (hc : c = false)
+    (hp : PendOK mode eager env c d pend e) (hpc : PendOK mode eager env true d pendC e)
+    (hw : Expr.WScoped d e)
+    (hst : Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.done v)) :
+    CSOK mode eager env (storeChain s (pushKey b e pend) (pushCheapKey (whnfCoreCheapSafeC e.getAppFn e && noRulesC (mkFEnv env) e.getAppFn) b e pendC) v) := by
+  subst hc
+  have hv := Runs.whnfCore_of_done hst
+  have hp' : PendOK mode eager env false d (pushKey b e pend) e := by
+    unfold pushKey
+    split
+    · exact hp.self hw
+    · exact hp
+  unfold pushCheapKey
+  split
+  · rename_i hsafe
+    have hvc := Runs.whnfCore_of_doneCheap hsafe hst
+    refine CSOK.chainStored henv hs hp' hv ?_ hvc
+    unfold pushKey
+    split
+    · exact hpc.self hw
+    · exact hpc
+  · exact CSOK.chainStored_nil henv hs hp' hv
+grind_pattern [conleche_grind] CSOK.chainStoredDone =>
+  storeChain s (pushKey b e pend) (pushCheapKey (whnfCoreCheapSafeC e.getAppFn e && noRulesC (mkFEnv env) e.getAppFn) b e pendC) v,
+  Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.done v)
+
+/-- The head-normalization *loop* answers the chained `whnfCore` of its
+term, by induction on the shared step budget (task #106); a step's
+outcome is the same on both sides, a continuation re-enters the loop
+(task #342 R2), and the memo is looked up at every key and written with
+the chain's keys at its end. -/
+theorem whnfCoreLoopC_spec (ih : SSimC .verified eager env f)
+    (henv : EnvWF env) {c : Bool} {d : Nat} (n : Nat) :
+    ∀ {fires : Nat} {pend pendC : List Expr} {i : Expr} {s₀ : CState},
+      CSOK .verified eager env s₀ →
+      Expr.WScoped d i → PendOK .verified eager env c d pend i →
+      PendOK .verified eager env true d pendC i →
+      ⦃fun s => s = s₀⦄
+        whnfCoreLoopI .verified (mkFEnv env) eager f c d n fires pend pendC i
+      ⦃fun v s' => CSOK .verified eager env s' ∧
+        Runs ((fueledFns .verified eager env).whnfCore c d i) v ∧
+        Expr.WScoped d v; ⊤⦄ := by
+  induction n with
+  | zero =>
+    intro fires pend pendC i s₀ hs hw hp hpc
+    sym only [conleche_grind] => vcgen [whnfCoreLoopI.eq_def] <;> finish
+  | succ n ihn =>
+    intro fires pend pendC i s₀ hs hw hp hpc
+    sym only [conleche_grind, CSOK.chainStored henv, CSOK.chainStored_nil henv,
+        CSOK.chainStoredDone henv, CSOK.whnfCore_hit henv, CSOK.whnfCoreCheap_hit henv] =>
+      vcgen [whnfCoreLoopI.eq_def, storeChainI, whnfCoreLookupI,
+        whnfCoreStepC_spec ih henv, ihn] <;> finish
+
+/-- The cached head-normalization body answers the chained `whnfCore`:
+the loop with no key pending. -/
+theorem whnfCoreBodyC_spec (ih : SSimC .verified eager env f)
+    (henv : EnvWF env) (c : Bool) :
+    BodySpec .verified eager env (whnfCoreBodyI .verified (mkFEnv env) eager f c)
+      (fun d i => (fueledFns .verified eager env).whnfCore c d i) := by
+  intro s₀ d i hs hw
+  sym only [conleche_grind] =>
+    vcgen [whnfCoreBodyI.eq_def, whnfCoreLoopC_spec ih henv] <;> finish
+
+end Walks
+
+section Walks2
+
+variable {env : Env} {f : Nat}
 
 /-- The reduction loop simulates its specification, by induction on the
 shared step budget (task #106). -/
 theorem whnfLoopC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d : Nat} (n : Nat) :
-    ∀ {fires : Nat} {i : Expr} {s₀ : CState}, CSOK mode eager env s₀ → Expr.WScoped d i →
-      ⦃fun s => s = s₀⦄ whnfLoopI mode (mkFEnv env) eager f d n fires i
+    ∀ {i : Expr} {s₀ : CState}, CSOK mode eager env s₀ → Expr.WScoped d i →
+      ⦃fun s => s = s₀⦄ whnfLoopI mode (mkFEnv env) eager f d n i
       ⦃fun v s' => CSOK mode eager env s' ∧
-        Runs (whnfLoop (fueledFns mode eager env) env d n fires i) v ∧ Expr.WScoped d v; ⊤⦄ := by
+        Runs (whnfLoop (fueledFns mode eager env) env d n i) v ∧ Expr.WScoped d v; ⊤⦄ := by
   induction n with
   | zero =>
-    intro fires i s₀ hs hw
+    intro i s₀ hs hw
     sym only [conleche_grind] => vcgen [whnfLoopI.eq_def] <;> finish
   | succ n ihn =>
-    intro fires i s₀ hs hw
-    cases fires with
-    | zero =>
-      sym only [conleche_grind, whnfLoop, whnfStep_lit, whnfStep_fire, whnfStep_delta,
-          whnfStep_fix, unfoldDefinition_WScoped henv] =>
-        vcgen [whnfLoopI.eq_def, ih.whnfCore_spec, reduceNatC_spec ih, rewriteStepC_spec ih henv,
-          unfoldDefinitionC_spec (mode := mode) (eager := eager) (env := env), ihn] <;> finish
-    | succ fires =>
-      sym only [conleche_grind, whnfLoop, whnfStep_lit, whnfStep_fire, whnfStep_delta,
-          whnfStep_fix, unfoldDefinition_WScoped henv] =>
-        vcgen [whnfLoopI.eq_def, ih.whnfCore_spec, reduceNatC_spec ih, rewriteStepC_spec ih henv,
-          unfoldDefinitionC_spec (mode := mode) (eager := eager) (env := env), ihn] <;> finish
+    intro i s₀ hs hw
+    sym only [conleche_grind, whnfLoop, whnfStep, unfoldDefinition_WScoped henv] =>
+      vcgen [whnfLoopI.eq_def, ih.whnfCore_spec, reduceNatC_spec ih,
+        unfoldDefinitionC_spec (mode := mode) (eager := eager) (env := env), ihn] <;> finish
 
 theorem whnfBodyC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) :
     BodySpec mode eager env (whnfBodyI mode (mkFEnv env) eager f)

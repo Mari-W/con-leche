@@ -286,6 +286,13 @@ as official's non-let `FVar`. -/
   | .sort _ | .fvar .. | .forallE .. | .lam .. | .const .. | .lit _ => true
   | _ => false
 
+/-- **A term no user rewrite rule can head-rewrite** (`rewriteStep` answers `none` there): not
+a constant, or a constant with no rule in the table.  A constant or a spine head that has rules
+is no easy case and no stuck head for the cached loop. -/
+@[inline] def noRulesC (fe : FEnv) : Expr → Bool
+  | .const c _ => (fe.rulesFor c).isEmpty
+  | _ => true
+
 /-- **A `whnfCore` memo key**: a term of an arm official `whnf_core`
 stores (`src/kernel/type_checker.cpp`, `whnf_core`: the `Proj`, `Let`
 and `App` cases, the insert after the `switch`) — a projection, a
@@ -1104,6 +1111,49 @@ def reduceProjCoreI (eager : Bool) (lv : Nat) (depth : Nat) (sn : Name)
   | none => pure none
 termination_by (lv, 28, 0, 0)
 
+/-- Twin of `rewriteAttempt`: the theorem's type at the levels through the per-declaration memo
+(`constTyAtM`), its residual by `piResidualM`, every check the specification's. -/
+def rewriteAttemptI (eager : Bool) (lv : Nat) (depth : Nat) (e : Expr) (thm : Name) :
+    CheckCM (Option Expr) := do
+  match fe.find? thm with
+  | some (.thmInfo cv) =>
+    match ruleArgs cv e with
+    | some (args, us) => do
+      let T ← constTyAtM fe thm thm us
+      match (← piResidualM T args).bind eqSpine? with
+      | some (eqn, u, A, l, rhs) =>
+        if RuleGate cv us args e eqn l rhs then
+          if ← iotaCertsFullI eager lv depth T args then
+            if (← inferI eager lv false depth A) = .sort u then
+              if (← inferI eager lv false depth e) = A then
+                if (← inferI eager lv false depth rhs) = A then pure (some rhs) else pure none
+              else pure none
+            else pure none
+          else pure none
+        else pure none
+      | none => pure none
+    | none => pure none
+  | _ => pure none
+termination_by (lv, 28, 1, 0)
+
+/-- Twin of `rewriteRules`. -/
+def rewriteRulesI (eager : Bool) (lv : Nat) (depth : Nat) (e : Expr) :
+    List Name → CheckCM (Option (Name × Expr))
+  | [] => pure none
+  | t :: ts => do
+    match ← rewriteAttemptI eager lv depth e t with
+    | some e₂ => pure (some (t, e₂))
+    | none => rewriteRulesI eager lv depth e ts
+termination_by ts => (lv, 28, 2, ts.length)
+
+/-- Twin of `rewriteStep`: the rules through the index (`FEnv.rulesFor`). -/
+def rewriteStepI (eager : Bool) (lv : Nat) (depth : Nat) (e : Expr) :
+    CheckCM (Option (Name × Expr)) :=
+  match e.getAppFn with
+  | .const c _ => rewriteRulesI eager lv depth e (fe.rulesFor c)
+  | _ => pure none
+termination_by (lv, 28, 3, 0)
+
 /-- Peel loop of `whnfAppI`: `t` is the raw (unsubstituted) lambda body
 after the binders consumed so far, their arguments the spine range
 `args[s:i]` (innermost last), `args[i:]` the spine left.  The body is
@@ -1159,12 +1209,23 @@ def whnfAppI (eager : Bool) (lv : Nat) (depth : Nat)
           if iotaNumArgs fa 0 = mI + 1 ∧ us.length = cv.levelParams.length then do
             match ← iotaRecI eager lv depth c us cv mI rP isK rules (getAppArgsArr fa) with
             | some e'' => pure (.cont (mkAppRange e'' args (i + 1) args.size))
-            | none => whnfAppI eager lv depth fa args (i + 1)
-          else whnfAppI eager lv depth fa args (i + 1)
-        | _ => whnfAppI eager lv depth fa args (i + 1)
+            | none => whnfAppRuleI eager lv depth fa c args i
+          else whnfAppRuleI eager lv depth fa c args i
+        | _ => whnfAppRuleI eager lv depth fa c args i
       | _ => whnfAppI eager lv depth fa args (i + 1)
   else pure (.done v)
-termination_by (lv, 30, args.size - i, 0)
+termination_by (lv, 30, args.size - i, 1)
+
+/-- The rule arm of `whnfAppI` at the prefix `fa`, headed by the constant `c`, where ι did not
+fire: the rules of `c` (`rewriteRulesI`); a firing hands the loop its reduct applied to the
+rest of the spine, marked as a firing (`WhnfStep.fire`), and otherwise the argument loop goes
+on. -/
+def whnfAppRuleI (eager : Bool) (lv : Nat) (depth : Nat)
+    (fa : Expr) (c : Name) (args : Array Expr) (i : Nat) : CheckCM WhnfStep := do
+  match ← rewriteRulesI eager lv depth fa (fe.rulesFor c) with
+  | some (t, e₂) => pure (.fire t (mkAppRange e₂ args (i + 1) args.size))
+  | none => whnfAppI eager lv depth fa args (i + 1)
+termination_by (lv, 30, args.size - (i + 1), 2)
 
 /-- A spine `e` whose head `h` is its own head normal form and not a
 lambda (official `whnf_core`'s `f == f0` arm,
@@ -1203,12 +1264,17 @@ def whnfCoreStepI (eager : Bool) (lv : Nat) (cheap : Bool) (depth : Nat)
     (h e : Expr) : CheckCM WhnfStep := do
     match e with
     | .sort _ | .fvar .. | .forallE ..
-    | .lam .. | .const .. | .lit _ => pure (.done e)
+    | .lam .. | .lit _ => pure (.done e)
+    | .const .. => do
+      -- a rule whose left side is a bare constant
+      match ← rewriteStepI eager lv depth e with
+      | some (t, e₂) => pure (.fire t e₂)
+      | none => pure (.done e)
     | .app _ _ => do
       -- `h` is the spine head, computed by the loop
-      -- a head that is its own head normal form: the spine is stuck but
-      -- for ι, and is answered by itself
-      if isStuckHeadC h then whnfStuckI eager lv depth h e
+      -- a head that is its own head normal form and has no rule: the
+      -- spine is stuck but for ι, and is answered by itself
+      if isStuckHeadC h && noRulesC fe h then whnfStuckI eager lv depth h e
       else do
         -- Bulk beta (task #50): normalize the spine head once and run
         -- the argument loop over the whole spine, batching consecutive
@@ -1255,10 +1321,10 @@ mode writes there the keys whose chain from the key on takes no step
 the two modes take differently (`whnfCoreCheapSafeC`; `pendC`, emptied
 at any other step and at a hit). -/
 def whnfCoreLoopI (eager : Bool) (lv : Nat) (cheap : Bool) (depth : Nat) :
-    Nat → List Expr → List Expr → Expr → CheckCM Expr
-  | 0, _, _, _ => throw (.internal "fuel exhausted: whnfCore loop")
-  | n + 1, pend, pendC, e => do
-    if whnfCoreEasy e then
+    Nat → Nat → List Expr → List Expr → Expr → CheckCM Expr
+  | 0, _, _, _, _ => throw (.internal "fuel exhausted: whnfCore loop")
+  | n + 1, fires, pend, pendC, e => do
+    if whnfCoreEasy e && noRulesC fe e then
       storeChainI cheap pend pendC e
       pure e
     else
@@ -1269,7 +1335,7 @@ def whnfCoreLoopI (eager : Bool) (lv : Nat) (cheap : Bool) (depth : Nat) :
         storeChainI cheap pend [] r
         pure r
       | none =>
-        let safe := whnfCoreCheapSafeC h e
+        let safe := whnfCoreCheapSafeC h e && noRulesC fe h
         match ← whnfCoreStepI eager lv cheap depth h e with
         | .done v =>
           let st := !cheap && whnfCoreStoresDone key e v
@@ -1277,13 +1343,23 @@ def whnfCoreLoopI (eager : Bool) (lv : Nat) (cheap : Bool) (depth : Nat) :
           pure v
         | .cont e' =>
           let st := !cheap && key
-          whnfCoreLoopI eager lv cheap depth n (pushKey st e pend) (pushCheapKey safe st e pendC) e'
-termination_by n _ _ _ => (lv, 32, n, 0)
+          whnfCoreLoopI eager lv cheap depth n fires (pushKey st e pend)
+            (pushCheapKey safe st e pendC) e'
+        | .fire t e' =>
+          -- a rule fired: one of the loop's firings (official counts them per outermost
+          -- `whnf_core` call)
+          match fires with
+          | 0 => throw (ruleBudgetError t)
+          | k + 1 =>
+            let st := !cheap && key
+            whnfCoreLoopI eager lv cheap depth n k (pushKey st e pend)
+              (pushCheapKey safe st e pendC) e'
+termination_by n _ _ _ _ => (lv, 32, n, 0)
 
 /-- Twin of `whnfCoreBody`: the head-normalization loop at its own step
 budget, with no key pending. -/
 def whnfCoreBodyI (eager : Bool) (lv : Nat) : Bool → Nat → Expr → CheckCM Expr :=
-  fun cheap depth e => whnfCoreLoopI eager lv cheap depth whnfCoreLoopFuel [] [] e
+  fun cheap depth e => whnfCoreLoopI eager lv cheap depth whnfCoreLoopFuel ruleFireBudget [] [] e
 termination_by (lv, 33, 0, 0)
 
 /-- Twin of `defeqArg`: an `eagerReduce _ _` argument's type is
@@ -1346,79 +1422,30 @@ def inferSpineIOI (eager : Bool) (lv : Nat) (depth : Nat) :
       | _ => throw (.invalid "function expected")
 termination_by _ _ args => (lv, 36, args.length, 0)
 
-/-- Twin of `rewriteAttempt`: the theorem's type at the levels through the per-declaration memo
-(`constTyAtM`), its residual by `piResidualM`, every check the specification's. -/
-def rewriteAttemptI (eager : Bool) (lv : Nat) (depth : Nat) (e : Expr) (thm : Name) :
-    CheckCM (Option Expr) := do
-  match fe.find? thm with
-  | some (.thmInfo cv) =>
-    match ruleArgs cv e with
-    | some (args, us) => do
-      let T ← constTyAtM fe thm thm us
-      match (← piResidualM T args).bind eqSpine? with
-      | some (eqn, u, A, l, rhs) =>
-        if RuleGate cv us args e eqn l rhs then
-          if ← iotaCertsFullI eager lv depth T args then
-            if (← inferI eager lv false depth A) = .sort u then
-              if (← inferI eager lv false depth e) = A then
-                if (← inferI eager lv false depth rhs) = A then pure (some rhs) else pure none
-              else pure none
-            else pure none
-          else pure none
-        else pure none
-      | none => pure none
-    | none => pure none
-  | _ => pure none
-termination_by (lv, 37, 0, 0)
-
-/-- Twin of `rewriteRules`. -/
-def rewriteRulesI (eager : Bool) (lv : Nat) (depth : Nat) (e : Expr) :
-    List Name → CheckCM (Option (Name × Expr))
-  | [] => pure none
-  | t :: ts => do
-    match ← rewriteAttemptI eager lv depth e t with
-    | some e₂ => pure (some (t, e₂))
-    | none => rewriteRulesI eager lv depth e ts
-termination_by ts => (lv, 37, 0, ts.length + 1)
-
-/-- Twin of `rewriteStep`: the rules through the index (`FEnv.rulesFor`). -/
-def rewriteStepI (eager : Bool) (lv : Nat) (depth : Nat) (e : Expr) :
-    CheckCM (Option (Name × Expr)) :=
-  match e.getAppFn with
-  | .const c _ => rewriteRulesI eager lv depth e (fe.rulesFor c)
-  | _ => pure none
-termination_by (lv, 37, 1, 0)
-
 /-- Twin of `whnfLoop`, each step `whnfStep`'s: the continuation of a
 step is the loop's own tail call, which the compiler turns into a jump,
 so a δ chain of any length runs in constant native stack (task #342 R2:
 a non-terminating δ chain — Coquand's paradox — runs until the external
 timeout instead of overflowing the stack). -/
 def whnfLoopI (eager : Bool) (lv : Nat) (depth : Nat) :
-    Nat → Nat → Expr → CheckCM Expr
-  | 0, _, _ => throw (.internal "fuel exhausted: whnf loop")
-  | n + 1, fires, e => do
+    Nat → Expr → CheckCM Expr
+  | 0, _ => throw (.internal "fuel exhausted: whnf loop")
+  | n + 1, e => do
     let e₁ ← whnfCoreI eager lv false depth e
     match ← reduceNatI eager lv depth e₁ with
     -- a computed literal is the answer (official `whnf`: `if (auto v =
     -- reduce_nat(t)) return *v;`); a `Bool` constructor goes on (see
     -- `whnfStep`)
-    | some e₂ => if e₂.isLit then pure e₂ else whnfLoopI eager lv depth n fires e₂
+    | some e₂ => if e₂.isLit then pure e₂ else whnfLoopI eager lv depth n e₂
     | none =>
-      match ← rewriteStepI eager lv depth e₁ with
-      | some (t, e₂) =>
-        match fires with
-        | 0 => throw (ruleBudgetError t)
-        | f + 1 => whnfLoopI eager lv depth n f e₂
-      | none =>
-        match ← unfoldDefinitionI fe e₁ with
-        | some e₂ => whnfLoopI eager lv depth n fires e₂
-        | none => pure e₁
-termination_by n _ _ => (lv, 37, n + 1, 0)
+      match ← unfoldDefinitionI fe e₁ with
+      | some e₂ => whnfLoopI eager lv depth n e₂
+      | none => pure e₁
+termination_by n _ => (lv, 37, n, 0)
 
 /-- Twin of `whnfBody`. -/
 def whnfBodyI (eager : Bool) (lv : Nat) : Nat → Expr → CheckCM Expr :=
-  fun depth e => whnfLoopI eager lv depth whnfLoopFuel ruleFireBudget e
+  fun depth e => whnfLoopI eager lv depth whnfLoopFuel e
 termination_by (lv, 38, 0, 0)
 
 /-- Twin of `ensureSort` (returns the level; no readback needed). -/

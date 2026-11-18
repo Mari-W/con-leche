@@ -70,7 +70,7 @@ theorem Runs.whnf_easy {d : Nat} {i : Expr} (h : whnfEasy i = true) :
     Runs ((fueledFns mode eager env).whnf d i) i := by
   obtain ⟨n, hn⟩ := whnfLoopFuel_succ
   refine ⟨2, ?_⟩
-  show whnfLoop (pureFns mode eager env 1) env d whnfLoopFuel ruleFireBudget i = .ok i
+  show whnfLoop (pureFns mode eager env 1) env d whnfLoopFuel i = .ok i
   rw [hn]
   cases i <;> first | rfl | exact nomatch h
 grind_pattern [conleche_grind] Runs.whnf_easy =>

@@ -1026,11 +1026,78 @@ def reduceProjCore (r : CoreFns m) (env : Env) (depth : Nat) (sn : Name)
     | _ => pure none
   | none => pure none
 
+/-- **A user rewrite rule's firing** (`Red.rewrite`): every premise of the rule checked at the
+firing.  The first-order match (`ruleArgs`) proposes the arguments and the levels; the firing
+then checks the level count, the residual `Eq` spine whose left side is the term, the term's head
+a constant, every argument a subterm of the term's application tree, every free-variable leaf of
+the right side one of the term's, the theorem's telescope certified at the full grade
+(`iotaCertsFull`), and the three full-grade inferences `A : Sort u`, `l : A` and `r : A`,
+compared syntactically.  Any failed check is no firing. -/
+def rewriteAttempt (r : CoreFns m) (env : Env) (depth : Nat) (e : Expr) (thm : Name) :
+    m (Option Expr) := do
+  match env.find? thm with
+  | some (.thmInfo cv) =>
+    match ruleArgs cv e with
+    | some (args, us) =>
+      match (piResidual (cv.type.instantiateLevelParams cv.levelParams us) args).bind eqSpine? with
+      | some (eqn, u, A, l, rhs) =>
+        if RuleGate cv us args e eqn l rhs then
+          if ← iotaCertsFull r env depth (cv.type.instantiateLevelParams cv.levelParams us)
+              args then
+            if (← r.infer depth A) = .sort u then
+              if (← r.infer depth e) = A then
+                if (← r.infer depth rhs) = A then pure (some rhs) else pure none
+              else pure none
+            else pure none
+          else pure none
+        else pure none
+      | none => pure none
+    | none => pure none
+  | _ => pure none
+
+/-- The rules in order: the first that fires, with its theorem. -/
+def rewriteRules (r : CoreFns m) (env : Env) (depth : Nat) (e : Expr) :
+    List Name → m (Option (Name × Expr))
+  | [] => pure none
+  | t :: ts => do
+    match ← rewriteAttempt r env depth e t with
+    | some e₂ => pure (some (t, e₂))
+    | none => rewriteRules r env depth e ts
+
+/-- **The rewrite step**: the rules registered for the term's head constant (`Env.rulesFor`), in
+the table's order. -/
+def rewriteStep (r : CoreFns m) (env : Env) (depth : Nat) (e : Expr) : m (Option (Name × Expr)) :=
+  match e.getAppFn with
+  | .const c _ => rewriteRules r env depth e (env.rulesFor c)
+  | _ => pure none
+
+/-- **ι, then the user rewrite rules** (official `reduce_recursor`: ι, then `reduce_rewrite`):
+the reduct of the first that fires at the stuck application `e`. -/
+def iotaThenRule (r : CoreFns m) (env : Env) (depth : Nat) (e : Expr) : m (Option Expr) := do
+  match ← iotaRec mode r env depth e with
+  | some e'' => pure (some e'')
+  | none =>
+    match ← rewriteStep r env depth e with
+    | some (_, e₂) => pure (some e₂)
+    | none => pure none
+
+/-- **How many rewrite rules one head-normalization loop may fire** (official: per outermost
+`whnf_core`/`whnf` call, `LEAN_REWRITE_FIRE_BUDGET`).  The cached loop (`whnfCoreLoopI`) counts
+its firings and rejects past the budget, at the rule that would fire next; the specification
+has no budget (its knot fuel bounds it).  A placeholder for a static termination check. -/
+@[irreducible, noinline] def ruleFireBudget : Nat := 65536  -- 2^16
+
+/-- The error past the firing budget, naming the rule that would fire. -/
+def ruleBudgetError (t : Name) : CheckError :=
+  .invalid s!"rewrite rule budget exhausted: {t} would fire past {ruleFireBudget} firings"
+
 /-- The head-normalization body: beta (with the per-redex argument
 certificate, unconditional since the task-#100 de-gating), iota (with
-the stuck-major machinery) and the native basis pair projection — but
-**no delta**; unfolding happens in the `whnf` loop.  Values (sorts,
-binders, constants, literals) return themselves.
+the stuck-major machinery), the native basis pair projection and the
+user rewrite rules (`rewriteStep`, at a constant and after a failed ι,
+the position of official's hook in `reduce_recursor`) — but **no
+delta**; unfolding happens in the `whnf` loop.  Values (sorts, binders,
+literals, and constants no rule rewrites) return themselves.
 
 `cheap` is the official kernel's `cheap_proj` (`whnf_core(e,
 cheap_rec = false, cheap_proj)`): a projection's scrutinee is reduced
@@ -1046,7 +1113,11 @@ def whnfCoreBody (r : CoreFns m) (env : Env) : Bool → Nat → Expr → m Expr 
     | .fvar idx ty => pure (.fvar idx ty)
     | .forallE ty body => pure (.forallE ty body)
     | .lam ty body => pure (.lam ty body)
-    | .const n us => pure (.const n us)
+    | .const n us => do
+      -- a rule whose left side is a bare constant (official `whnf_core`'s `Const` case)
+      match ← rewriteStep r env depth (.const n us) with
+      | some (_, e₂) => r.whnfCore cheap depth e₂
+      | none => pure (.const n us)
     | .lit l => pure (.lit l)
     | .app f a => do
       match ← r.whnfCore cheap depth f with
@@ -1054,7 +1125,7 @@ def whnfCoreBody (r : CoreFns m) (env : Env) : Bool → Nat → Expr → m Expr 
         -- Task #342 S0: uniform β, no certificate
         r.whnfCore cheap depth (body.instantiate1 a)
       | f' => do
-        match ← iotaRec mode r env depth (.app f' a) with
+        match ← iotaThenRule mode r env depth (.app f' a) with
         | some e'' => r.whnfCore cheap depth e''
         | none => pure (.app f' a)
     | .proj sn i pe => do
@@ -1105,6 +1176,9 @@ included — runs in constant native stack. -/
 inductive WhnfStep where
   | done (e : Expr)
   | cont (e : Expr)
+  /-- The term to continue with, reached by firing the rewrite rule `t`: the cached loop counts
+  these against `ruleFireBudget`. -/
+  | fire (t : Name) (e : Expr)
 
 /-- Step budget of the `whnf` reduction loop (lean4lean's
 `FuelConfig.whnf`, same value).  Literal-acceleration and delta steps
@@ -1124,55 +1198,9 @@ def Expr.isLit : Expr → Bool
   | .lit _ => true
   | _ => false
 
-/-- **A user rewrite rule's firing** (`Red.rewrite`): every premise of the rule checked at the
-firing.  The first-order match (`ruleArgs`) proposes the arguments and the levels; the firing
-then checks the level count, the residual `Eq` spine whose left side is the term, the term's head
-a constant, every argument a subterm of the term's application tree, every free-variable leaf of
-the right side one of the term's, the theorem's telescope certified at the full grade
-(`iotaCertsFull`), and the three full-grade inferences `A : Sort u`, `l : A` and `r : A`,
-compared syntactically.  Any failed check is no firing. -/
-def rewriteAttempt (r : CoreFns m) (env : Env) (depth : Nat) (e : Expr) (thm : Name) :
-    m (Option Expr) := do
-  match env.find? thm with
-  | some (.thmInfo cv) =>
-    match ruleArgs cv e with
-    | some (args, us) =>
-      match (piResidual (cv.type.instantiateLevelParams cv.levelParams us) args).bind eqSpine? with
-      | some (eqn, u, A, l, rhs) =>
-        if RuleGate cv us args e eqn l rhs then
-          if ← iotaCertsFull r env depth (cv.type.instantiateLevelParams cv.levelParams us)
-              args then
-            if (← r.infer depth A) = .sort u then
-              if (← r.infer depth e) = A then
-                if (← r.infer depth rhs) = A then pure (some rhs) else pure none
-              else pure none
-            else pure none
-          else pure none
-        else pure none
-      | none => pure none
-    | none => pure none
-  | _ => pure none
-
-/-- The rules in order: the first that fires, with its theorem. -/
-def rewriteRules (r : CoreFns m) (env : Env) (depth : Nat) (e : Expr) :
-    List Name → m (Option (Name × Expr))
-  | [] => pure none
-  | t :: ts => do
-    match ← rewriteAttempt r env depth e t with
-    | some e₂ => pure (some (t, e₂))
-    | none => rewriteRules r env depth e ts
-
-/-- **The rewrite step**: the rules registered for the term's head constant (`Env.rulesFor`), in
-the table's order. -/
-def rewriteStep (r : CoreFns m) (env : Env) (depth : Nat) (e : Expr) : m (Option (Name × Expr)) :=
-  match e.getAppFn with
-  | .const c _ => rewriteRules r env depth e (env.rulesFor c)
-  | _ => pure none
-
 /-- One iteration of the reduction loop (the official kernel's `whnf`
 body, lean4lean's `whnf'` loop body): head-normalize, try literal
-acceleration, fire a user rewrite rule (handed to `kr` with its theorem),
-unfold one definition — and hand the reduct to the
+acceleration, unfold one definition — and hand the reduct to the
 loop's continuation `k`.  A computed literal is the answer at once
 (official `whnf`: `if (auto v = reduce_nat(t)) return *v;`): it is its
 own head normal form.  A `Bool` constructor computed by `Nat.beq` or
@@ -1183,41 +1211,25 @@ exactly like the record `r`, so every lemma about the body is proven
 once, with a hypothesis about `k`, and the loop lemma is one induction
 on the budget. -/
 def whnfStep (r : CoreFns m) (env : Env) (depth : Nat)
-    (k : Expr → m Expr) (kr : Name → Expr → m Expr) (e : Expr) : m Expr := do
+    (k : Expr → m Expr) (e : Expr) : m Expr := do
   let e₁ ← r.whnfCore false depth e
   match ← reduceNat r env depth e₁ with
   | some e₂ => if e₂.isLit then pure e₂ else k e₂
   | none =>
-    match ← rewriteStep r env depth e₁ with
-    | some (t, e₂) => kr t e₂
-    | none =>
-      match unfoldDefinition env e₁ with
-      | some e₂ => k e₂
-      | none => pure e₁
-
-/-- **How many rewrite rules one reduction loop may fire.**  A placeholder for a static
-termination check of the rule set: a loop that fires more is rejected, at the rule that would
-fire next. -/
-@[irreducible, noinline] def ruleFireBudget : Nat := 65536  -- 2^16
-
-/-- The error past the firing budget, naming the rule that would fire. -/
-def ruleBudgetError (t : Name) : CheckError :=
-  .invalid s!"rewrite rule budget exhausted: {t} would fire past {ruleFireBudget} firings"
+    match unfoldDefinition env e₁ with
+    | some e₂ => k e₂
+    | none => pure e₁
 
 /-- The reduction loop: iterate `whnfStep` on its own step budget, so
-the whole chain costs one knot level however many steps it takes; each
-rule firing spends one of the loop's firings. -/
+the whole chain costs one knot level however many steps it takes. -/
 def whnfLoop (r : CoreFns m) (env : Env) (depth : Nat) :
-    Nat → Nat → Expr → m Expr
-  | 0, _, _ => throw (.internal "fuel exhausted: whnf loop")
-  | n + 1, fires, e => whnfStep r env depth (whnfLoop r env depth n fires)
-      (fun t e₂ => match fires with
-        | 0 => throw (ruleBudgetError t)
-        | f + 1 => whnfLoop r env depth n f e₂) e
+    Nat → Expr → m Expr
+  | 0, _ => throw (.internal "fuel exhausted: whnf loop")
+  | n + 1, e => whnfStep r env depth (whnfLoop r env depth n) e
 
-/-- The reduction loop's body: run `whnfLoop` at its own step budget and firing budget. -/
+/-- The reduction loop's body: run `whnfLoop` at its own step budget. -/
 def whnfBody (r : CoreFns m) (env : Env) : Nat → Expr → m Expr :=
-  fun depth e => whnfLoop r env depth whnfLoopFuel ruleFireBudget e
+  fun depth e => whnfLoop r env depth whnfLoopFuel e
 
 /-- Ensure `e` (the type of some expression) is a sort, returning its
 level. -/

@@ -53,13 +53,13 @@ open Expr
 variable {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
 
 /-- The continuation of `whnfCoreBody`'s app case after the function
-part's head normalization: uniform beta on a lambda, iota otherwise. -/
+part's head normalization: uniform beta on a lambda, iota then the rules otherwise. -/
 def appStep (mode : CheckMode) (r : CoreFns m) (env : Env) (depth : Nat)
     (k : Expr → m Expr) (w a : Expr) : m Expr :=
   match w with
   | .lam _ body => k (body.instantiate1 a)
   | f' => do
-    match ← iotaRec mode r env depth (.app f' a) with
+    match ← iotaThenRule mode r env depth (.app f' a) with
     | some e'' => k e''
     | none => pure (.app f' a)
 
@@ -83,7 +83,7 @@ spine against the whnf'd head. -/
     match v with
     | .lam _ body => betaPeel mode r env depth k body [a] rest
     | v => do
-      match ← iotaRec mode r env depth (.app v a) with
+      match ← iotaThenRule mode r env depth (.app v a) with
       | some e'' => k (Expr.mkAppN e'' rest)
       | none => whnfApp mode r env depth k (.app v a) rest
 termination_by _ args => (args.length, 0)
@@ -112,13 +112,13 @@ decreasing_by
 
 end
 
-/-- The iota arm of `whnfApp` (the loop body for a non-lambda head),
+/-- The iota-and-rules arm of `whnfApp` (the loop body for a non-lambda head),
 as a standalone computation: `whnfApp_ne_lam` identifies the loop with
 it, giving every downstream proof a single equation instead of nine
 head shapes. -/
 @[expose] def whnfAppIota (mode : CheckMode) (r : CoreFns m) (env : Env) (depth : Nat)
     (k : Expr → m Expr) (v a : Expr) (rest : List Expr) : m Expr := do
-  match ← iotaRec mode r env depth (.app v a) with
+  match ← iotaThenRule mode r env depth (.app v a) with
   | some e'' => k (Expr.mkAppN e'' rest)
   | none => whnfApp mode r env depth k (.app v a) rest
 
@@ -198,6 +198,7 @@ identify each with the continuation-passing mirror above followed by
 @[expose] def WhnfStep.run (k : Expr → m Expr) : WhnfStep → m Expr
   | .done v => pure v
   | .cont e => k e
+  | .fire _ e => k e
 
 mutual
 
@@ -211,12 +212,21 @@ mutual
     | v => do
       match ← iotaRec mode r env depth (.app v a) with
       | some e'' => pure (.cont (Expr.mkAppN e'' rest))
-      | none => whnfAppW mode r env depth (.app v a) rest
+      | none => whnfAppRuleW mode r env depth (.app v a) rest
 termination_by _ args => (args.length, 0)
 decreasing_by
   all_goals first
     | (apply Prod.Lex.left; simp; done)
     | (apply Prod.Lex.right' <;> simp)
+
+/-- Pure mirror of the cached `whnfAppRuleI`: the rules at the prefix `fa`, where ι did not
+fire; a firing is marked (`WhnfStep.fire`), and otherwise the loop goes on. -/
+@[expose] def whnfAppRuleW (mode : CheckMode) (r : CoreFns m) (env : Env) (depth : Nat)
+    (fa : Expr) (rest : List Expr) : m WhnfStep := do
+  match ← rewriteStep r env depth fa with
+  | some (t, e₂) => pure (.fire t (Expr.mkAppN e₂ rest))
+  | none => whnfAppW mode r env depth fa rest
+termination_by (rest.length, 2)
 
 /-- Pure mirror of the cached `betaPeelI`. -/
 @[expose] def betaPeelW (mode : CheckMode) (r : CoreFns m) (env : Env) (depth : Nat) :
@@ -251,10 +261,19 @@ theorem whnfAppW_ne_lam (r : CoreFns m) (env : Env) (depth : Nat)
       = (do
           match ← iotaRec mode r env depth (.app v a) with
           | some e'' => pure (.cont (Expr.mkAppN e'' rest))
-          | none => whnfAppW mode r env depth (.app v a) rest) := by
+          | none => whnfAppRuleW mode r env depth (.app v a) rest) := by
   cases v with
   | lam ty body => exact absurd rfl (hv ty body)
   | _ => rw [whnfAppW] <;> exact fun _ _ h => nomatch h
+
+theorem whnfAppRuleW_eq (r : CoreFns m) (env : Env) (depth : Nat) (fa : Expr)
+    (rest : List Expr) :
+    whnfAppRuleW mode r env depth fa rest
+      = (do
+          match ← rewriteStep r env depth fa with
+          | some (t, e₂) => pure (.fire t (Expr.mkAppN e₂ rest))
+          | none => whnfAppW mode r env depth fa rest) := by
+  rw [whnfAppRuleW]
 
 theorem betaPeelW_nil (r : CoreFns m) (env : Env) (depth : Nat)
     (t : Expr) (acc : List Expr) :
@@ -295,7 +314,10 @@ the loop's continuation `k` abstracted. -/
   | .fvar idx ty => pure (.fvar idx ty)
   | .forallE ty body => pure (.forallE ty body)
   | .lam ty body => pure (.lam ty body)
-  | .const n us => pure (.const n us)
+  | .const n us => do
+    match ← rewriteStep r env depth (.const n us) with
+    | some (_, e₂) => k e₂
+    | none => pure (.const n us)
   | .lit l => pure (.lit l)
   | .app f a =>
     r.whnfCore cheap depth (Expr.app f a).getAppFn >>= fun v =>
@@ -316,7 +338,10 @@ returning the head normal form or the term to continue with. -/
   | .fvar idx ty => pure (.done (.fvar idx ty))
   | .forallE ty body => pure (.done (.forallE ty body))
   | .lam ty body => pure (.done (.lam ty body))
-  | .const n us => pure (.done (.const n us))
+  | .const n us => do
+    match ← rewriteStep r env depth (.const n us) with
+    | some (t, e₂) => pure (.fire t e₂)
+    | none => pure (.done (.const n us))
   | .lit l => pure (.done (.lit l))
   | .app f a =>
     r.whnfCore cheap depth (Expr.app f a).getAppFn >>= fun v =>
@@ -361,7 +386,7 @@ theorem whnfApp_atF (d : Nat) (k : Expr → FueledM Expr)
         fun ty b hh => hlam ⟨ty, b, hh⟩
       rw [whnfApp_ne_lam _ _ _ _ hv, whnfApp_ne_lam _ _ _ _ hv]
       unfold whnfAppIota
-      rw [FueledM.atF_bind, iotaRec_atF]
+      rw [FueledM.atF_bind, iotaThenRule_atF]
       congr 1
       funext o
       cases o with
@@ -417,8 +442,26 @@ theorem whnfAppW_atF (d : Nat) (F : Nat) :
       funext o
       cases o with
       | some e'' => rfl
-      | none => exact whnfAppW_atF d F rest (.app v a)
+      | none => exact whnfAppRuleW_atF d F rest (.app v a)
 termination_by xs => (xs.length, 0)
+decreasing_by
+  all_goals first
+    | (apply Prod.Lex.left; simp; done)
+    | (apply Prod.Lex.right' <;> simp)
+
+theorem whnfAppRuleW_atF (d : Nat) (F : Nat) :
+    ∀ (xs : List Expr) (fa : Expr),
+      (whnfAppRuleW mode (fueledFns mode eager env) env d fa xs).val F
+        = whnfAppRuleW mode (pureFns mode eager env F) env d fa xs
+  | xs, fa => by
+    rw [whnfAppRuleW_eq, whnfAppRuleW_eq]
+    rw [FueledM.atF_bind, rewriteStep_atF]
+    congr 1
+    funext o
+    cases o with
+    | some te => rfl
+    | none => exact whnfAppW_atF d F xs fa
+termination_by xs => (xs.length, 2)
 decreasing_by
   all_goals first
     | (apply Prod.Lex.left; simp; done)
@@ -450,6 +493,11 @@ theorem whnfCoreStepW_atF (c : Bool) (d : Nat) (F : Nat) (e : Expr) :
     (whnfCoreStepW mode (fueledFns mode eager env) env c d e).val F
       = whnfCoreStepW mode (pureFns mode eager env F) env c d e := by
   cases e <;> (unfold whnfCoreStepW; try rfl)
+  case const n us =>
+    rw [FueledM.atF_bind, rewriteStep_atF]
+    congr 1
+    funext o
+    cases o <;> rfl
   case app f a =>
     rw [FueledM.atF_bind]
     congr 1
@@ -504,6 +552,20 @@ theorem iotaRec_mono {d : Nat} {e : Expr} {F F' : Nat}
     iotaRec mode (pureFns mode eager env F') env d e = .ok o := by
   rw [← iotaRec_atF] at h ⊢
   exact (iotaRec mode (fueledFns mode eager env) env d e).property hle h
+
+theorem iotaThenRule_mono {d : Nat} {e : Expr} {F F' : Nat}
+    (hle : F ≤ F') {o : Option Expr}
+    (h : iotaThenRule mode (pureFns mode eager env F) env d e = .ok o) :
+    iotaThenRule mode (pureFns mode eager env F') env d e = .ok o := by
+  rw [← iotaThenRule_atF] at h ⊢
+  exact (iotaThenRule mode (fueledFns mode eager env) env d e).property hle h
+
+theorem rewriteStep_mono {d : Nat} {e : Expr} {F F' : Nat}
+    (hle : F ≤ F') {o : Option (Name × Expr)}
+    (h : rewriteStep (pureFns mode eager env F) env d e = .ok o) :
+    rewriteStep (pureFns mode eager env F') env d e = .ok o := by
+  rw [← rewriteStep_atF] at h ⊢
+  exact (rewriteStep (fueledFns mode eager env) env d e).property hle h
 
 /-- `whnfCore` is the identity on a lambda (at nonzero fuel). -/
 theorem whnfCore_lam (F d : Nat) (ty body : Expr)
@@ -652,7 +714,7 @@ theorem whnfApp_snoc {d : Nat} :
             (fun _ => rfl) (Nat.le_max_right F F₁) hstep⟩
         rw [whnfApp_ne_lam _ _ _ _ hv]
         unfold whnfAppIota
-        rw [iotaRec_mono (Nat.le_max_left F F₁) ho, ok_bind]
+        rw [iotaThenRule_mono (Nat.le_max_left F F₁) ho, ok_bind]
         dsimp only
         exact whnfApp_mono ((fueledFns mode eager env).whnfCore c d) _ _ (fun _ => rfl)
           (fun _ => rfl) (Nat.le_max_right F F₁) hw
@@ -830,14 +892,14 @@ theorem whnfApp_ksound {d : Nat} (k : Expr → FueledM Expr)
         refine ⟨max F M, ?_⟩
         rw [whnfApp_ne_lam _ _ _ _ hv]
         unfold whnfAppIota
-        rw [iotaRec_mono (Nat.le_max_left F M) ho, ok_bind]
+        rw [iotaThenRule_mono (Nat.le_max_left F M) ho, ok_bind]
         exact whnfCore_mono (Nat.le_max_right F M) hM
       | none =>
         obtain ⟨F₁, hP⟩ := whnfApp_ksound k hks rest (.app v a) res F H
         refine ⟨max F F₁, ?_⟩
         rw [whnfApp_ne_lam _ _ _ _ hv]
         unfold whnfAppIota
-        rw [iotaRec_mono (Nat.le_max_left F F₁) ho, ok_bind]
+        rw [iotaThenRule_mono (Nat.le_max_left F F₁) ho, ok_bind]
         dsimp only
         exact whnfApp_mono ((fueledFns mode eager env).whnfCore c d) _ _
           (fun _ => rfl) (fun _ => rfl) (Nat.le_max_right F F₁) hP
@@ -898,7 +960,23 @@ theorem whnfCoreStepM_sound {d : Nat} (k : Expr → FueledM Expr)
   | bvar j => exact absurd H (by simp [whnfCoreStepM])
   | sort u => exact ⟨F, H⟩
   | fvar idx ty => exact ⟨F, H⟩
-  | const nm us => exact ⟨F, H⟩
+  | const nm us =>
+    simp only [whnfCoreStepM] at H
+    obtain ⟨o, ho, H⟩ := bind_ok H
+    cases o with
+    | none =>
+      refine ⟨F, ?_⟩
+      simp only [whnfCoreBody]
+      rw [ho, ok_bind]
+      exact H
+    | some te =>
+      obtain ⟨M, hM⟩ := hks F _ _ H
+      refine ⟨max F M, ?_⟩
+      simp only [whnfCoreBody]
+      rw [rewriteStep_mono (Nat.le_max_left F M) ho, ok_bind]
+      dsimp only
+      rw [whnfCore_def]
+      exact whnfCore_mono (Nat.le_max_right F M) hM
   | lit l => exact ⟨F, H⟩
   | lam ty bd => exact ⟨F, H⟩
   | forallE ty bd => exact ⟨F, H⟩
@@ -980,13 +1058,21 @@ theorem whnfApp_run {d F : Nat} (kF : Expr → CheckM Expr) :
     · have hv : ∀ ty body, v ≠ Expr.lam ty body :=
         fun ty b hh => hlam ⟨ty, b, hh⟩
       rw [whnfApp_ne_lam _ _ _ _ hv, whnfAppW_ne_lam _ _ _ hv]
-      unfold whnfAppIota
+      unfold whnfAppIota iotaThenRule
       cases ho : iotaRec mode (pureFns mode eager env F) env d (.app v a) with
       | error err => rfl
       | ok o =>
         cases o with
         | some e'' => rfl
-        | none => exact whnfApp_run kF rest (.app v a)
+        | none =>
+          show _ = (whnfAppRuleW mode (pureFns mode eager env F) env d (.app v a) rest >>= _)
+          rw [whnfAppRuleW_eq]
+          cases hr : rewriteStep (pureFns mode eager env F) env d (.app v a) with
+          | error err => rfl
+          | ok ro =>
+            cases ro with
+            | some te => rfl
+            | none => exact whnfApp_run kF rest (.app v a)
 termination_by xs => (xs.length, 0)
 decreasing_by
   all_goals first
@@ -1020,6 +1106,11 @@ theorem whnfCoreStepM_run {d F : Nat} (kF : Expr → CheckM Expr) (e : Expr) :
     whnfCoreStepM mode (pureFns mode eager env F) env c d kF e
       = whnfCoreStepW mode (pureFns mode eager env F) env c d e >>= WhnfStep.run kF := by
   cases e with
+  | const n us =>
+    simp only [whnfCoreStepM, whnfCoreStepW]
+    cases hr : rewriteStep (pureFns mode eager env F) env d (.const n us) with
+    | error err => rfl
+    | ok ro => cases ro <;> rfl
   | app f a =>
     simp only [whnfCoreStepM, whnfCoreStepW]
     cases h : (pureFns mode eager env F).whnfCore c d (Expr.app f a).getAppFn with
@@ -1056,6 +1147,22 @@ with this, a memo hit included, so the specification never sees the
 loop. -/
 theorem whnfCore_of_stepW_cont {d F G : Nat} {e e' v : Expr}
     (hs : (whnfCoreStepW mode (fueledFns mode eager env) env c d e).val F = .ok (.cont e'))
+    (hk : ((fueledFns mode eager env).whnfCore c d e').val G = .ok v) :
+    ∃ M, whnfCore mode eager env M d e c = .ok v := by
+  have hs' := (whnfCoreStepW mode (fueledFns mode eager env) env c d e).property
+    (Nat.le_max_left F G) hs
+  have hk' := ((fueledFns mode eager env).whnfCore c d e').property (Nat.le_max_right F G) hk
+  rw [whnfCoreStepW_atF] at hs'
+  have H : whnfCoreStepM mode (pureFns mode eager env (max F G)) env c d
+      (fun x => ((fueledFns mode eager env).whnfCore c d x).val (max F G)) e = .ok v := by
+    rw [whnfCoreStepM_run, hs']; exact hk'
+  obtain ⟨F', hF'⟩ := whnfCoreStepM_sound (env := env) (d := d)
+    (fun x => (fueledFns mode eager env).whnfCore c d x) (fun G _ _ h => ⟨G, h⟩) (max F G) H
+  exact ⟨F' + 1, by rw [whnfCore_succ]; exact hF'⟩
+
+/-- **A step that fires a rule** (the cached loop's `.fire`): as a continuing step. -/
+theorem whnfCore_of_stepW_fire {d F G : Nat} {e e' v : Expr} {t : Name}
+    (hs : (whnfCoreStepW mode (fueledFns mode eager env) env c d e).val F = .ok (.fire t e'))
     (hk : ((fueledFns mode eager env).whnfCore c d e').val G = .ok v) :
     ∃ M, whnfCore mode eager env M d e c = .ok v := by
   have hs' := (whnfCoreStepW mode (fueledFns mode eager env) env c d e).property
@@ -1263,7 +1370,7 @@ theorem whnf_forallE (F d : Nat) (t b : Expr)
   -- budget is `irreducible`, so peel it with its positivity witness)
   obtain ⟨k, hk⟩ := whnfLoopFuel_succ
   rw [whnf_succ]
-  show whnfLoop (pureFns mode eager env (F + 1)) env d whnfLoopFuel ruleFireBudget _ = _
+  show whnfLoop (pureFns mode eager env (F + 1)) env d whnfLoopFuel _ = _
   rw [hk]
   rfl
 

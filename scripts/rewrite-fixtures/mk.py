@@ -35,12 +35,31 @@ def add(r):
 b0 = add({"bvar": 0}); z = add({"natVal": "0"}); body = add({"app": {"fn": b0, "arg": z}})
 for d in reversed(doms):
     body = add({"lam": {"name": d["name"], "type": d["type"], "body": body, "binderInfo": "default"}})
+# the conversion variant: `rr_use : (n : Nat) → rrT n → B := fun n g => g`, which types only when
+# the definitional-equality check turns `rrT n` into `B` (`rrFn`, or `Nat → Nat`)
+base_new = list(new)
+NAT = nid("Nat")
+natc = add({"const": {"name": NAT, "us": []}})
+fnc = add({"const": {"name": FN, "us": []}})
+pic = add({"forallE": {"name": doms[0]["name"], "type": natc, "body": natc, "binderInfo": "default"}})
+def conv(B):
+    ty = B
+    for d in reversed(doms):
+        ty = add({"forallE": {"name": d["name"], "type": d["type"], "body": ty, "binderInfo": "default"}})
+    v = b0
+    for d in reversed(doms):
+        v = add({"lam": {"name": d["name"], "type": d["type"], "body": v, "binderInfo": "default"}})
+    return ty, v
+conv_fn = conv(fnc)
+conv_pi = conv(pic)
 J = lambda r: json.dumps(r, separators=(",", ":"))
-def emit(name, rules, scope):
-    out = [J(r) for r in recs[:use_i] + recs[use_i + 1:]] + [J(r) for r in new]
+def emit(name, rules, scope, kind=None):
+    out = [J(r) for r in recs[:use_i] + recs[use_i + 1:]] + \
+        [J(r) for r in (base_new if kind is None else new)]
     for (t_, h_, p_) in rules:
         out.append(J({"rewrite": {"name": t_, "head": h_, "prio": p_}}))
     u = dict(use); u["value"] = body
+    if kind is not None: u["type"], u["value"] = kind
     if scope: u["rewrites"] = scope
     out.append(J({"def": u}))
     open(f"{outdir}/{name}.ndjson", "w").write("\n".join(out) + "\n")
@@ -52,3 +71,5 @@ emit("rewrite_rule_bad_head", [(EQ, FN, 1000)], [EQ])
 emit("rewrite_rule_not_thm", [(FN, FN, 1000)], [FN])
 emit("rewrite_rule_pi", [(PI, T, 1000)], [PI])
 emit("rewrite_rule_unregistered", [], [EQ])
+emit("rewrite_rule_conv", [(EQ, T, 1000)], [EQ], conv_fn)
+emit("rewrite_rule_conv_omitted", [(EQ, T, 1000)], None, conv_fn)

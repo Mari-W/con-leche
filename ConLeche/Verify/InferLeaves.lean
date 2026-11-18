@@ -384,6 +384,14 @@ theorem rewriteStep_looseBVars {env : Env} (henv : EnvWF env) {r : CoreFns Check
   simp only [looseBVarsBounded, Bool.and_eq_true] at hR
   exact hR.2
 
+/-- **A rule's right side has no leaf the term it rewrites lacks.** -/
+theorem rewriteStep_fvarLeaves {env : Env} {r : CoreFns CheckM} {d : Nat}
+    {e e₂ : Expr} {t : Name} (h : rewriteStep r env d e = .ok (some (t, e₂))) :
+    ∀ l ∈ e₂.fvarLeaves, l ∈ e.fvarLeaves := by
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, hleaf, -⟩ :=
+    rewriteAttempt_inv (rewriteStep_inv h)
+  exact hleaf
+
 set_option maxRecDepth 2048 in
 set_option maxHeartbeats 1600000 in
 /-- Head normalization and the reduction loop only shrink the leaf
@@ -418,9 +426,9 @@ theorem whnfPres_fvarLeaves {env : Env} (henv : EnvWF env) :
         simp only [whnfCoreBody, pure, Except.pure, Except.ok.injEq] at h
         exact h ▸ fun l hl => hl
       | const n ws =>
-        rw [whnfCore_succ] at h
-        simp only [whnfCoreBody, pure, Except.pure, Except.ok.injEq] at h
-        exact h ▸ fun l hl => hl
+        rcases whnfCore_const_inv h with ⟨t, e₂, hrw, hk⟩ | ⟨-, rfl⟩
+        · exact fun l hl => rewriteStep_fvarLeaves hrw l (ihCore hk l hl)
+        · exact fun l hl => hl
       | lit l0 =>
         rw [whnfCore_succ] at h
         simp only [whnfCoreBody, pure, Except.pure, Except.ok.injEq] at h
@@ -441,12 +449,19 @@ theorem whnfPres_fvarLeaves {env : Env} (henv : EnvWF env) :
         obtain ⟨f', hwf, hcase⟩ := whnf_app_inv h
         simp only [fvarLeaves, List.mem_append]
         rcases hcase with ⟨ty, body, rfl, hbeta⟩ |
-          ⟨e'', hio, hwe''⟩ | rfl
+          ⟨e'', hio', hwe''⟩ | rfl
         · have hl' := ihCore hbeta l hl
           rcases fvarLeaves_instantiate1 body 0 hl' with hb | hb
           · exact Or.inl (ihCore hwf l (by simp [fvarLeaves, hb]))
           · exact Or.inr hb
-        · -- iota step
+        · rcases iotaThenRule_inv hio' with hio | ⟨-, t, hrw⟩
+          rotate_left
+          · have hll := rewriteStep_fvarLeaves hrw l (ihCore hwe'' l hl)
+            simp only [fvarLeaves, List.mem_append] at hll
+            rcases hll with hll | hll
+            · exact Or.inl (ihCore hwf l hll)
+            · exact Or.inr hll
+          -- iota step
           obtain ⟨c, us, cv, mI, rP, isK, rules, major, cj, usj,
             cvj, cnP, cnF, induct, r, hfn, hfc, hlen, -, hprep,
             hmfn, hfj,
@@ -518,33 +533,26 @@ theorem whnfPres_fvarLeaves {env : Env} (henv : EnvWF env) :
             hr (fun l hl => hl)
           exact hsub₂ l (hsub l (ihCore hm l hl))
     · -- whnf loop: induction on the loop's own step budget (task #106)
-      have hloop : ∀ (n fires : Nat) {d : Nat} {e e' : Expr},
-          whnfLoop (pureFns mode eager env fuel) env d n fires e = .ok e' →
+      have hloop : ∀ (n : Nat) {d : Nat} {e e' : Expr},
+          whnfLoop (pureFns mode eager env fuel) env d n e = .ok e' →
           ∀ l ∈ e'.fvarLeaves, l ∈ e.fvarLeaves := by
         intro n
         induction n with
-        | zero => intro _ _ _ _ h _ _; exact nomatch h
+        | zero => intro _ _ _ h _ _; exact nomatch h
         | succ n ihN =>
-          intro fires d e e' h l hl
+          intro d e e' h l hl
           obtain ⟨e₁, hwc, hcase⟩ := whnfStep_inv h
-          rcases hcase with ⟨e₂, hrn, ⟨-, rfl⟩ | hcont⟩ | ⟨-, t, e₂, hrw, hcont⟩ |
-              ⟨-, -, e₂, hu, hcont⟩ | ⟨-, -, -, rfl⟩
+          rcases hcase with ⟨e₂, hrn, ⟨-, rfl⟩ | hcont⟩ | ⟨-, e₂, hu, hcont⟩ | ⟨-, -, rfl⟩
           · rcases reduceNat_inv hrn with ⟨k, rfl⟩ | ⟨bn, rfl⟩ <;>
               simp [Expr.fvarLeaves] at hl
           · rcases reduceNat_inv hrn with ⟨k, rfl⟩ | ⟨bn, rfl⟩ <;>
-            · have := ihN fires hcont l hl
+            · have := ihN hcont l hl
               simp [Expr.fvarLeaves] at this
-          · cases fires with
-            | zero => exact nomatch hcont
-            | succ f =>
-              obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, hleaf, -⟩ :=
-                rewriteAttempt_inv (rewriteStep_inv hrw)
-              exact ihCore hwc l (hleaf l (ihN f hcont l hl))
           · exact ihCore hwc l
-              (unfoldDefinition_fvarLeaves henv hu l (ihN fires hcont l hl))
+              (unfoldDefinition_fvarLeaves henv hu l (ihN hcont l hl))
           · exact ihCore hwc l hl
       intro d e e' h l hl
-      exact hloop whnfLoopFuel ruleFireBudget h l hl
+      exact hloop whnfLoopFuel h l hl
 
 set_option maxRecDepth 2048 in
 set_option maxHeartbeats 1600000 in
@@ -580,9 +588,9 @@ theorem whnfPres_looseBVars {env : Env} (henv : EnvWF env) :
         simp only [whnfCoreBody, pure, Except.pure, Except.ok.injEq] at h
         exact h ▸ hb
       | const n ws =>
-        rw [whnfCore_succ] at h
-        simp only [whnfCoreBody, pure, Except.pure, Except.ok.injEq] at h
-        exact h ▸ hb
+        rcases whnfCore_const_inv h with ⟨t, e₂, hrw, hk⟩ | ⟨-, rfl⟩
+        · exact ihCore hk (rewriteStep_looseBVars henv hrw hb)
+        · exact hb
       | lit l0 =>
         rw [whnfCore_succ] at h
         simp only [whnfCoreBody, pure, Except.pure, Except.ok.injEq] at h
@@ -598,21 +606,24 @@ theorem whnfPres_looseBVars {env : Env} (henv : EnvWF env) :
         simp only [looseBVarsBounded, Bool.and_eq_true] at hb
         obtain ⟨f', hwf, hcase⟩ := whnf_app_inv h
         have hbf' := ihCore hwf hb.1
+        have hbapp : (Expr.app f' a).looseBVarsBounded 0 = true := by
+          simp only [looseBVarsBounded, Bool.and_eq_true]
+          exact ⟨hbf', hb.2⟩
         rcases hcase with ⟨ty, body, rfl, hbeta⟩ |
-          ⟨e'', hio, hwe''⟩ | rfl
+          ⟨e'', hio', hwe''⟩ | rfl
         · simp only [looseBVarsBounded, Bool.and_eq_true] at hbf'
           exact ihCore hbeta
             (looseBVarsBounded_instantiate1_gen hb.2 hbf'.2)
-        · -- iota step
+        · rcases iotaThenRule_inv hio' with hio | ⟨-, t, hrw⟩
+          rotate_left
+          · exact ihCore hwe'' (rewriteStep_looseBVars henv hrw hbapp)
+          -- iota step
           obtain ⟨c, us, cv, mI, rP, isK, rules, major, cj, usj,
             cvj, cnP, cnF, induct, r, hfn, hfc, hlen, -, hprep,
             hmfn, hfj,
             hrule,
             hml, hlev, hpeq, hmcerts, -, rfl⟩ :=
             iotaRec_inv hio
-          have hbapp : (Expr.app f' a).looseBVarsBounded 0 = true := by
-            simp only [looseBVarsBounded, Bool.and_eq_true]
-            exact ⟨hbf', hb.2⟩
           -- the major's bound variables, through the chain in either order
           have hbmaj : major.looseBVarsBounded 0 = true :=
             prepareMajorFueled_ind hprep (fun x => x.looseBVarsBounded 0 = true)
@@ -654,28 +665,24 @@ theorem whnfPres_looseBVars {env : Env} (henv : EnvWF env) :
             looseBVarsBounded_getAppArgs ihLoop
             (fun s _ => strLitToConstructor_looseBVars s 0) hr hbe₂)
     · -- whnf loop: induction on the loop's own step budget (task #106)
-      have hloop : ∀ (n fires : Nat) {d : Nat} {e e' : Expr},
-          whnfLoop (pureFns mode eager env fuel) env d n fires e = .ok e' →
+      have hloop : ∀ (n : Nat) {d : Nat} {e e' : Expr},
+          whnfLoop (pureFns mode eager env fuel) env d n e = .ok e' →
           e.looseBVarsBounded 0 = true → e'.looseBVarsBounded 0 = true := by
         intro n
         induction n with
-        | zero => intro _ _ _ _ h _; exact nomatch h
+        | zero => intro _ _ _ h _; exact nomatch h
         | succ n ihN =>
-          intro fires d e e' h hb
+          intro d e e' h hb
           obtain ⟨e₁, hwc, hcase⟩ := whnfStep_inv h
           have hbe₁ := ihCore hwc hb
-          rcases hcase with ⟨e₂, hrn, ⟨-, rfl⟩ | hcont⟩ | ⟨-, t, e₂, hrw, hcont⟩ |
-              ⟨-, -, e₂, hu, hcont⟩ | ⟨-, -, -, rfl⟩
+          rcases hcase with ⟨e₂, hrn, ⟨-, rfl⟩ | hcont⟩ | ⟨-, e₂, hu, hcont⟩ | ⟨-, -, rfl⟩
           · rcases reduceNat_inv hrn with ⟨k, rfl⟩ | ⟨bn, rfl⟩ <;> simp [looseBVarsBounded]
           · rcases reduceNat_inv hrn with ⟨k, rfl⟩ | ⟨bn, rfl⟩ <;>
-              exact ihN fires hcont (by simp [looseBVarsBounded])
-          · cases fires with
-            | zero => exact nomatch hcont
-            | succ f => exact ihN f hcont (rewriteStep_looseBVars henv hrw hbe₁)
-          · exact ihN fires hcont (unfoldDefinition_looseBVars henv hu hbe₁)
+              exact ihN hcont (by simp [looseBVarsBounded])
+          · exact ihN hcont (unfoldDefinition_looseBVars henv hu hbe₁)
           · exact hbe₁
       intro d e e' h hb
-      exact hloop whnfLoopFuel ruleFireBudget h hb
+      exact hloop whnfLoopFuel h hb
 
 /-- The reduction loop only shrinks the leaf closure. -/
 theorem whnf_fvarLeaves {env : Env} (henv : EnvWF env)

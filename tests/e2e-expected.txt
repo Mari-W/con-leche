@@ -3506,3 +3506,9 @@
 # so the firing's syntactic type comparison refuses it.  Target verdict 0 (the install-time
 # law, plan A4)
 1 rewrite_rule_pi.ndjson
+# a rule on a definition in a conversion check: `rr_use : (n : Nat) → rrT n → rrFn := fun n g => g`.
+# The rule fires in `whnfCore`, before lazy δ unfolds `rrT` (official `reduce_recursor`); before
+# the rules moved from `whnfStep` into `whnfCore` this was 1
+0 rewrite_rule_conv.ndjson
+# the same without the rule in the declaration's `rewrites`: `rrT n` is stuck at a variable
+1 rewrite_rule_conv_omitted.ndjson

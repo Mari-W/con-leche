@@ -491,7 +491,7 @@ theorem knot_ext (mode : CheckMode) (hx : EnvExt env₁ env₂) :
     have K := knot_ext mode hx fuel eager
     have KE := knot_ext mode hx fuel true
     { whnfCore := fun c d _ he => whnfCoreBody_rel K d hx mode c he
-      whnf := fun d _ he => whnfLoop_rel K d hx _ _ he
+      whnf := fun d _ he => whnfLoop_rel K d hx _ he
       infer := fun d _ he => inferBody_rel K hx d he
       inferIO := fun d _ he => inferBodyIO_rel K hx d he
       defeq := fun d _ _ ha hb => defeqBody_rel K d mode hx eager ha hb
