@@ -8,14 +8,18 @@ import ConLeche.Verify.Denote.Inst
 import ConLeche.Verify.Leaves
 import ConLeche.Model.Rules.RuleLawKit
 import ConLeche.Model.Reading.Levels
+public import ConLeche.Model.Rules.MatchSound
 
 public section
 
 /-!
 # The soundness of a user rewrite rule
 
-`Red.rewrite` fires a stored theorem `h : ∀ xs, @Eq A l r` on arguments
-found in the left side's application tree.  The theorem's leaf inhabits
+`Red.rewrite` fires a stored theorem `h : ∀ xs, @Eq A l r` on a term `e`
+that matches the instance `l` of the left side (`MatchRel`), on arguments
+found in `l`'s application tree.  The match equates `e` with `l` off the
+point (`MatchRel.app_sound`), so the rule's equation of `l` and `r` is one
+of `e` and `r`.  The theorem's leaf inhabits
 its type's reading (`const_ty`), the certificate fits the arguments to
 its telescope, so the residual `Eq` spine's reading is inhabited.  The
 rule's law, installed at its registration (`RuleLaw`) and read along the
@@ -172,24 +176,29 @@ theorem ruleNamed_of_rulesFor {h c : Name} (hmem : h ∈ env.rulesFor c) : RuleN
   · exact Option.some.inj hsome
   · exact nomatch hsome
 
-/-- **A user rewrite rule**, at the conditional motive (it needs neither the point condition
-nor the left side's head).  The rule's law (`RuleLaw`), read along the certificate's fit
-(`sidesT_fit`), puts both sides in `A` and `A` in the equation's universe, so `eq_law` reads the
-residual spine as `eqv ⟦l⟧ ⟦r⟧`, whose inhabitant equates the sides. -/
+/-- **A user rewrite rule**, at the conditional motive.  The match equates the term with the
+instance `l` of the left side off the point (`MatchRelSem`).  The rule's law (`RuleLaw`), read
+along the certificate's fit (`sidesT_fit`), puts both sides in `A` and `A` in the equation's
+universe, so `eq_law` reads the residual spine as `eqv ⟦l⟧ ⟦r⟧`, whose inhabitant equates the
+sides. -/
 theorem Red.rewrite_sound (hin : RulesInputs V m φ) {d : Nat} {h : Name}
     {cv : ConstantVal} {us : List Level} {args : List Expr} {u : Level}
-    {A l r : Expr} {c : Name} {ls : List Level}
+    {A l r e : Expr} {c : Name} {ls : List Level}
     (hthm : env.find? h = some (.thmInfo cv))
     (hus : us.length = cv.levelParams.length)
     (hcerts : CertsFSem m φ d (cv.type.instantiateLevelParams cv.levelParams us) args)
     (hres : ConLeche.piResidual (cv.type.instantiateLevelParams cv.levelParams us) args
       = some (.app (.app (.app (.const eqName [u]) A) l) r))
-    (_hhead : l.getAppFn = .const c ls)
+    (_hhead : e.getAppFn = .const c ls)
+    (hmatch : MatchRelSem m φ d [] e l)
     (hsub : ∀ x ∈ args, x ∈ ConLeche.appSubterms l)
     (hleaves : ∀ x ∈ r.fvarLeaves, x ∈ l.fvarLeaves)
     (hmem : h ∈ env.rulesFor c) :
-    RedSem m φ d l r := by
-  intro hfl Δa ea hCl hea
+    RedSem m φ d e r := by
+  intro hfe Δa ee hCe hee
+  obtain ⟨hfl, hLS, ea, hea, hsem⟩ := hmatch hfe (fun _ h => h) hCe
+    (fun _ hq => nomatch hq) hee
+  have hCl : CtxOkS m φ d Δa l := hCe.of_subset hLS
   -- the theorem's stored type: closed, read, graded, inhabited
   obtain ⟨ta, hTd, hTok, hTmem, hnfT, hbdT⟩ :=
     constTy_pkg (ci := .thmInfo cv) hin.const_ty hthm hus
@@ -251,7 +260,8 @@ theorem Red.rewrite_sound (hin : RulesInputs V m φ) {d : Nat} {h : Name}
     (hinst PU pua hpua)
   have hu : u = Level.subst cv.levelParams us v :=
     ConLeche.piResidual_ruleLevel args _ hsides' hv' hres
-  refine ⟨hfr, hleaves, ra, hra, fun ρ hρ hLl _ _ => ?_⟩
+  refine ⟨hfr, fun x hx => hLS x (hleaves x hx), ra, hra, fun ρ hρ hLe hge hne => ?_⟩
+  have hLl : LeavesGr m φ d l ρ := hLe.of_subset hLS
   have hLargs : ∀ x ∈ args, LeavesGr m φ d x ρ :=
     fun x hx => hLl.of_subset (hlargs x hx)
   have hLT : LeavesGr m φ d (cv.type.instantiateLevelParams cv.levelParams us) ρ :=
@@ -266,6 +276,9 @@ theorem Red.rewrite_sound (hin : RulesInputs V m φ) {d : Nat} {h : Name}
   have hgr : WellDenoted V ρ ra := by
     rw [WellDenoted_app] at hwres
     exact hwres.2.1
+  have hgl : WellDenoted V ρ la := by
+    rw [WellDenoted_app, WellDenoted_app] at hwres
+    exact hwres.1.2.1
   obtain ⟨hlmem, hrmem, hAmem⟩ :=
     sidesT_fit hfit hST (hlawρ ρ).1 (hlawρ ρ).2.1 (hlawρ ρ).2.2 rfl
   obtain ⟨y, hy⟩ := teleFitPA_inhabited hfit (hTmem ρ)
@@ -275,6 +288,6 @@ theorem Red.rewrite_sound (hin : RulesInputs V m φ) {d : Nat} {h : Name}
     rw [hψp, hu]
     simpa [interp_sort] using hAmem
   rw [hlaw ρ _ _ _ hAu hlmem hrmem] at hy
-  exact ⟨hgr, eq_of_mem_eqv hy⟩
+  exact ⟨hgr, (hsem ρ hρ hLe hge hgl hne).trans (eq_of_mem_eqv hy)⟩
 
 end ConLeche.Model.Rules

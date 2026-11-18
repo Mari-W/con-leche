@@ -348,18 +348,82 @@ theorem reduceProjCore_bridge (hw : WhnfBridge .verified eager env fuel)
     (.proj hfp hfn hi hlen hus hc
       (peelPis_isSome_instantiateLevelParams _ _ _ harity))
 
+/-- **A rule's match is `MatchRel`**: the spine position by position, an argument equal, or
+matched after its retry (`whnf` through the bridge, then the literal conversion). -/
+theorem ruleMatchM_bridge (hw : WhnfBridge μ eager env fuel) {d n : Nat} {lps : List Name} :
+    ∀ (pat : Expr) (P : List Expr) {st st' : List (Option Expr) × List (Option Level)}
+      {e e₁ : Expr},
+      ruleMatchM (pureFns μ eager env fuel) env d n lps pat st e = .ok (some (st', e₁)) →
+      MatchRel env d P e e₁ := by
+  intro pat
+  induction pat with
+  | app f p ihf ihp =>
+    intro P st st' e e₁ h
+    cases e with
+    | app f' a =>
+      simp only [ruleMatchM] at h
+      obtain ⟨o, ho, h⟩ := bindM_ok h
+      cases o with
+      | none => simp [pure, Except.pure] at h
+      | some sf =>
+        obtain ⟨st₁, f₁⟩ := sf
+        obtain ⟨o', ho', h⟩ := bindM_ok h
+        cases o' with
+        | none => simp [pure, Except.pure] at h
+        | some sa =>
+          obtain ⟨st₂, a₁⟩ := sa
+          simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq, Prod.mk.injEq] at h
+          obtain ⟨-, rfl⟩ := h
+          refine .app (ihf P ho) ?_
+          unfold ruleArgStep at ho'
+          split at ho'
+          · simp only [pure, Except.pure, Except.ok.injEq] at ho'
+            rw [ruleBindVar_eq ho']
+            exact .spine .refl
+          · unfold ruleOrRetry at ho'
+            obtain ⟨o, ho, h⟩ := bindM_ok ho'
+            cases o with
+            | some x =>
+              simp only [pure, Except.pure, Except.ok.injEq] at h
+              obtain rfl := Option.some.inj h
+              exact .spine (ihp _ ho)
+            | none =>
+              obtain ⟨a', ha', h⟩ := bindM_ok h
+              unfold ruleRetry at ha'
+              obtain ⟨w, hwh, ha'⟩ := bindM_ok ha'
+              simp only [pure, Except.pure, Except.ok.injEq] at ha'
+              subst ha'
+              exact .red (.trans (hw hwh) (.litToCtorIfNat w)) (ihp _ h)
+    | _ => simp [ruleMatchM, pure, Except.pure] at h
+  | const c ls =>
+    intro P st st' e e₁ h
+    obtain ⟨sl, lv⟩ := st
+    cases e with
+    | const c' ls' =>
+      simp only [ruleMatchM, pure, Except.pure, Except.ok.injEq] at h
+      split at h
+      · rename_i hc
+        obtain ⟨lv', -, h⟩ := Option.map_eq_some_iff.mp h
+        simp only [Prod.mk.injEq] at h
+        rw [← h.2]; exact .refl
+      · exact nomatch h
+    | _ => simp [ruleMatchM, pure, Except.pure] at h
+  | _ => intro P st st' e e₁ h; simp [ruleMatchM, pure, Except.pure] at h
+
 /-- A firing rewrite rule is `Red.rewrite`: `rewriteAttempt_inv` hands every premise, the
-certificates through the bridges, and `rewriteStep_mem` the rule's place in the table. -/
-theorem rewriteStep_bridge (hd : DefEqBridge μ eager env fuel) (hi : InferBridge μ eager env fuel)
+certificates and the match through the bridges, and `rewriteStep_mem` the rule's place in the
+table. -/
+theorem rewriteStep_bridge (hw : WhnfBridge μ eager env fuel) (hd : DefEqBridge μ eager env fuel)
+    (hi : InferBridge μ eager env fuel)
     {d : Nat} {e e₂ : Expr} {t : Name}
     (h : rewriteStep (pureFns μ eager env fuel) env d e = .ok (some (t, e₂))) :
     Red env d e e₂ := by
-  obtain ⟨cv, args, us, u, A, c, ls, hf, hres, hfn, hlen, hsub, hleaf, hcert⟩ :=
+  obtain ⟨cv, args, us, u, A, c, ls, e₁, hf, hm, hres, -, hlen, hsub, hleaf, hcert⟩ :=
     rewriteAttempt_inv (rewriteStep_inv h)
   obtain ⟨c', ls', hfn', hmem⟩ := rewriteStep_mem h
-  rw [hfn] at hfn'
-  obtain ⟨rfl, rfl⟩ : c = c' ∧ ls = ls' := by simpa using hfn'
-  exact .rewrite hf hlen (iotaCertsFull_bridge hd hi hcert) hres hfn hsub hleaf hmem
+  obtain ⟨l₀, st', hm'⟩ := ruleArgsM_inv hm
+  exact .rewrite hf hlen (iotaCertsFull_bridge hd hi hcert) hres hfn'
+    (ruleMatchM_bridge hw l₀ [] hm') hsub hleaf hmem
 
 /-- ι-then-rules ⇒ `Red.iota` or `Red.rewrite`. -/
 theorem iotaThenRule_bridge (hw : WhnfBridge .verified eager env fuel)
@@ -370,7 +434,7 @@ theorem iotaThenRule_bridge (hw : WhnfBridge .verified eager env fuel)
     Red env d e e'' := by
   rcases iotaThenRule_inv h with hι | ⟨-, t, hrw⟩
   · exact iotaRec_bridge hw hd hi hio hι
-  · exact rewriteStep_bridge hd hi hrw
+  · exact rewriteStep_bridge hw hd hi hrw
 
 /-- **`whnfCore` at `fuel + 1`**: the eleven shapes (`whnf_app_inv`,
 `whnf_proj_inv`, `whnfCore_const_inv`, the five other leaves, `whnfCore_letE_inv`, the `.bvar`
@@ -386,7 +450,7 @@ theorem whnfCore_bridge_succ (hwc : WhnfCoreBridge .verified eager env fuel)
     cases Except.ok.inj h; exact .refl
   | .const _ _, h =>
     rcases whnfCore_const_inv h with ⟨t, e₂, hrw, hk⟩ | ⟨-, rfl⟩
-    · exact .trans (rewriteStep_bridge hd hi hrw) (hwc hk)
+    · exact .trans (rewriteStep_bridge hw hd hi hrw) (hwc hk)
     · exact .refl
   | .bvar _, h =>
     rw [whnfCore_succ] at h

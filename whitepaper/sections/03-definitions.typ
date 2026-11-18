@@ -51,8 +51,8 @@ of constants
 #src("whitepaper/Fragment/Rules.lean", 749, 753)[has its declared type] at the
 levels it is used at, and two constants of the same name
 #src("whitepaper/Fragment/Rules.lean", 563, 566)[are compared] through the level oracle
-(in con-leche: #src("ConLeche/Rules/Rel.lean", 624, 630)[inference]
-and #src("ConLeche/Rules/Rel.lean", 396, 401)[equality]).
+(in con-leche: #src("ConLeche/Rules/Rel.lean", 629, 635)[inference]
+and #src("ConLeche/Rules/Rel.lean", 401, 406)[equality]).
 
 #rules(
   rule(name: "const",
@@ -65,7 +65,7 @@ and #src("ConLeche/Rules/Rel.lean", 396, 401)[equality]).
 
 *The $delta$ rule.* A definition #src("whitepaper/Fragment/Rules.lean", 88, 94)[unfolds to its value] at the levels
 it is used at
-(#src("ConLeche/Rules/Rel.lean", 142, 146)[as in con-leche]). With the
+(#src("ConLeche/Rules/Rel.lean", 144, 148)[as in con-leche]). With the
 head rule of @sec:rules, an applied definition unfolds at its head.
 
 #rules(

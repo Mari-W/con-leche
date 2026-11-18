@@ -3526,3 +3526,19 @@
 # rejects it (about 18 s).  Before the total it ran into the timeout.  Target 1 (the C++ kernel has
 # the same total; the patched record is not replayed there).
 1 rewrite_rule_decl_budget.ndjson
+# a pattern position matched up to whnf (scripts/rewrite-fixtures/RrMatch.lean, rr-dev 0): a raw
+# literal against `Nat.zero` and against `Nat.succ m`, an argument that needs a δ step (`zero'`) and
+# one that needs an ι step (`Bool.rec … true`).  The matcher retries a failed position once on the
+# argument's whnf, a literal read as its constructor form.  Before the retry these were 1.  Target 0.
+0 rewrite_rule_match_lit_zero.ndjson
+0 rewrite_rule_match_lit_succ.ndjson
+0 rewrite_rule_match_delta.ndjson
+0 rewrite_rule_match_iota.ndjson
+# a non-linear rule `myEq_self : myEq n n = true` (RrMatch.lean, rr-dev 0), at syntactically equal
+# and at definitionally equal arguments (`k`, `id k`).  Today the registration rejects a non-linear
+# left side.  Target 0.
+1 rewrite_rule_nonlinear_syn.ndjson
+1 rewrite_rule_nonlinear_defeq.ndjson
+# the same rule at two different variables (`mk.py match` patches the statement): the rule does not
+# fire.  Today the registration rejects it; target 1, from the failed conversion.
+1 rewrite_rule_nonlinear_diff.ndjson

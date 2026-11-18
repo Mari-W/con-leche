@@ -3,6 +3,7 @@ module
 public import ConLeche.Model.Rules.Inputs
 import ConLeche.Model.Rules.RedSound
 import ConLeche.Model.Rules.RewriteSound
+public import ConLeche.Model.Rules.MatchSound
 import ConLeche.Model.Rules.IotaSound
 import ConLeche.Model.Rules.DefEqSound
 import ConLeche.Model.Rules.UnitSound
@@ -93,8 +94,9 @@ theorem red_sound (hin : RulesInputs V m φ) :
     Red.natSucc_sound hin (ConLeche.natLitSupported_of_stored m.wf m.basis_pinned.natKinds hsup) (red_sound hin hw) hn
   | _, _, _, .natOp hc hwa hn₁ hwb hn₂ hr =>
     Red.natOp_sound hin hc (red_sound hin hwa) hn₁ (red_sound hin hwb) hn₂ hr
-  | _, _, _, .rewrite hthm hus hcerts hres hhead hsub hleaves hmem =>
-    Red.rewrite_sound hin hthm hus (certsF_sound hin hcerts) hres hhead hsub hleaves hmem
+  | _, _, _, .rewrite hthm hus hcerts hres hhead hmatch hsub hleaves hmem =>
+    Red.rewrite_sound hin hthm hus (certsF_sound hin hcerts) hres hhead
+      (matchRel_sound hin hmatch) hsub hleaves hmem
   -- ι and the K/`And` rescues (task #342 L10): one lemma each, from the
   -- conditional claims of their premises
   | _, _, _, .iota hhead hrec hlen hus hmajor hmhead hctor hrule hmlen hcase hlv
@@ -295,6 +297,16 @@ theorem certsF_sound (hin : RulesInputs V m φ) :
   | _, _, _, .cert hta hd hrest =>
     CertsF.cert_sound (infer_sound hin hta) (defeq_sound hin hd)
       (certsF_sound hin hrest)
+
+theorem matchRel_sound (hin : RulesInputs V m φ) :
+    ∀ {d : Nat} {P : List Expr} {e e' : Expr}, MatchRel env d P e e' → MatchRelSem m φ d P e e'
+  | _, _, _, _, .refl => MatchRel.refl_sound
+  | _, _, _, _, .app hf ha => MatchRel.app_sound (matchRel_sound hin hf) (matchArg_sound hin ha)
+
+theorem matchArg_sound (hin : RulesInputs V m φ) :
+    ∀ {d : Nat} {P : List Expr} {e e' : Expr}, MatchArg env d P e e' → MatchArgSem m φ d P e e'
+  | _, _, _, _, .spine h => MatchArg.spine_sound (matchRel_sound hin h)
+  | _, _, _, _, .red hr hm => MatchArg.red_sound (red_sound hin hr) (matchRel_sound hin hm)
 
 theorem defEqList_sound (hin : RulesInputs V m φ) :
     ∀ {d : Nat} {as bs : List Expr},

@@ -45,6 +45,11 @@ def stmt_patch(src, out, pairs):
     lines = [J(r) for r in recs[:i]] + [J(r) for r in new] + [J(r) for r in recs[i:]]
     open(out, "w").write("\n".join(lines) + "\n")
 
+if sys.argv[1] == "match":
+    # RrMatch.lean: the non-linear rule at two different arguments, which does not fire
+    stmt_patch(sys.argv[2], f"{sys.argv[3]}/rewrite_rule_nonlinear_diff.ndjson", [("nl_diff", "nlDiffTgt")])
+    sys.exit(0)
+
 if sys.argv[1] == "loop":
     # RrLoop.lean: a rule whose right side unfolds back to its left side, in a false conversion
     stmt_patch(sys.argv[2], f"{sys.argv[3]}/rewrite_rule_decl_budget.ndjson", [("loopBad", "loopTgt")])

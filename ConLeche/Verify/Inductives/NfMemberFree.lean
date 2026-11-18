@@ -567,15 +567,23 @@ theorem inferTypeIO_occDeep_of {env : Env} {names : List Name} {fuel : Nat}
 /-- **A rule's right side is member free where the term it rewrites is**: the theorem is no
 member, so its type is member free, and the arguments are subterms of the term. -/
 theorem rewriteStep_occDeep {env : Env} {names : List Name} (hN : WhnfNamesFree env names)
-    {r : CoreFns CheckM} {d : Nat} {e e₂ : Expr} {t : Name}
-    (hrw : rewriteStep r env d e = .ok (some (t, e₂))) (h1 : e.occDeep names = false) :
+    {r : CoreFns CheckM} {d : Nat}
+    (hwh : ∀ {a w : Expr}, r.whnf d a = .ok w → a.occDeep names = false → w.occDeep names = false)
+    {e e₂ : Expr} {t : Name}
+    (hrw : rewriteStep r env d e = .ok (some (t, e₂))) (h0 : e.occDeep names = false) :
     e₂.occDeep names = false := by
-  obtain ⟨cv, args, us, u, A, c, ls, hf, hres, -, -, hsub, -⟩ :=
+  obtain ⟨cv, args, us, u, A, c, ls, e₁, hf, hm, hres, -, -, hsub, -⟩ :=
     rewriteAttempt_inv (rewriteStep_inv hrw)
+  have hQ : MatchPres r env d (fun a b => a.occDeep names = false → b.occDeep names = false) :=
+    ⟨fun _ => id,
+      fun hf ha h => by
+        simp only [Expr.occDeep, Bool.or_eq_false_iff] at h ⊢; exact ⟨hf h.1, ha h.2⟩,
+      fun hab hbc h => hbc (hab h), fun hw h => litToCtorIfNat_occDeep hN (hwh hw h)⟩
+  have h1 := ruleArgsM_pres hQ hm h0
   have hT := hN.1 t _ hf (hN.2.2.2.2.2.2.2.2.2 t cv hf)
   have hR := piResidual_occDeep hres
     (by rw [Expr.occDeep_instantiateLevelParams]; exact hT)
-    (fun x hx => appSubterms_occDeep e h1 x (hsub x hx))
+    (fun x hx => appSubterms_occDeep e₁ h1 x (hsub x hx))
   simp only [Expr.occDeep, Bool.or_eq_false_iff] at hR
   exact hR.2
 
@@ -623,7 +631,7 @@ theorem whnfPres_occDeep {env : Env} {names : List Name} (hN : WhnfNamesFree env
         exact h ▸ he
       | const n ws =>
         rcases whnfCore_const_inv h with ⟨t, e₂, hrw, hk⟩ | ⟨-, rfl⟩
-        · exact ihCore hk (rewriteStep_occDeep hN hrw he)
+        · exact ihCore hk (rewriteStep_occDeep hN ihLoop hrw he)
         · exact he
       | lit l0 =>
         rw [whnfCore_succ] at h
@@ -646,7 +654,7 @@ theorem whnfPres_occDeep {env : Env} {names : List Name} (hN : WhnfNamesFree env
           exact ihCore hbeta (Expr.occDeep_instantiate1 he.2 body 0 hf'.2)
         · rcases iotaThenRule_inv hio' with hio | ⟨-, t, hrw⟩
           rotate_left
-          · exact ihCore hwe'' (rewriteStep_occDeep hN hrw happ)
+          · exact ihCore hwe'' (rewriteStep_occDeep hN ihLoop hrw happ)
           obtain ⟨c, us, cv, mI, rP, isK, rules, major, cj, usj,
             cvj, cnP, cnF, induct, r, hfn, hfc, hlen, -, hprep,
             hmfn, hfj, hrule, hml, hlev, hpeq, hmcerts, -, rfl⟩ :=

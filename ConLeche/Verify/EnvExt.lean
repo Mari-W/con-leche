@@ -2,6 +2,7 @@ module
 
 public import ConLeche.Verify.EnvExt.Whnf
 public import ConLeche.Kernel.Inductives.BlockTail
+import ConLeche.Verify.Knot
 
 /-!
 # A run does not see an extension of the environment (task #480)
@@ -497,36 +498,43 @@ theorem knot_ext (mode : CheckMode) (hx : EnvExt env₁ env₂) :
       defeq := fun d _ _ ha hb => defeqBody_rel K d mode hx eager ha hb
       defeqE := fun d _ _ ha hb => defeqBody_rel KE d mode hx true ha hb }
 
--- The kernel's check of this structural recursion unfolds the knot's head
--- normalization, whose ι case split reads the stored facts first (`iotaCaseAt`,
--- task #573) and so is one level deeper: the default limit no longer covers it.
-set_option maxHeartbeats 1000000 in
+/-- The checker operations' `whnf` at an extension is the one at the prefix, on a resolved term. -/
+theorem fueledOps_whnf_ext (hx : EnvExt env₁ env₂) (F i : Nat) {e : Expr} (he : Res env₁ e) :
+    (fueledOps .verified F).whnf env₂ i e = (fueledOps .verified F).whnf env₁ i e ∧
+      ∀ w, (fueledOps .verified F).whnf env₁ i e = .ok w → Res env₁ w := by
+  obtain ⟨hw, hP⟩ := (knot_ext .verified hx F false).whnf i he
+  rw [whnf_def, whnf_def] at hw
+  rw [whnf_def] at hP
+  exact ⟨hw, hP⟩
+
 /-- The telescope walk of a former, at an extension. -/
-theorem whnfTelescope_ext (hx : EnvExt env₁ env₂) (F : Nat) :
-    ∀ (n i : Nat) {e : Expr}, Res env₁ e →
+theorem whnfTelescope_ext (hx : EnvExt env₁ env₂) (F : Nat) (n : Nat) :
+    ∀ (i : Nat) {e : Expr}, Res env₁ e →
       whnfTelescope (fueledOps .verified F) env₂ i n e =
-        whnfTelescope (fueledOps .verified F) env₁ i n e
-  | 0, i, e, he => by
+        whnfTelescope (fueledOps .verified F) env₁ i n e := by
+  induction n with
+  | zero =>
+    intro i e he
     unfold whnfTelescope
-    obtain ⟨hw, -⟩ := (knot_ext .verified hx F false).whnf i he
-    have hw' : (fueledOps .verified F).whnf env₂ i e = (fueledOps .verified F).whnf env₁ i e := hw
-    rw [hw']
-  | n + 1, i, e, he => by
+    rw [(fueledOps_whnf_ext hx F i he).1]
+  | succ n ih =>
+    intro i e he
     unfold whnfTelescope
-    obtain ⟨hw, hP⟩ := (knot_ext .verified hx F false).whnf i he
-    have hw' : (fueledOps .verified F).whnf env₂ i e = (fueledOps .verified F).whnf env₁ i e := hw
-    rw [hw']
+    obtain ⟨hw, hP⟩ := fueledOps_whnf_ext hx F i he
+    rw [hw]
+    -- Each arm reduces the bind before closing: a bare `rfl` would leave the kernel comparing the
+    -- two continuations, whose recursive calls differ in the environment, and it would unfold the
+    -- whole knot to compare them.
     cases hr : (fueledOps .verified F).whnf env₁ i e with
-    | error _ => rfl
+    | error _ => simp only [bind, Except.bind]
     | ok w =>
       have hres : Res env₁ w := hP w hr
       cases w with
       | forallE dom body =>
         obtain ⟨hd, hb⟩ := res_forall.mp hres
-        have := whnfTelescope_ext hx F n (i + 1) (res_open (d := i) hd hb)
         simp only [bind, Except.bind]
-        rw [this]
-      | _ => rfl
+        rw [ih (i + 1) (res_open (d := i) hd hb)]
+      | _ => simp only [bind, Except.bind]
 
 /-- **A former's reduct at an extension is the one at the prefix.** -/
 theorem reducedFormer_ext {envB env : Env} (hx : EnvExt envB env)

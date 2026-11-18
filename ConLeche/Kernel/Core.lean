@@ -1026,27 +1026,97 @@ def reduceProjCore (r : CoreFns m) (env : Env) (depth : Nat) (sn : Name)
     | _ => pure none
   | none => pure none
 
-/-- **A user rewrite rule's firing** (`Red.rewrite`): every premise of the rule checked at the
-firing.  The first-order match (`ruleArgs`) proposes the arguments and the levels; the firing
-then checks the level count, the residual `Eq` spine whose left side is the term, the term's head
-a constant, every argument a subterm of the term's application tree, every free-variable leaf of
-the right side one of the term's, and the theorem's telescope certified at the full grade
-(`iotaCertsFull`).  The sides' typing is the registration's (`checkRuleLaw`), checked once.
+/-- **The term a failed pattern position is retried on** (official `match_rewrite_pattern`):
+its `whnf`, a `Nat` literal read as its constructor form (`litToCtorIfNat`). -/
+def ruleRetry (r : CoreFns m) (env : Env) (depth : Nat) (e : Expr) : m Expr := do
+  let w ← r.whnf depth e
+  pure (litToCtorIfNat env w)
+
+/-- **A failed match retried once** on the term's `ruleRetry` (official
+`match_rewrite_pattern`; the official kernel skips the retry when `whnf` returns the term itself,
+where the second match fails as the first did). -/
+def ruleOrRetry {α : Type} (r : CoreFns m) (env : Env) (depth : Nat) (k : Expr → m (Option α))
+    (a : Expr) : m (Option α) := do
+  match ← k a with
+  | some x => pure (some x)
+  | none => do
+    let a' ← ruleRetry r env depth a
+    k a'
+
+/-- **An argument position of a rule's match** (official `match_rewrite_pattern`): a variable
+(`ruleBindVar`), or a pattern, matched by `k` and, if that fails, retried once on the argument's
+`whnf` (`ruleOrRetry`). -/
+def ruleArgStep (r : CoreFns m) (env : Env) (depth n : Nat)
+    (k : Expr → m (Option ((List (Option Expr) × List (Option Level)) × Expr))) (p : Expr)
+    (st : List (Option Expr) × List (Option Level)) (a : Expr) :
+    m (Option ((List (Option Expr) × List (Option Level)) × Expr)) :=
+  match p.bvarIdx? with
+  | some j => pure (ruleBindVar n j st a)
+  | none => ruleOrRetry r env depth k a
+
+/-- **The match of a rule's left side** under its `n` binders against a term (official
+`match_rewrite_app` and `match_rewrite_pattern`), from the binder slots (outermost first) and the
+level slots: the slots after the match and the matched view of the term, which has the reduct
+at every retried position (`MatchRel` relates the term to it).  The spine is matched
+syntactically, an argument position by `ruleArgStep`. -/
+def ruleMatchM (r : CoreFns m) (env : Env) (depth n : Nat) (lps : List Name) :
+    Expr → List (Option Expr) × List (Option Level) → Expr →
+      m (Option ((List (Option Expr) × List (Option Level)) × Expr))
+  | .app f p, st, .app f' a => do
+    match ← ruleMatchM r env depth n lps f st f' with
+    | none => pure none
+    | some (st₁, f₁) =>
+      match ← ruleArgStep r env depth n (ruleMatchM r env depth n lps p st₁) p st₁ a with
+      | none => pure none
+      | some (st₂, a₁) => pure (some (st₂, .app f₁ a₁))
+  | .const c ls, (sl, lv), .const c' ls' =>
+    pure (if c = c' then (matchLevels lps lv ls ls').map fun lv => ((sl, lv), .const c' ls')
+      else none)
+  | _, _, _ => pure none
+
+/-- **The arguments and levels at which a stored theorem's left side matches the term**, in
+binder order and in the order of the theorem's level parameters, with the matched view of the
+term. -/
+def ruleArgsM (r : CoreFns m) (env : Env) (depth : Nat) (cv : ConstantVal) (e : Expr) :
+    m (Option (List Expr × List Level × Expr)) :=
+  match (ruleTele cv.type).2 with
+  | .app (.app (.app (.const _ [_]) _) l₀) _ => do
+    let n := (ruleTele cv.type).1
+    match ← ruleMatchM r env depth n cv.levelParams l₀
+        (List.replicate n none, List.replicate cv.levelParams.length none) e with
+    | some ((sl, lv), e₁) =>
+      match sl.mapM id, lv.mapM id with
+      | some args, some us => pure (some (args, us, e₁))
+      | _, _ => pure none
+    | none => pure none
+  | _ => pure none
+
+/-- **A user rewrite rule's firing after its match** (`Red.rewrite`): at the arguments `args`, the
+levels `us` and the matched view `e₁`, the level count, the residual `Eq` spine whose left side is
+the matched view, its head a constant, every argument a subterm of its application tree, every
+free-variable leaf of the right side one of its, and the theorem's telescope certified at the full
+grade (`iotaCertsFull`).  The sides' typing is the registration's (`checkRuleLaw`), checked once.
 Any failed check is no firing. -/
+def rewriteFire (r : CoreFns m) (env : Env) (depth : Nat) (cv : ConstantVal) (args : List Expr)
+    (us : List Level) (e₁ : Expr) : m (Option Expr) := do
+  match (piResidual (cv.type.instantiateLevelParams cv.levelParams us) args).bind eqSpine? with
+  | some (eqn, _, _, l, rhs) =>
+    if RuleGate cv us args e₁ eqn l rhs then
+      if ← iotaCertsFull r env depth (cv.type.instantiateLevelParams cv.levelParams us)
+          args then pure (some rhs)
+      else pure none
+    else pure none
+  | none => pure none
+
+/-- **A user rewrite rule's firing** (`Red.rewrite`): the match (`ruleArgsM`) proposes the
+arguments, the levels and the matched view of the term, and `rewriteFire` checks every premise
+of the rule at them. -/
 def rewriteAttempt (r : CoreFns m) (env : Env) (depth : Nat) (e : Expr) (thm : Name) :
     m (Option Expr) := do
   match env.find? thm with
   | some (.thmInfo cv) =>
-    match ruleArgs cv e with
-    | some (args, us) =>
-      match (piResidual (cv.type.instantiateLevelParams cv.levelParams us) args).bind eqSpine? with
-      | some (eqn, _, _, l, rhs) =>
-        if RuleGate cv us args e eqn l rhs then
-          if ← iotaCertsFull r env depth (cv.type.instantiateLevelParams cv.levelParams us)
-              args then pure (some rhs)
-          else pure none
-        else pure none
-      | none => pure none
+    match ← ruleArgsM r env depth cv e with
+    | some (args, us, e₁) => rewriteFire r env depth cv args us e₁
     | none => pure none
   | _ => pure none
 

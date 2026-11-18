@@ -115981,3 +115981,72 @@ in OVERVIEW and the whitepaper were repointed and their expectations regenerated
 none. `tests/arena.sh` exits 0 (log `_tmp/r6/arena-a2.log`). e2e 624/624 with the new fixture,
 axioms pinned, olean gate 122/122, tutorial 90/92 as before, trusted and `--jobs` sweeps without
 divergence. Lake has no `-j`, so builds ran as `LEAN_NUM_THREADS=8 nice -n 19 lake build`.
+
+## Matching up to whnf (2026-11-19, rewrite-rules, item 2 step 1)
+
+A failed pattern position is now retried once on the argument's `whnf`, a `Nat` literal read as
+its constructor form, as the C++ kernel's `match_rewrite_pattern` does. The fixtures
+`rewrite_rule_match_lit_zero`, `_lit_succ`, `_delta` and `_iota` (`scripts/rewrite-fixtures/RrMatch.lean`,
+rr-dev accepts all four) flip from 1 to 0, and so does the playground's `E2E.Literal`.
+
+**The checker.** `ruleMatchM` (`Kernel/Core.lean`) replaces the pure `ruleMatch` and `ruleArgs`.
+It matches the left side's spine syntactically and hands each argument position to `ruleArgStep`.
+A variable position binds or compares (`ruleBindVar`). A pattern position runs the match and, if
+it fails, runs it again on `ruleRetry`, the argument's `whnf` under `litToCtorIfNat`
+(`ruleOrRetry`). The C++ kernel skips the retry when `whnf` returns the argument itself. The
+second match then fails as the first did, so the verdicts agree. Besides the slots the match
+returns the matched view `e₁` of the term, with the reduct at every retried position.
+`rewriteFire` checks `RuleGate` against `e₁` in place of the term, so the gate is unchanged in
+substance. The cached twins are `ruleMatchI`, `ruleArgI`, `ruleRetryI`, `ruleArgsI` and
+`rewriteFireI`. `ruleArgI` and `ruleRetryI` are named blocks so that each walk keys its `Runs`
+fact on a term the specification names.
+
+**The relation.** `Red.rewrite` rewrites a term `e` with a new premise `MatchRel env d [] e l`,
+where `l` is the instance of the left side. `MatchRel` and `MatchArg` join the mutual block in
+`Rules/Rel.lean`. The spine shares its head (`refl`, `app`), and an argument position matches
+(`spine`) or matches after a reduction (`red`). The list index is the pool of instance subterms
+produced before a position. Step 2 needs it for a repeated variable, and step 1 threads it
+untouched. The bridge `ruleMatchM_bridge` builds the relation from a run through the `whnf`
+bridge and `Red.litToCtorIfNat`.
+
+**The model. The recorded per-position law is not needed.** The design of item 2 planned a
+registration check per application node of the left side. `WellDenoted`'s application clause
+already supplies it. At `f a` against `f' a'` the functions read equal by induction, and where
+`f a` is not the point `⟦f⟧` is a graph. Both applications are graded, the term's as a premise of
+`RedSem`, the instance's from the certificate's graded residual. So `AppliesTo` puts `⟦a⟧` and
+`⟦a'⟧` in the graph's one domain (`appliesTo_graph`, `graph_dom_unique`), a type, and
+`IsTy.eq_of_ne_pt` leaves the argument's claim off the point. That claim comes from `RedSem` and
+the inner match. `Model/Rules/MatchSound.lean` holds the motives `MatchRelSem` and `MatchArgSem`
+and the three lemmas. The rule law and the registration are unchanged.
+
+**Consumers.** The run lemmas take the property they need of `r.whnf` as a hypothesis and read
+it through `MatchPres` (`ruleArgsM_pres`): scope, closedness, leaves and member freedom. The
+shift (`ruleMatchM_shift`), the extension relation (`ruleMatchM_rel`), `atF`, the pair
+projections and `KnotCongr` each have the matcher's case. `whnfTelescope_ext` (`Verify/EnvExt.lean`)
+ran into the kernel's heartbeat limit and past 17 GB. Its `rfl` arms left the kernel comparing
+two continuations whose recursive calls differ in the environment, and the kernel unfolded the
+whole knot to compare them, which the larger knot made fatal. The proof is now an induction
+whose arms reduce the bind before closing, with `fueledOps_whnf_ext` read through `whnf_def`,
+and it needs no raised limit.
+
+`model_exists`, `no_False_declaration` and `main_oleans_no_False` keep their axioms.
+
+Cost. `perf stat -e instructions:u` against 9d718ef36 (`_tmp/r7/perf-base.txt`,
+`_tmp/r7/perf-s1.txt`, `--jobs=1`) is between -0.02% and +0.02% on the eight older rule fixtures
+and on `nat_divmod_ok`, `wide_ok`, `stored_rec_outparam` and `natop_perturbed_used_later`. The
+four new fixtures now accept, at -0.5% against their rejection before. On
+`rewrite_rule_priority_loop`, which fires 65 536 rules, it is +6.0% (1.275 G to 1.352 G), about
+1 170 instructions per firing. The firing now builds the matched view, one node per application
+of the left side, and runs the match through the monadic twin. Returning the term itself where
+no position was retried would save the allocation. Not done.
+
+Gates (step 1). `lake build` and `lake test` warning-free (`_tmp/r7/build2.log`,
+`_tmp/r7/test2.log`), `tests/shake.sh` passes (667/667 allowlisted, none demotable,
+`_tmp/r7/shake2.log`). `tests/arena.sh` exits 0 (`_tmp/r7/arena1.log`). e2e 631/631 with the seven
+new fixtures (the three non-linear ones pinned at 1 until step 2), plain-reach 667 reached with
+`ruleBindVar` and `Expr.bvarIdx?` allowlisted in place of `ruleMatch` and `ruleArgs`, self-check
+56 353 declarations, axioms pinned, olean gate 122/122, tutorial 90/92 as before, trusted and
+`--jobs` sweeps without divergence. The anchors that moved in OVERVIEW and the whitepaper were
+repointed and their expectations regenerated. README needed none. In the playground `just e2e`
+now accepts `E2E.Literal`, and its pin in `playground/E2E/expected.txt` is 0. Builds ran as
+`LEAN_NUM_THREADS=4 nice -n 19 lake build`.

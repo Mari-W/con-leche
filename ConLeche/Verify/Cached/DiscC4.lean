@@ -379,8 +379,178 @@ theorem rewriteStep_notconst {m : Type → Type} [Monad m] [MonadExceptOf CheckE
 @[conleche_grind =] theorem RuleWS.some_eq (d : Nat) (t : Name) (e : Expr) :
     RuleWS d (some (t, e)) = Expr.WScoped d e := rfl
 
-/-- One rule's firing simulates its specification: the theorem's type through the memo, then
-every check the specification's. -/
+/-- A rule match's scope side condition: the matched view is well-scoped. -/
+@[expose] def MatchWS (d : Nat) :
+    Option ((List (Option Expr) × List (Option Level)) × Expr) → Prop
+  | none => True
+  | some (_, x) => Expr.WScoped d x
+
+@[conleche_grind =] theorem MatchWS.none_eq (d : Nat) : MatchWS d none = True := rfl
+
+@[conleche_grind =] theorem MatchWS.some_eq (d : Nat) (st : List (Option Expr) × List (Option Level))
+    (x : Expr) : MatchWS d (some (st, x)) = Expr.WScoped d x := rfl
+
+/-- A variable position's matched view is the argument. -/
+theorem MatchWS.bindVar {d n k : Nat} {st : List (Option Expr) × List (Option Level)} {a : Expr}
+    (h : Expr.WScoped d a) : MatchWS d (ruleBindVar n k st a) := by
+  cases ho : ruleBindVar n k st a with
+  | none => trivial
+  | some sx =>
+    obtain ⟨st', x⟩ := sx
+    rw [MatchWS.some_eq, ruleBindVar_eq ho]; exact h
+grind_pattern [conleche_grind] MatchWS.bindVar => MatchWS d (ruleBindVar n k st a)
+grind_pattern [conleche_grind] ruleBindVar_eq => ruleBindVar n k st a, some (st', a₁) where
+  guard ruleBindVar n k st a = some (st', a₁)
+
+/-- The match's arguments' scope side condition: the matched view is well-scoped. -/
+@[expose] def ArgsWS (d : Nat) : Option (List Expr × List Level × Expr) → Prop
+  | none => True
+  | some (_, _, x) => Expr.WScoped d x
+
+@[conleche_grind =] theorem ArgsWS.none_eq (d : Nat) : ArgsWS d none = True := rfl
+
+@[conleche_grind =] theorem ArgsWS.some_eq (d : Nat) (args : List Expr) (us : List Level)
+    (x : Expr) : ArgsWS d (some (args, us, x)) = Expr.WScoped d x := rfl
+
+/-! The argument step's two arms, one guarded equation each. -/
+
+theorem ruleArgStep_var {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
+    {r : CoreFns m} {d n j : Nat}
+    {k : Expr → m (Option ((List (Option Expr) × List (Option Level)) × Expr))} {p a : Expr}
+    {st : List (Option Expr) × List (Option Level)} (h : p.bvarIdx? = some j) :
+    ruleArgStep r env d n k p st a = pure (ruleBindVar n j st a) := by
+  unfold ruleArgStep; rw [h]
+grind_pattern [conleche_grind] ruleArgStep_var => ruleArgStep r env d n k p st a, some j where
+  guard p.bvarIdx? = some j
+
+theorem ruleArgStep_pat {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
+    {r : CoreFns m} {d n : Nat}
+    {k : Expr → m (Option ((List (Option Expr) × List (Option Level)) × Expr))} {p a : Expr}
+    {st : List (Option Expr) × List (Option Level)} (h : p.bvarIdx? = none) :
+    ruleArgStep r env d n k p st a = ruleOrRetry r env d k a := by
+  unfold ruleArgStep; rw [h]
+grind_pattern [conleche_grind] ruleArgStep_pat => ruleArgStep r env d n k p st a where
+  guard p.bvarIdx? = none
+
+grind_pattern [conleche_grind] ruleOrRetry.eq_1 => ruleOrRetry r env depth k a
+
+/-- The retry simulates its specification. -/
+theorem ruleRetryC_spec (ih : SSimC mode eager env f) {d : Nat} {a : Expr} {s₀ : CState}
+    (hs : CSOK mode eager env s₀) (hw : Expr.WScoped d a) :
+    ⦃fun s => s = s₀⦄ ruleRetryI mode (mkFEnv env) eager f d a
+    ⦃fun r s' => CSOK mode eager env s' ∧ Runs (ruleRetry (fueledFns mode eager env) env d a) r ∧
+      Expr.WScoped d r; ⊤⦄ := by
+  sym only [conleche_grind, ruleRetry, litToCtorIfNat_WScoped] =>
+    vcgen [ruleRetryI.eq_def, ih.whnf_spec,
+      litToCtorIfNatC_spec (mode := mode) (eager := eager) (env := env)] <;> finish
+
+/-- The argument step simulates its specification, given the match's at the same pattern. -/
+theorem ruleArgC_spec (ih : SSimC mode eager env f) {d n : Nat} {lps : List Name} {p : Expr}
+    (hm : ∀ (st : List (Option Expr) × List (Option Level)) {e : Expr} {s₀ : CState},
+      CSOK mode eager env s₀ → Expr.WScoped d e →
+      ⦃fun s => s = s₀⦄ ruleMatchI mode (mkFEnv env) eager f d n lps p st e
+      ⦃fun o s' => CSOK mode eager env s' ∧
+        Runs (ruleMatchM (fueledFns mode eager env) env d n lps p st e) o ∧ MatchWS d o; ⊤⦄)
+    (st : List (Option Expr) × List (Option Level)) {a : Expr} {s₀ : CState}
+    (hs : CSOK mode eager env s₀) (hw : Expr.WScoped d a) :
+    ⦃fun s => s = s₀⦄ ruleArgI mode (mkFEnv env) eager f d n lps p st a
+    ⦃fun o s' => CSOK mode eager env s' ∧
+      Runs (ruleArgStep (fueledFns mode eager env) env d n
+        (ruleMatchM (fueledFns mode eager env) env d n lps p st) p st a) o ∧ MatchWS d o; ⊤⦄ := by
+  cases hq : p.bvarIdx? with
+  | some j => sym only [conleche_grind] => vcgen [ruleArgI.eq_def] <;> finish
+  | none =>
+    sym only [conleche_grind] =>
+      vcgen [ruleArgI.eq_def, hm, ruleRetryC_spec ih] <;> finish
+
+/-- A rule's match simulates its specification. -/
+theorem ruleMatchC_spec (ih : SSimC mode eager env f) {d n : Nat} {lps : List Name} :
+    ∀ (pat : Expr) (st : List (Option Expr) × List (Option Level)) {e : Expr} {s₀ : CState},
+      CSOK mode eager env s₀ → Expr.WScoped d e →
+      ⦃fun s => s = s₀⦄ ruleMatchI mode (mkFEnv env) eager f d n lps pat st e
+      ⦃fun o s' => CSOK mode eager env s' ∧
+        Runs (ruleMatchM (fueledFns mode eager env) env d n lps pat st e) o ∧ MatchWS d o; ⊤⦄ := by
+  intro pat
+  induction pat with
+  | app g q ihg ihq =>
+    intro st e s₀ hs hw
+    cases e with
+    | app g' a =>
+      sym only [conleche_grind, ruleMatchM] =>
+        vcgen [ruleMatchI.eq_def, ihg, ruleArgC_spec ih ihq] <;> finish
+    | _ => sym only [conleche_grind, ruleMatchM] => vcgen [ruleMatchI.eq_def] <;> finish
+  | const c ls =>
+    intro st e s₀ hs hw
+    cases e with
+    | const c' ls' =>
+      obtain ⟨sl, lv⟩ := st
+      cases hm : matchLevels lps lv ls ls' <;>
+        sym only [conleche_grind, ruleMatchM, Option.map_none, Option.map_some] =>
+          vcgen [ruleMatchI.eq_def] <;> finish
+    | _ => sym only [conleche_grind, ruleMatchM] => vcgen [ruleMatchI.eq_def] <;> finish
+  | _ => intro st e s₀ hs hw; sym only [conleche_grind, ruleMatchM] => vcgen [ruleMatchI.eq_def] <;> finish
+
+/-- The match's arguments simulate their specification. -/
+theorem ruleArgsC_spec (ih : SSimC mode eager env f) {d : Nat} (cv : ConstantVal) {e : Expr}
+    {s₀ : CState} (hs : CSOK mode eager env s₀) (hw : Expr.WScoped d e) :
+    ⦃fun s => s = s₀⦄ ruleArgsI mode (mkFEnv env) eager f d cv e
+    ⦃fun o s' => CSOK mode eager env s' ∧
+      Runs (ruleArgsM (fueledFns mode eager env) env d cv e) o ∧ ArgsWS d o; ⊤⦄ := by
+  unfold ruleArgsI ruleArgsM
+  split
+  · sym only [conleche_grind] => vcgen [ruleMatchC_spec ih] <;> finish
+  · sym only [conleche_grind] => vcgen <;> finish
+
+/-- One rule's firing after its match simulates its specification: the theorem's type through
+the memo, then every check the specification's. -/
+theorem rewriteFireC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d : Nat}
+    {t : Name} {cv : ConstantVal} (hft : env.find? t = some (.thmInfo cv)) (args : List Expr)
+    (us : List Level) {e₁ : Expr} {s₀ : CState} (hs : CSOK mode eager env s₀)
+    (hw : Expr.WScoped d e₁) :
+    ⦃fun s => s = s₀⦄ rewriteFireI mode (mkFEnv env) eager f d t cv args us e₁
+    ⦃fun o s' => CSOK mode eager env s' ∧
+      Runs (rewriteFire (fueledFns mode eager env) env d cv args us e₁) o ∧ OptWS d o; ⊤⦄ := by
+  unfold rewriteFireI rewriteFire
+  have hfind : (env.find? t).isSome = true := by rw [hft]; rfl
+  have hcl : cv.type.hasFvar = false := (henv.consts _ (Env.find?_mem hft)).1
+  have hT : constTyOf env t us = cv.type.instantiateLevelParams cv.levelParams us := by
+    simp [constTyOf, hft, ConstantInfo.toConstantVal]
+  have hwT : Expr.WScoped d (cv.type.instantiateLevelParams cv.levelParams us) :=
+    Expr.WScoped.of_not_hasFvar (by rw [Expr.hasFvar_instantiateLevelParams]; exact hcl)
+  cases hsp : (piResidual (cv.type.instantiateLevelParams cv.levelParams us) args).bind
+      eqSpine? with
+  | none =>
+    sym only [conleche_grind] =>
+      vcgen [constTyAtM_spec (mode := mode) (eager := eager) (env := env) hs t t us hfind,
+        piResidualM_spec (mode := mode) (eager := eager) (env := env)] <;> finish
+  | some q =>
+    obtain ⟨eqn, u, A, l, rhs⟩ := q
+    dsimp only
+    by_cases hg : RuleGate cv us args e₁ eqn l rhs
+    · rw [ite_eq_left hg]
+      have hargs : AllWS d args := fun x hx => appSubterms_WScoped e₁ (hg.2.2.2.1 x hx) hw
+      obtain ⟨R, hres, hR⟩ : ∃ R, piResidual
+          (cv.type.instantiateLevelParams cv.levelParams us) args = some R ∧
+          eqSpine? R = some (eqn, u, A, l, rhs) := by
+        cases h : piResidual (cv.type.instantiateLevelParams cv.levelParams us) args with
+        | none => rw [h] at hsp; exact nomatch hsp
+        | some R => rw [h] at hsp; exact ⟨R, rfl, hsp⟩
+      rw [eqSpine?_eq_some] at hR
+      subst hR
+      have hwR := piResidual_WScoped hres hwT hargs
+      simp only [Expr.WScoped] at hwR
+      have hwA := hwR.1.1.2
+      have hwr := hwR.2
+      sym only [conleche_grind] =>
+        vcgen [constTyAtM_spec (mode := mode) (eager := eager) (env := env) hs t t us hfind,
+          piResidualM_spec (mode := mode) (eager := eager) (env := env),
+          iotaCertsFullC_spec ih, ih.infer_spec] <;> finish
+    · rw [ite_eq_right hg]
+      sym only [conleche_grind] =>
+        vcgen [constTyAtM_spec (mode := mode) (eager := eager) (env := env) hs t t us hfind,
+          piResidualM_spec (mode := mode) (eager := eager) (env := env)] <;> finish
+
+/-- One rule's firing simulates its specification: the match, then the firing. -/
 theorem rewriteAttemptC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d : Nat}
     {e : Expr} (t : Name) {s₀ : CState} (hs : CSOK mode eager env s₀) (hw : Expr.WScoped d e) :
     ⦃fun s => s = s₀⦄ rewriteAttemptI mode (mkFEnv env) eager f d e t
@@ -393,50 +563,9 @@ theorem rewriteAttemptC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d
   | some ci =>
     cases ci
     case thmInfo cv =>
-      have hfind : (env.find? t).isSome = true := by rw [hft]; rfl
-      have hcl : cv.type.hasFvar = false := (henv.consts _ (Env.find?_mem hft)).1
       dsimp only
-      cases hra : ruleArgs cv e with
-      | none => sym only [conleche_grind] => vcgen <;> finish
-      | some au =>
-        obtain ⟨args, us⟩ := au
-        dsimp only
-        have hT : constTyOf env t us = cv.type.instantiateLevelParams cv.levelParams us := by
-          simp [constTyOf, hft, ConstantInfo.toConstantVal]
-        have hwT : Expr.WScoped d (cv.type.instantiateLevelParams cv.levelParams us) :=
-          Expr.WScoped.of_not_hasFvar (by rw [Expr.hasFvar_instantiateLevelParams]; exact hcl)
-        cases hsp : (piResidual (cv.type.instantiateLevelParams cv.levelParams us) args).bind
-            eqSpine? with
-        | none =>
-          sym only [conleche_grind] =>
-            vcgen [constTyAtM_spec (mode := mode) (eager := eager) (env := env) hs t t us hfind,
-              piResidualM_spec (mode := mode) (eager := eager) (env := env)] <;> finish
-        | some q =>
-          obtain ⟨eqn, u, A, l, rhs⟩ := q
-          dsimp only
-          by_cases hg : RuleGate cv us args e eqn l rhs
-          · rw [ite_eq_left hg]
-            have hargs : AllWS d args := fun x hx => appSubterms_WScoped e (hg.2.2.2.1 x hx) hw
-            obtain ⟨R, hres, hR⟩ : ∃ R, piResidual
-                (cv.type.instantiateLevelParams cv.levelParams us) args = some R ∧
-                eqSpine? R = some (eqn, u, A, l, rhs) := by
-              cases h : piResidual (cv.type.instantiateLevelParams cv.levelParams us) args with
-              | none => rw [h] at hsp; exact nomatch hsp
-              | some R => rw [h] at hsp; exact ⟨R, rfl, hsp⟩
-            rw [eqSpine?_eq_some] at hR
-            subst hR
-            have hwR := piResidual_WScoped hres hwT hargs
-            simp only [Expr.WScoped] at hwR
-            have hwA := hwR.1.1.2
-            have hwr := hwR.2
-            sym only [conleche_grind] =>
-              vcgen [constTyAtM_spec (mode := mode) (eager := eager) (env := env) hs t t us hfind,
-                piResidualM_spec (mode := mode) (eager := eager) (env := env),
-                iotaCertsFullC_spec ih, ih.infer_spec] <;> finish
-          · rw [ite_eq_right hg]
-            sym only [conleche_grind] =>
-              vcgen [constTyAtM_spec (mode := mode) (eager := eager) (env := env) hs t t us hfind,
-                piResidualM_spec (mode := mode) (eager := eager) (env := env)] <;> finish
+      sym only [conleche_grind] =>
+        vcgen [ruleArgsC_spec ih cv, rewriteFireC_spec ih henv hft] <;> finish
     all_goals sym only [conleche_grind] => vcgen <;> finish
 
 /-- The rules in order simulate their specification. -/

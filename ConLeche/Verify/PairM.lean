@@ -524,15 +524,69 @@ theorem reduceNat_snd_proj (d : Nat) (e : Expr) :
   unfold reduceNat
   snd_tac
 
+theorem ruleMatchM_fst_proj (d n : Nat) (lps : List Name) :
+    ∀ (pat : Expr) (st : List (Option Expr) × List (Option Level)) (e : Expr),
+      (ruleMatchM (pairFns r₁ r₂ h) env d n lps pat st e).val.1 =
+        ruleMatchM r₁ env d n lps pat st e := by
+  intro pat
+  induction pat with
+  | app f p ihf ihp =>
+    intro st e
+    cases e with
+    | app f' a =>
+      simp only [ruleMatchM, ruleArgStep, ruleOrRetry, ruleRetry]
+      repeat (first
+        | rfl
+        | (rw [ihf])
+        | (rw [ihp])
+        | ((rw [PairM.fst_bind]; congr 1 <;> try rfl) <;> try funext _)
+        | (dsimp only [])
+        | split)
+    | _ => simp only [ruleMatchM]; rfl
+  | _ => intro st e; cases e <;> simp only [ruleMatchM] <;> rfl
+
+theorem ruleMatchM_snd_proj (d n : Nat) (lps : List Name) :
+    ∀ (pat : Expr) (st : List (Option Expr) × List (Option Level)) (e : Expr),
+      (ruleMatchM (pairFns r₁ r₂ h) env d n lps pat st e).val.2 =
+        ruleMatchM r₂ env d n lps pat st e := by
+  intro pat
+  induction pat with
+  | app f p ihf ihp =>
+    intro st e
+    cases e with
+    | app f' a =>
+      simp only [ruleMatchM, ruleArgStep, ruleOrRetry, ruleRetry]
+      repeat (first
+        | rfl
+        | (rw [ihf])
+        | (rw [ihp])
+        | ((rw [PairM.snd_bind]; congr 1 <;> try rfl) <;> try funext _)
+        | (dsimp only [])
+        | split)
+    | _ => simp only [ruleMatchM]; rfl
+  | _ => intro st e; cases e <;> simp only [ruleMatchM] <;> rfl
+
 theorem rewriteAttempt_fst_proj (d : Nat) (e : Expr) (t : Name) :
     (rewriteAttempt (pairFns r₁ r₂ h) env d e t).val.1 = rewriteAttempt r₁ env d e t := by
-  unfold rewriteAttempt
-  fst_tac
+  unfold rewriteAttempt rewriteFire ruleArgsM
+  repeat (first
+    | rfl
+    | (rw [ruleMatchM_fst_proj])
+    | (rw [iotaCertsFull_fst])
+    | ((rw [PairM.fst_bind]; congr 1 <;> try rfl) <;> try funext _)
+    | (dsimp only [])
+    | split)
 
 theorem rewriteAttempt_snd_proj (d : Nat) (e : Expr) (t : Name) :
     (rewriteAttempt (pairFns r₁ r₂ h) env d e t).val.2 = rewriteAttempt r₂ env d e t := by
-  unfold rewriteAttempt
-  snd_tac
+  unfold rewriteAttempt rewriteFire ruleArgsM
+  repeat (first
+    | rfl
+    | (rw [ruleMatchM_snd_proj])
+    | (rw [iotaCertsFull_snd])
+    | ((rw [PairM.snd_bind]; congr 1 <;> try rfl) <;> try funext _)
+    | (dsimp only [])
+    | split)
 
 theorem rewriteRules_fst_proj (d : Nat) (e : Expr) :
     ∀ ts : List Name,

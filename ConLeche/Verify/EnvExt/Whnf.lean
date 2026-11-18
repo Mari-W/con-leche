@@ -541,12 +541,96 @@ theorem reduceProjCore_rel (mode : CheckMode) {sn : Name} (i : Nat) {c : Expr}
         (Option.some.inj h) ▸ res_getD (res_getAppArgs hc') res_bvar) fun _ => Rel.ok resO_none
     | _ => exact Rel.ok resO_none
 
+theorem ruleRetry_rel {a : Expr} (ha : Res env₁ a) :
+    Rel (Res env₁) (ruleRetry r₂ env₂ d a) (ruleRetry r₁ env₁ d a) := by
+  unfold ruleRetry
+  refine Rel.bind (K.whnf d ha) fun w hw => ?_
+  rw [litToCtorIfNat_ext hx hw]
+  exact Rel.ok (res_litToCtorIfNat hw)
+
+/-- What a rule's match hands on: the matched view resolves. -/
+abbrev ResM (env : Env) (o : Option ((List (Option Expr) × List (Option Level)) × Expr)) : Prop :=
+  ∀ st x, o = some (st, x) → Res env x
+
+theorem ruleMatchM_rel (n : Nat) (lps : List Name) :
+    ∀ (pat : Expr) (st : List (Option Expr) × List (Option Level)) {e : Expr}, Res env₁ e →
+      Rel (ResM env₁) (ruleMatchM r₂ env₂ d n lps pat st e) (ruleMatchM r₁ env₁ d n lps pat st e) := by
+  intro pat
+  induction pat with
+  | app f p ihf ihp =>
+    intro st e he
+    cases e with
+    | app f' a =>
+      obtain ⟨hf', ha⟩ := res_app.mp he
+      simp only [ruleMatchM]
+      refine Rel.bind (ihf st hf') fun o ho => ?_
+      cases o with
+      | none => exact Rel.ok fun _ _ h => nomatch h
+      | some sf =>
+        obtain ⟨st₁, f₁⟩ := sf
+        have hf₁ := ho _ _ rfl
+        refine Rel.bind (Q := ResM env₁) ?_ fun o' ho' => ?_
+        · unfold ruleArgStep
+          split
+          · refine Rel.ok fun st' x h => ?_
+            rw [ruleBindVar_eq h]; exact ha
+          · unfold ruleOrRetry
+            refine Rel.bind (ihp st₁ ha) fun o ho => ?_
+            cases o with
+            | some y => exact Rel.ok ho
+            | none => exact Rel.bind (ruleRetry_rel K d hx ha) fun a' ha' => ihp st₁ ha'
+        · cases o' with
+          | none => exact Rel.ok fun _ _ h => nomatch h
+          | some sa =>
+            obtain ⟨st₂, a₁⟩ := sa
+            refine Rel.ok fun st' x h => ?_
+            simp only [Option.some.injEq, Prod.mk.injEq] at h
+            obtain ⟨-, rfl⟩ := h
+            exact res_app.mpr ⟨hf₁, ho' _ _ rfl⟩
+    | _ => exact Rel.ok fun _ _ h => nomatch h
+  | const c ls =>
+    intro st e he
+    obtain ⟨sl, lv⟩ := st
+    cases e with
+    | const c' ls' =>
+      simp only [ruleMatchM]
+      refine Rel.ok fun st' x h => ?_
+      split at h
+      · obtain ⟨lv', -, h⟩ := Option.map_eq_some_iff.mp h
+        simp only [Prod.mk.injEq] at h
+        rw [← h.2]; exact he
+      · exact nomatch h
+    | _ => exact Rel.ok fun _ _ h => nomatch h
+  | _ => intro st e he; exact Rel.ok fun _ _ h => nomatch h
+
+/-- What the match's arguments hand on: the matched view resolves. -/
+abbrev ResA (env : Env) (o : Option (List Expr × List Level × Expr)) : Prop :=
+  ∀ args us x, o = some (args, us, x) → Res env x
+
+theorem ruleArgsM_rel (cv : ConstantVal) {e : Expr} (he : Res env₁ e) :
+    Rel (ResA env₁) (ruleArgsM r₂ env₂ d cv e) (ruleArgsM r₁ env₁ d cv e) := by
+  unfold ruleArgsM
+  split
+  · refine Rel.bind (ruleMatchM_rel K d hx _ _ _ _ he) fun o ho => ?_
+    cases o with
+    | none => exact Rel.ok fun _ _ _ h => nomatch h
+    | some x =>
+      obtain ⟨⟨sl, lv⟩, e₁⟩ := x
+      dsimp only
+      split
+      · refine Rel.ok fun args us x h => ?_
+        simp only [Option.some.injEq, Prod.mk.injEq] at h
+        obtain ⟨-, -, rfl⟩ := h
+        exact ho _ _ rfl
+      · exact Rel.ok fun _ _ _ h => nomatch h
+  · exact Rel.ok fun _ _ _ h => nomatch h
+
 /-- **A rule's firing at an extension is its firing at the prefix**: the theorem is the
 prefix's, every run of the firing is on resolved terms, and the right side resolves. -/
 theorem rewriteAttempt_rel {e : Expr} (he : Res env₁ e) {t : Name}
     (ht : (env₁.find? t).isSome = true) :
     Rel (ResO env₁) (rewriteAttempt r₂ env₂ d e t) (rewriteAttempt r₁ env₁ d e t) := by
-  unfold rewriteAttempt
+  unfold rewriteAttempt rewriteFire
   rw [hx.find_of_isSome ht]
   cases hft : env₁.find? t with
   | none => exact Rel.ok resO_none
@@ -554,10 +638,12 @@ theorem rewriteAttempt_rel {e : Expr} (he : Res env₁ e) {t : Name}
     cases ci
     case thmInfo cv =>
       try dsimp only
-      cases hra : ruleArgs cv e with
+      refine Rel.bind (ruleArgsM_rel K d hx cv he) fun o ho => ?_
+      cases o with
       | none => exact Rel.ok resO_none
       | some au =>
-        obtain ⟨args, us⟩ := au
+        obtain ⟨args, us, e₁⟩ := au
+        have he₁ := ho _ _ _ rfl
         try dsimp only
         have hT : Res env₁ (cv.type.instantiateLevelParams cv.levelParams us) :=
           res_inst _ _ (hx.facts.type hft)
@@ -566,7 +652,7 @@ theorem rewriteAttempt_rel {e : Expr} (he : Res env₁ e) {t : Name}
           rw [bind_eqSpine?_eq_some] at hres
           · refine Rel.ite (fun hchk => ?_) fun _ => Rel.ok resO_none
             obtain ⟨-, -, -, hsub, -⟩ := hchk
-            have hargs : ∀ a ∈ args, Res env₁ a := fun a ha => res_appSubterms e (hsub a ha) he
+            have hargs : ∀ a ∈ args, Res env₁ a := fun a ha => res_appSubterms e₁ (hsub a ha) he₁
             have hR := res_piResidual hT hargs hres
             have hA : Res env₁ A := (res_app.mp (res_app.mp (res_app.mp hR).1).1).2
             have hr : Res env₁ rhs := (res_app.mp hR).2

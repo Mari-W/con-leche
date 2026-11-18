@@ -46,6 +46,8 @@ checker does):
 * `CertsF env d T args` — `iotaCertsFull`: the full-grade telescope
   certificate of ι's case 3.
 * `DefEqList env d as bs` — `defEqList`, pairwise.
+* `MatchRel env d P e l`, `MatchArg env d P a a'` — a rewrite rule's match
+  of the term `e` against the instance `l` of its left side (`ruleMatchM`).
 
 **Premise discipline.**  Each rule's premises are the certificates the
 `.verified` checker runs at the cited site — the sub-runs (`Infer`,
@@ -174,28 +176,31 @@ inductive Red (env : Env) : Nat → Expr → Expr → Prop where
   /-- **A user rewrite rule** (`whnfCoreBody`'s `.const` clause, and its
   `.app` clause after ι, `iotaThenRule`): a stored theorem `h : ∀ xs, @Eq A l r` at levels `us`,
   its telescope applied to `args` under the full-grade certificate,
-  rewrites the left side to the right side, both instantiated at `args`.
-  The left side has a constant head, so a ∀ or a sort never rewrites
-  (`Red.rigid`), every argument is a subterm of the left side's
-  application tree (where a first-order matcher finds it), and the right
-  side has no free-variable leaf the left side lacks.  The theorem is one of
-  the rules in force at the left side's head (`Env.rulesFor`): the theorem's
-  type alone does not type its `Eq` spine in the model (over an empty `A`
-  the spine reads as the point and says nothing of the sides), and a rule's
-  registration typed its sides once (`checkRuleLaw`, the model's
+  rewrites a term `e` that matches the left side to the right side, both
+  instantiated at `args`.  The match (`MatchRel`, `ruleMatchM`) relates `e`
+  to the instance `l` of the left side position by position: equal, or
+  reduced first (the retry on `whnf`).  The term has a constant head, so a ∀
+  or a sort never rewrites (`Red.rigid`), every argument is a subterm of the
+  instance's application tree (where a first-order matcher finds it), and
+  the right side has no free-variable leaf the instance lacks.  The theorem
+  is one of the rules in force at the term's head (`Env.rulesFor`): the
+  theorem's type alone does not type its `Eq` spine in the model (over an
+  empty `A` the spine reads as the point and says nothing of the sides), and
+  a rule's registration typed its sides once (`checkRuleLaw`, the model's
   `EnvModelM.rule_law`). -/
   | rewrite {d : Nat} {h : Name} {cv : ConstantVal} {us : List Level}
-      {args : List Expr} {u : Level} {A l r : Expr} {c : Name} {ls : List Level} :
+      {args : List Expr} {u : Level} {A l r e : Expr} {c : Name} {ls : List Level} :
       env.find? h = some (.thmInfo cv) →
       us.length = cv.levelParams.length →
       CertsF env d (cv.type.instantiateLevelParams cv.levelParams us) args →
       piResidual (cv.type.instantiateLevelParams cv.levelParams us) args
         = some (.app (.app (.app (.const eqName [u]) A) l) r) →
-      l.getAppFn = .const c ls →
+      e.getAppFn = .const c ls →
+      MatchRel env d [] e l →
       (∀ x ∈ args, x ∈ appSubterms l) →
       (∀ x ∈ r.fvarLeaves, x ∈ l.fvarLeaves) →
       h ∈ env.rulesFor c →
-      Red env d l r
+      Red env d e r
   /-- **The structural projection** `proj_i (ctor p⃗ x⃗) ↦ x_i`
   (`whnfCoreBody`'s `.proj` clause, `Kernel/Core.lean`), driven by
   the projection table, with the
@@ -786,6 +791,26 @@ inductive CertsF (env : Env) : Nat → Expr → List Expr → Prop where
       Infer env .full d arg ta → DefEq env d ta ty →
       CertsF env d (body.instantiate1 arg) rest →
       CertsF env d (.forallE ty body) (arg :: rest)
+
+/-- **A rule's match, the spine** (`ruleMatchM`, `Kernel/Core.lean`): the
+term and the instance of the left side share their head and spine, and each
+argument position is related by `MatchArg`.  `P` is the pool of instance
+subterms the match has produced before the position (the prefix to its
+left, and the pool of the enclosing position). -/
+inductive MatchRel (env : Env) : Nat → List Expr → Expr → Expr → Prop where
+  | refl {d : Nat} {P : List Expr} {e : Expr} : MatchRel env d P e e
+  | app {d : Nat} {P : List Expr} {f f' a a' : Expr} :
+      MatchRel env d P f f' → MatchArg env d (f' :: P) a a' →
+      MatchRel env d P (.app f a) (.app f' a')
+
+/-- **A rule's match, an argument position** (`ruleMatchM`'s argument arm):
+the position's spine matches, or it matches after a reduction of the term's
+argument (the retry on `whnf`, a `Nat` literal read as its constructor form). -/
+inductive MatchArg (env : Env) : Nat → List Expr → Expr → Expr → Prop where
+  | spine {d : Nat} {P : List Expr} {a a' : Expr} :
+      MatchRel env d P a a' → MatchArg env d P a a'
+  | red {d : Nat} {P : List Expr} {a a'' a' : Expr} :
+      Red env d a a'' → MatchRel env d P a'' a' → MatchArg env d P a a'
 
 /-- **Pairwise definitional equality** (`defEqList`, `Kernel/Core.lean`). -/
 inductive DefEqList (env : Env) : Nat → List Expr → List Expr → Prop where

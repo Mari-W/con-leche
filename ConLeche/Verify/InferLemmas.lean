@@ -305,22 +305,151 @@ theorem bind_eqSpine?_eq_some {o : Option Expr} {A l rhs : Expr} {eqn : Name} {u
   | none => simp
   | some R => simpa using eqSpine?_eq_some
 
-/-- **Inversion for a rule firing**: the firing's checks, read back. -/
+theorem bindM_ok {α β : Type} {x : CheckM α} {f : α → CheckM β} {b : β}
+    (h : (x >>= f) = .ok b) : ∃ a, x = .ok a ∧ f a = .ok b := by
+  cases hx : x with
+  | error e => rw [hx] at h; exact nomatch h
+  | ok a => rw [hx] at h; exact ⟨a, rfl, h⟩
+
+/-- **What a rule's match keeps**: a relation that is reflexive, transitive, a congruence for
+application and holds from a term to its retry (`ruleRetry`) holds from the term to its matched
+view. -/
+structure MatchPres (r : CoreFns CheckM) (env : Env) (d : Nat) (Q : Expr → Expr → Prop) : Prop where
+  refl : ∀ x, Q x x
+  app : ∀ {f f₁ a a₁}, Q f f₁ → Q a a₁ → Q (.app f a) (.app f₁ a₁)
+  trans : ∀ {a b c}, Q a b → Q b c → Q a c
+  retry : ∀ {a w}, r.whnf d a = .ok w → Q a (litToCtorIfNat env w)
+
+theorem ruleBindVar_eq {n k : Nat} {st st' : List (Option Expr) × List (Option Level)}
+    {a a₁ : Expr} (h : ruleBindVar n k st a = some (st', a₁)) : a₁ = a := by
+  obtain ⟨sl, lv⟩ := st
+  simp only [ruleBindVar] at h
+  by_cases hk : k < n
+  · rw [ite_eq_left hk] at h
+    cases hs : sl.getD (n - 1 - k) none with
+    | none =>
+      rw [hs] at h; simp only [Option.some.injEq, Prod.mk.injEq] at h; exact h.2.symm
+    | some e' =>
+      rw [hs] at h; dsimp only at h
+      split at h
+      · simp only [Option.some.injEq, Prod.mk.injEq] at h; exact h.2.symm
+      · exact nomatch h
+  · rw [ite_eq_right hk] at h; exact nomatch h
+
+theorem ruleArgStep_pres {r : CoreFns CheckM} {env : Env} {d n : Nat} {Q : Expr → Expr → Prop}
+    (hQ : MatchPres r env d Q)
+    {k : Expr → CheckM (Option ((List (Option Expr) × List (Option Level)) × Expr))}
+    (hk : ∀ {x st' x₁}, k x = .ok (some (st', x₁)) → Q x x₁)
+    {p a a₁ : Expr} {st st' : List (Option Expr) × List (Option Level)}
+    (h : ruleArgStep r env d n k p st a = .ok (some (st', a₁))) : Q a a₁ := by
+  unfold ruleArgStep at h
+  split at h
+  · simp only [pure, Except.pure, Except.ok.injEq] at h
+    rw [ruleBindVar_eq h]; exact hQ.refl a
+  · unfold ruleOrRetry at h
+    obtain ⟨o, ho, h⟩ := bindM_ok h
+    cases o with
+    | some x =>
+      simp only [pure, Except.pure, Except.ok.injEq] at h
+      obtain rfl := Option.some.inj h; exact hk ho
+    | none =>
+      obtain ⟨a', ha', h⟩ := bindM_ok h
+      unfold ruleRetry at ha'
+      obtain ⟨w, hw, ha'⟩ := bindM_ok ha'
+      simp only [pure, Except.pure, Except.ok.injEq] at ha'
+      subst ha'
+      exact hQ.trans (hQ.retry hw) (hk h)
+
+theorem ruleMatchM_pres {r : CoreFns CheckM} {env : Env} {d n : Nat} {lps : List Name}
+    {Q : Expr → Expr → Prop} (hQ : MatchPres r env d Q) :
+    ∀ (pat : Expr) {st st' : List (Option Expr) × List (Option Level)} {e e₁ : Expr},
+      ruleMatchM r env d n lps pat st e = .ok (some (st', e₁)) → Q e e₁ := by
+  intro pat
+  induction pat with
+  | app f p ihf ihp =>
+    intro st st' e e₁ h
+    cases e with
+    | app f' a =>
+      simp only [ruleMatchM] at h
+      obtain ⟨o, ho, h⟩ := bindM_ok h
+      cases o with
+      | none => simp [pure, Except.pure] at h
+      | some sf =>
+        obtain ⟨st₁, f₁⟩ := sf
+        obtain ⟨o', ho', h⟩ := bindM_ok h
+        cases o' with
+        | none => simp [pure, Except.pure] at h
+        | some sa =>
+          obtain ⟨st₂, a₁⟩ := sa
+          simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq, Prod.mk.injEq] at h
+          obtain ⟨-, rfl⟩ := h
+          exact hQ.app (ihf ho) (ruleArgStep_pres hQ (fun hx => ihp hx) ho')
+    | _ => simp [ruleMatchM, pure, Except.pure] at h
+  | const c ls =>
+    intro st st' e e₁ h
+    obtain ⟨sl, lv⟩ := st
+    cases e with
+    | const c' ls' =>
+      simp only [ruleMatchM, pure, Except.pure, Except.ok.injEq] at h
+      split at h
+      · obtain ⟨lv', -, h⟩ := Option.map_eq_some_iff.mp h
+        simp only [Prod.mk.injEq] at h
+        rw [← h.2]; exact hQ.refl _
+      · exact nomatch h
+    | _ => simp [ruleMatchM, pure, Except.pure] at h
+  | _ => intro st st' e e₁ h; simp [ruleMatchM, pure, Except.pure] at h
+
+/-- The match's arguments and levels, with the matched view of the term. -/
+theorem ruleArgsM_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {cv : ConstantVal}
+    {e e₁ : Expr} {args : List Expr} {us : List Level}
+    (h : ruleArgsM r env d cv e = .ok (some (args, us, e₁))) :
+    ∃ l₀ st', ruleMatchM r env d (ruleTele cv.type).1 cv.levelParams l₀
+        (List.replicate (ruleTele cv.type).1 none,
+          List.replicate cv.levelParams.length none) e = .ok (some (st', e₁)) := by
+  unfold ruleArgsM at h
+  split at h
+  · obtain ⟨o, ho, h⟩ := bindM_ok h
+    cases o with
+    | none => simp [pure, Except.pure] at h
+    | some x =>
+      obtain ⟨⟨sl, lv⟩, e₁'⟩ := x
+      dsimp only at h
+      split at h
+      · simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq, Prod.mk.injEq] at h
+        obtain ⟨-, -, rfl⟩ := h
+        exact ⟨_, _, ho⟩
+      · simp [pure, Except.pure] at h
+  · simp [pure, Except.pure] at h
+
+theorem ruleArgsM_pres {r : CoreFns CheckM} {env : Env} {d : Nat} {cv : ConstantVal}
+    {e e₁ : Expr} {args : List Expr} {us : List Level} {Q : Expr → Expr → Prop}
+    (hQ : MatchPres r env d Q) (h : ruleArgsM r env d cv e = .ok (some (args, us, e₁))) :
+    Q e e₁ := by
+  obtain ⟨l₀, st', hm⟩ := ruleArgsM_inv h
+  exact ruleMatchM_pres hQ l₀ hm
+
+/-- **Inversion for a rule firing**: the firing's checks, read back, at the matched view `e₁`
+of the term. -/
 theorem rewriteAttempt_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {e e₂ : Expr} {t : Name}
     (h : rewriteAttempt r env d e t = .ok (some e₂)) :
     ∃ (cv : ConstantVal) (args : List Expr) (us : List Level) (u : Level) (A : Expr) (c : Name)
-      (ls : List Level),
+      (ls : List Level) (e₁ : Expr),
       env.find? t = some (.thmInfo cv) ∧
+      ruleArgsM r env d cv e = .ok (some (args, us, e₁)) ∧
       piResidual (cv.type.instantiateLevelParams cv.levelParams us) args
-        = some (.app (.app (.app (.const eqName [u]) A) e) e₂) ∧
-      e.getAppFn = .const c ls ∧ us.length = cv.levelParams.length ∧
-      (∀ x ∈ args, x ∈ appSubterms e) ∧ (∀ x ∈ e₂.fvarLeaves, x ∈ e.fvarLeaves) ∧
+        = some (.app (.app (.app (.const eqName [u]) A) e₁) e₂) ∧
+      e₁.getAppFn = .const c ls ∧ us.length = cv.levelParams.length ∧
+      (∀ x ∈ args, x ∈ appSubterms e₁) ∧ (∀ x ∈ e₂.fvarLeaves, x ∈ e₁.fvarLeaves) ∧
       iotaCertsFull r env d (cv.type.instantiateLevelParams cv.levelParams us) args = .ok true := by
-  unfold rewriteAttempt at h
+  unfold rewriteAttempt rewriteFire at h
   split at h
   · rename_i cv hfind
-    split at h
-    · rename_i args us _
+    obtain ⟨o, ho, h⟩ := bindM_ok h
+    cases o with
+    | none => simp [pure, Except.pure] at h
+    | some x =>
+      obtain ⟨args, us, e₁⟩ := x
+      dsimp only at h
       split at h
       · rename_i eqn u A l rhs hres
         rw [bind_eqSpine?_eq_some] at hres
@@ -328,22 +457,18 @@ theorem rewriteAttempt_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {e e₂ : 
         · rename_i hchk
           obtain ⟨rfl, hlen, hle, hsub, hleaf, hcst⟩ := hchk
           subst l
-          obtain ⟨c, ls, hhead⟩ : ∃ c ls, e.getAppFn = .const c ls := by
+          obtain ⟨c, ls, hhead⟩ : ∃ c ls, e₁.getAppFn = .const c ls := by
             revert hcst
-            cases e.getAppFn <;> simp [Expr.isConstB]
-          simp only [bind, Except.bind] at h
-          split at h
-          · exact nomatch h
-          rename_i b hcert
+            cases e₁.getAppFn <;> simp [Expr.isConstB]
+          obtain ⟨b, hcert, h⟩ := bindM_ok h
           split at h
           · rename_i hb
             obtain rfl : rhs = e₂ := by simpa [pure, Except.pure] using h
-            exact ⟨cv, args, us, u, A, c, ls, hfind, hres, hhead, hlen, hsub, hleaf,
+            exact ⟨cv, args, us, u, A, c, ls, e₁, hfind, ho, hres, hhead, hlen, hsub, hleaf,
               by rw [hcert, hb]⟩
           · simp [pure, Except.pure] at h
         · simp [pure, Except.pure] at h
       · simp [pure, Except.pure] at h
-    · simp [pure, Except.pure] at h
   · simp [pure, Except.pure] at h
 
 /-- Inversion for the rules in order: a firing is one of the rules', the first. -/
@@ -2977,17 +3102,26 @@ theorem appSubterms_WScoped {d : Nat} (e : Expr) :
     · exact iha hx (by simp only [WScoped] at hw; exact hw.2)
   | _ => intro x hx hw; simp only [appSubterms, List.mem_singleton] at hx; subst hx; exact hw
 
+/-- A rule's match keeps well-scopedness where the retry's `whnf` does. -/
+theorem MatchPres.wscoped {env : Env} {r : CoreFns CheckM} {d : Nat}
+    (hwh : ∀ {a w : Expr}, r.whnf d a = .ok w → WScoped d a → WScoped d w) :
+    MatchPres r env d (fun a b => WScoped d a → WScoped d b) :=
+  ⟨fun _ => id, fun hf ha h => by simp only [WScoped] at h ⊢; exact ⟨hf h.1, ha h.2⟩,
+    fun hab hbc h => hbc (hab h), fun hw h => litToCtorIfNat_WScoped (hwh hw h)⟩
+
 /-- **A rule's right side is scoped where the term it rewrites is**: the theorem's type is
 closed, the arguments are subterms of the term. -/
 theorem rewriteStep_WScoped {env : Env} (henv : EnvWF env) {r : CoreFns CheckM} {d : Nat}
+    (hwh : ∀ {a w : Expr}, r.whnf d a = .ok w → WScoped d a → WScoped d w)
     {e e₂ : Expr} {t : Name} (h : rewriteStep r env d e = .ok (some (t, e₂)))
     (hw : WScoped d e) : WScoped d e₂ := by
-  obtain ⟨cv, args, us, u, A, c, ls, hf, hres, -, -, hsub, -⟩ :=
+  obtain ⟨cv, args, us, u, A, c, ls, e₁, hf, hm, hres, -, -, hsub, -⟩ :=
     rewriteAttempt_inv (rewriteStep_inv h)
+  have hw₁ := ruleArgsM_pres (MatchPres.wscoped hwh) hm hw
   have hT : WScoped d (cv.type.instantiateLevelParams cv.levelParams us) :=
     WScoped.of_not_hasFvar (by
       rw [hasFvar_instantiateLevelParams]; exact (henv.consts _ (Env.find?_mem hf)).1)
-  have hR := piResidual_WScoped hres hT (fun x hx => appSubterms_WScoped e (hsub x hx) hw)
+  have hR := piResidual_WScoped hres hT (fun x hx => appSubterms_WScoped e₁ (hsub x hx) hw₁)
   simp only [WScoped] at hR
   exact hR.2
 
@@ -3026,7 +3160,7 @@ theorem whnfPres_WScoped {env : Env} (henv : EnvWF env) :
         exact h ▸ hw
       | const n ws =>
         rcases whnfCore_const_inv h with ⟨t, e₂, hrw, hk⟩ | ⟨-, rfl⟩
-        · exact ihCore hk (rewriteStep_WScoped henv hrw hw)
+        · exact ihCore hk (rewriteStep_WScoped henv ihLoop hrw hw)
         · exact hw
       | lit l =>
         rw [whnfCore_succ] at h
@@ -3052,7 +3186,7 @@ theorem whnfPres_WScoped {env : Env} (henv : EnvWF env) :
           exact ihCore hbeta (WScoped.instantiate1_gen hw.2 0 hwf'.2)
         · rcases iotaThenRule_inv hio' with hio | ⟨-, t, hrw⟩
           rotate_left
-          · exact ihCore hwe'' (rewriteStep_WScoped henv hrw hwapp)
+          · exact ihCore hwe'' (rewriteStep_WScoped henv ihLoop hrw hwapp)
           -- iota step
           obtain ⟨c, us, cv, mI, rP, isK, rules, major, cj, usj,
             cvj, cnP, cnF, induct, r, hfn, hfc, hlen, -, hprep,

@@ -443,11 +443,55 @@ theorem FEnv.rulesFor_congr (hfe : fe₁.find? = fe₂.find?) (hrl : fe₁.base.
     fe₁.rulesFor = fe₂.rulesFor := by
   funext c; unfold FEnv.rulesFor; rw [hrl, hfe]
 
+/-- `ruleRetryI` reads `fe` only through `find?`. -/
+theorem ruleRetryI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv) :
+    ruleRetryI mode fe₁ eager lv = ruleRetryI mode fe₂ eager lv := by
+  funext depth a; rw [ruleRetryI.eq_def, ruleRetryI.eq_def]
+  simp only [litToCtorIfNatI_congr hfe, h]
+
+/-- `ruleMatchI` and `ruleArgI` read `fe` only through `find?`. -/
+theorem ruleMatchI_ruleArgI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv)
+    (depth n : Nat) (lps : List Name) :
+    ∀ pat : Expr,
+      ruleMatchI mode fe₁ eager lv depth n lps pat = ruleMatchI mode fe₂ eager lv depth n lps pat ∧
+      ruleArgI mode fe₁ eager lv depth n lps pat = ruleArgI mode fe₂ eager lv depth n lps pat := by
+  intro pat
+  have hm : ruleMatchI mode fe₁ eager lv depth n lps pat =
+      ruleMatchI mode fe₂ eager lv depth n lps pat := by
+    induction pat with
+    | app f p ihf ihp =>
+      funext st e
+      rw [ruleMatchI.eq_def, ruleMatchI.eq_def]
+      have hp : ruleArgI mode fe₁ eager lv depth n lps p = ruleArgI mode fe₂ eager lv depth n lps p := by
+        funext st a; rw [ruleArgI.eq_def, ruleArgI.eq_def]
+        simp only [ihp, ruleRetryI_congr hfe h]
+      cases e <;> simp only [ihf, hp]
+    | _ => funext st e; rw [ruleMatchI.eq_def, ruleMatchI.eq_def]; try (cases e <;> rfl)
+  refine ⟨hm, ?_⟩
+  funext st a; rw [ruleArgI.eq_def, ruleArgI.eq_def]
+  simp only [hm, ruleRetryI_congr hfe h]
+
+theorem ruleMatchI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv) :
+    ruleMatchI mode fe₁ eager lv = ruleMatchI mode fe₂ eager lv := by
+  funext depth n lps pat; exact (ruleMatchI_ruleArgI_congr hfe h depth n lps pat).1
+
+/-- `ruleArgsI` reads `fe` only through `find?`. -/
+theorem ruleArgsI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv) :
+    ruleArgsI mode fe₁ eager lv = ruleArgsI mode fe₂ eager lv := by
+  funext depth cv e; rw [ruleArgsI.eq_def, ruleArgsI.eq_def]
+  simp only [ruleMatchI_congr hfe h]
+
+/-- `rewriteFireI` reads `fe` only through `find?`. -/
+theorem rewriteFireI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv) :
+    rewriteFireI mode fe₁ eager lv = rewriteFireI mode fe₂ eager lv := by
+  funext depth t cv args us e₁; rw [rewriteFireI.eq_def, rewriteFireI.eq_def]
+  simp only [constTyAtM_congr hfe, iotaCertsFullI_congr hfe h]
+
 /-- `rewriteAttemptI` reads `fe` only through `find?`. -/
 theorem rewriteAttemptI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv) :
     rewriteAttemptI mode fe₁ eager lv = rewriteAttemptI mode fe₂ eager lv := by
   funext depth e t; rw [rewriteAttemptI.eq_def, rewriteAttemptI.eq_def]
-  simp only [hfe, constTyAtM_congr hfe, iotaCertsFullI_congr hfe h]
+  simp only [hfe, rewriteFireI_congr hfe h, ruleArgsI_congr hfe h]
 
 /-- `rewriteRulesI` reads `fe` only through `find?`. -/
 theorem rewriteRulesI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv) :

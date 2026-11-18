@@ -1118,25 +1118,83 @@ def reduceProjCoreI (eager : Bool) (lv : Nat) (depth : Nat) (sn : Name)
   | none => pure none
 termination_by (lv, 28, 0, 0)
 
-/-- Twin of `rewriteAttempt`: the theorem's type at the levels through the per-declaration memo
+/-- Twin of `ruleRetry`. -/
+def ruleRetryI (eager : Bool) (lv : Nat) (depth : Nat) (a : Expr) : CheckCM Expr := do
+  let w ← whnfI eager lv depth a
+  litToCtorIfNatI fe w
+termination_by (lv, 28, 0, 0)
+
+/-- Twin of `ruleArgStep` at the match's own recursion: the retry through `ruleRetryI`. -/
+def ruleArgI (eager : Bool) (lv : Nat) (depth n : Nat) (lps : List Name) (p : Expr)
+    (st : List (Option Expr) × List (Option Level)) (a : Expr) :
+    CheckCM (Option ((List (Option Expr) × List (Option Level)) × Expr)) :=
+  match p.bvarIdx? with
+  | some k => pure (ruleBindVar n k st a)
+  | none => do
+    match ← ruleMatchI eager lv depth n lps p st a with
+    | some x => pure (some x)
+    | none => do
+      let a' ← ruleRetryI eager lv depth a
+      ruleMatchI eager lv depth n lps p st a'
+termination_by (lv, 28, 0, 2 * sizeOf p + 3)
+
+/-- Twin of `ruleMatchM`. -/
+def ruleMatchI (eager : Bool) (lv : Nat) (depth n : Nat) (lps : List Name) :
+    Expr → List (Option Expr) × List (Option Level) → Expr →
+      CheckCM (Option ((List (Option Expr) × List (Option Level)) × Expr))
+  | .app f p, st, .app f' a => do
+    match ← ruleMatchI eager lv depth n lps f st f' with
+    | none => pure none
+    | some (st₁, f₁) =>
+      match ← ruleArgI eager lv depth n lps p st₁ a with
+      | none => pure none
+      | some (st₂, a₁) => pure (some (st₂, .app f₁ a₁))
+  | .const c ls, (sl, lv'), .const c' ls' =>
+    pure (if c = c' then (matchLevels lps lv' ls ls').map fun lv' => ((sl, lv'), .const c' ls')
+      else none)
+  | _, _, _ => pure none
+termination_by pat _ _ => (lv, 28, 0, 2 * sizeOf pat + 2)
+
+/-- Twin of `ruleArgsM`. -/
+def ruleArgsI (eager : Bool) (lv : Nat) (depth : Nat) (cv : ConstantVal) (e : Expr) :
+    CheckCM (Option (List Expr × List Level × Expr)) :=
+  match (ruleTele cv.type).2 with
+  | .app (.app (.app (.const _ [_]) _) l₀) _ => do
+    let n := (ruleTele cv.type).1
+    match ← ruleMatchI eager lv depth n cv.levelParams l₀
+        (List.replicate n none, List.replicate cv.levelParams.length none) e with
+    | some ((sl, lvs), e₁) =>
+      match sl.mapM id, lvs.mapM id with
+      | some args, some us => pure (some (args, us, e₁))
+      | _, _ => pure none
+    | none => pure none
+  | _ => pure none
+termination_by (lv, 28, 1, 0)
+
+/-- Twin of `rewriteFire`: the theorem's type at the levels through the per-declaration memo
 (`constTyAtM`), its residual by `piResidualM`, every check the specification's. -/
+def rewriteFireI (eager : Bool) (lv : Nat) (depth : Nat) (thm : Name) (cv : ConstantVal)
+    (args : List Expr) (us : List Level) (e₁ : Expr) : CheckCM (Option Expr) := do
+  let T ← constTyAtM fe thm thm us
+  match (← piResidualM T args).bind eqSpine? with
+  | some (eqn, _, _, l, rhs) =>
+    if RuleGate cv us args e₁ eqn l rhs then
+      if ← iotaCertsFullI eager lv depth T args then pure (some rhs)
+      else pure none
+    else pure none
+  | none => pure none
+termination_by (lv, 28, 1, 1)
+
+/-- Twin of `rewriteAttempt`. -/
 def rewriteAttemptI (eager : Bool) (lv : Nat) (depth : Nat) (e : Expr) (thm : Name) :
     CheckCM (Option Expr) := do
   match fe.find? thm with
   | some (.thmInfo cv) =>
-    match ruleArgs cv e with
-    | some (args, us) => do
-      let T ← constTyAtM fe thm thm us
-      match (← piResidualM T args).bind eqSpine? with
-      | some (eqn, _, _, l, rhs) =>
-        if RuleGate cv us args e eqn l rhs then
-          if ← iotaCertsFullI eager lv depth T args then pure (some rhs)
-          else pure none
-        else pure none
-      | none => pure none
+    match ← ruleArgsI eager lv depth cv e with
+    | some (args, us, e₁) => rewriteFireI eager lv depth thm cv args us e₁
     | none => pure none
   | _ => pure none
-termination_by (lv, 28, 1, 0)
+termination_by (lv, 28, 2, 0)
 
 /-- Twin of `rewriteRules`. -/
 def rewriteRulesI (eager : Bool) (lv : Nat) (depth : Nat) (e : Expr) :
@@ -1146,7 +1204,7 @@ def rewriteRulesI (eager : Bool) (lv : Nat) (depth : Nat) (e : Expr) :
     match ← rewriteAttemptI eager lv depth e t with
     | some e₂ => pure (some (t, e₂))
     | none => rewriteRulesI eager lv depth e ts
-termination_by ts => (lv, 28, 2, ts.length)
+termination_by ts => (lv, 28, 3, ts.length)
 
 /-- Twin of `rewriteStep`: the rules through the index (`FEnv.rulesFor`). -/
 def rewriteStepI (eager : Bool) (lv : Nat) (depth : Nat) (e : Expr) :
@@ -1154,7 +1212,7 @@ def rewriteStepI (eager : Bool) (lv : Nat) (depth : Nat) (e : Expr) :
   match e.getAppFn with
   | .const c _ => rewriteRulesI eager lv depth e (fe.rulesFor c)
   | _ => pure none
-termination_by (lv, 28, 3, 0)
+termination_by (lv, 28, 4, 0)
 
 /-- Peel loop of `whnfAppI`: `t` is the raw (unsubstituted) lambda body
 after the binders consumed so far, their arguments the spine range

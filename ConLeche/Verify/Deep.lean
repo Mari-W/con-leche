@@ -1662,65 +1662,112 @@ private theorem getD_map_optShift {p j : Nat} (sl : List (Option Expr)) :
   | nil => rfl
   | cons a sl ih => cases j <;> simp_all
 
-/-- The matcher on a shifted term binds the shifted subterms. -/
-private theorem ruleMatch_shiftFrom {p n : Nat} {lps : List Name} :
-    ∀ (pat : Expr), pat.hasFvar = false → ∀ (sl : List (Option Expr)) (lv : List (Option Level))
-      (e : Expr),
-      ruleMatch n lps (sl.map (Option.map (shiftFrom p)), lv) pat (shiftFrom p e) =
-        (ruleMatch n lps (sl, lv) pat e).map
-          fun st => (st.1.map (Option.map (shiftFrom p)), st.2) := by
+/-- The match state with its binder slots shifted. -/
+private abbrev shiftSt (p : Nat) (st : List (Option Expr) × List (Option Level)) :
+    List (Option Expr) × List (Option Level) :=
+  (st.1.map (Option.map (shiftFrom p)), st.2)
+
+/-- A variable position at a shifted term binds the shifted subterm. -/
+private theorem ruleBindVar_shiftFrom {p n k : Nat}
+    (st : List (Option Expr) × List (Option Level)) (a : Expr) :
+    ruleBindVar n k (shiftSt p st) (shiftFrom p a) =
+      (ruleBindVar n k st a).map fun sx => (shiftSt p sx.1, shiftFrom p sx.2) := by
+  obtain ⟨sl, lv⟩ := st
+  simp only [ruleBindVar, shiftSt]
+  by_cases hk : k < n
+  · rw [ite_eq_left hk, ite_eq_left hk, getD_map_optShift]
+    cases sl.getD (n - 1 - k) none with
+    | none => simp [List.map_set]
+    | some e' =>
+      simp only [Option.map_some]
+      by_cases he : e' = a
+      · subst he; simp
+      · have : ¬ shiftFrom p e' = shiftFrom p a := fun h => he (shiftFrom_injective h)
+        simp [he, this]
+  · rw [ite_eq_right hk, ite_eq_right hk]; rfl
+
+/-- The retry commutes with the shift. -/
+private theorem ruleRetry_shift (ih : ShiftClaims mode eager env fuel) {p d : Nat} (hpd : p ≤ d)
+    {a : Expr} (hw : WScoped d a) :
+    ruleRetry (pureFns mode eager env fuel) env (d + 1) (shiftFrom p a) =
+      (ruleRetry (pureFns mode eager env fuel) env d a).map (shiftFrom p) := by
+  unfold ruleRetry
+  refine bind_rel (shiftFrom p) _ (ih.whnf hpd hw) fun w _ => ?_
+  rw [litToCtorIfNat_shiftFrom]; rfl
+
+/-- The retry's term is scoped where the argument is. -/
+private theorem ruleRetry_WScoped (henv : EnvWF env) {d : Nat} {a a' : Expr}
+    (h : ruleRetry (pureFns mode eager env fuel) env d a = .ok a') (hw : WScoped d a) :
+    WScoped d a' := by
+  unfold ruleRetry at h
+  cases hwh : whnf mode eager env fuel d a with
+  | error _ =>
+    rw [show (pureFns mode eager env fuel).whnf d a = whnf mode eager env fuel d a from rfl,
+      hwh] at h
+    exact nomatch h
+  | ok w =>
+    rw [show (pureFns mode eager env fuel).whnf d a = whnf mode eager env fuel d a from rfl,
+      hwh] at h
+    obtain rfl := Except.ok.inj h
+    exact litToCtorIfNat_WScoped (whnf_WScoped henv fuel hwh hw)
+
+/-- **The match on a shifted term** binds the shifted subterms and gives the shifted matched view. -/
+private theorem ruleMatchM_shift (henv : EnvWF env) (ih : ShiftClaims mode eager env fuel)
+    {p d n : Nat} (hpd : p ≤ d) {lps : List Name} :
+    ∀ (pat : Expr) (st : List (Option Expr) × List (Option Level)) {e : Expr}, WScoped d e →
+      ruleMatchM (pureFns mode eager env fuel) env (d + 1) n lps pat (shiftSt p st)
+          (shiftFrom p e) =
+        (ruleMatchM (pureFns mode eager env fuel) env d n lps pat st e).map
+          (Option.map fun sx => (shiftSt p sx.1, shiftFrom p sx.2)) := by
   intro pat
   induction pat with
-  | bvar k =>
-    intro _ sl lv e
-    simp only [ruleMatch]
-    by_cases hk : k < n
-    · rw [ite_eq_left hk, ite_eq_left hk, getD_map_optShift]
-      cases sl.getD (n - 1 - k) none with
-      | none => simp [List.map_set]
-      | some e' =>
-        simp only [Option.map_some]
-        by_cases he : e' = e
-        · subst he; simp
-        · have : ¬ shiftFrom p e' = shiftFrom p e := fun h => he (shiftFrom_injective h)
-          simp [he, this]
-    · rw [ite_eq_right hk, ite_eq_right hk]; rfl
-  | app f a ihf iha =>
-    intro hfv sl lv e
-    simp only [hasFvar, Bool.or_eq_false_iff] at hfv
+  | app f q ihf ihq =>
+    intro st e hw
     cases e with
-    | app f' a' =>
-      simp only [shiftFrom, ruleMatch]
-      rw [ihf hfv.1]
-      cases ruleMatch n lps (sl, lv) f f' with
+    | app f' a =>
+      simp only [WScoped] at hw
+      simp only [shiftFrom, ruleMatchM]
+      refine bind_rel (Option.map fun sx => (shiftSt p sx.1, shiftFrom p sx.2)) _
+        (ihf st hw.1) fun o _ => ?_
+      cases o with
       | none => rfl
-      | some st =>
-        obtain ⟨sl₁, lv₁⟩ := st
-        exact iha hfv.2 sl₁ lv₁ a'
-    | fvar i ty => simp only [shiftFrom]; split <;> simp [ruleMatch]
-    | _ => simp [shiftFrom, ruleMatch]
+      | some sf =>
+        obtain ⟨st₁, f₁⟩ := sf
+        simp only [Option.map_some]
+        refine bind_rel (Option.map fun sx => (shiftSt p sx.1, shiftFrom p sx.2)) _ ?_
+          fun o' _ => ?_
+        · unfold ruleArgStep
+          split
+          · rw [ruleBindVar_shiftFrom]; rfl
+          · unfold ruleOrRetry
+            refine bind_rel (Option.map fun sx => (shiftSt p sx.1, shiftFrom p sx.2)) _
+              (ihq st₁ hw.2) fun o _ => ?_
+            cases o with
+            | some x => rfl
+            | none =>
+              refine bind_rel (shiftFrom p) _ (ruleRetry_shift ih hpd hw.2) fun a' ha' => ?_
+              exact ihq st₁ (ruleRetry_WScoped henv ha' hw.2)
+        · cases o' with
+          | none => rfl
+          | some sa => rfl
+    | fvar i ty => simp only [shiftFrom]; split <;> rfl
+    | _ => rfl
   | const c ls =>
-    intro _ sl lv e
+    intro st e _
+    obtain ⟨sl, lv⟩ := st
     cases e with
     | const c' ls' =>
-      simp only [shiftFrom, ruleMatch]
+      simp only [shiftFrom, ruleMatchM, shiftSt]
       split
       · cases matchLevels lps lv ls ls' <;> rfl
       · rfl
-    | fvar i ty => simp only [shiftFrom]; split <;> simp [ruleMatch]
-    | _ => simp [shiftFrom, ruleMatch]
-  | fvar => intro h; simp [hasFvar] at h
+    | fvar i ty => simp only [shiftFrom]; split <;> rfl
+    | _ => rfl
   | _ =>
-    intro hfv sl lv e
-    simp only [ruleMatch, eq_shiftFrom_iff hfv]
-    split <;> rfl
-
-private theorem ruleTele_hasFvar : ∀ {t : Expr}, t.hasFvar = false → (ruleTele t).2.hasFvar = false
-  | .forallE _ b, h => by
-    simp only [hasFvar, Bool.or_eq_false_iff] at h
-    exact ruleTele_hasFvar (t := b) h.2
-  | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .app _ _, h | .lam _ _, h
-  | .letE _ _ _, h | .lit _, h | .proj _ _ _, h => h
+    intro st e _
+    cases e with
+    | fvar i ty => simp only [shiftFrom]; split <;> rfl
+    | _ => rfl
 
 private theorem mapM_optShift {p : Nat} :
     ∀ (sl : List (Option Expr)),
@@ -1733,31 +1780,29 @@ private theorem mapM_optShift {p : Nat} :
       simp only [List.map_cons, Option.map_some, List.mapM_cons, id, mapM_optShift sl]
       cases sl.mapM id <;> rfl
 
-/-- The rule's arguments at a shifted term are the shifted arguments. -/
-private theorem ruleArgs_shiftFrom {p : Nat} {cv : ConstantVal} (hcl : cv.type.hasFvar = false)
-    (e : Expr) :
-    ruleArgs cv (shiftFrom p e) =
-      (ruleArgs cv e).map fun au => (au.1.map (shiftFrom p), au.2) := by
-  unfold ruleArgs
+/-- The rule's arguments at a shifted term are the shifted arguments, with the shifted matched
+view. -/
+private theorem ruleArgsM_shift (henv : EnvWF env) (ih : ShiftClaims mode eager env fuel)
+    {p d : Nat} (hpd : p ≤ d) (cv : ConstantVal) {e : Expr} (hw : WScoped d e) :
+    ruleArgsM (pureFns mode eager env fuel) env (d + 1) cv (shiftFrom p e) =
+      (ruleArgsM (pureFns mode eager env fuel) env d cv e).map
+        (Option.map fun au => (au.1.map (shiftFrom p), au.2.1, shiftFrom p au.2.2)) := by
+  unfold ruleArgsM
   split
-  · rename_i l₀ _ heq
-    have hl : l₀.hasFvar = false := by
-      have := ruleTele_hasFvar hcl
-      rw [heq] at this
-      simp only [hasFvar, Bool.or_eq_false_iff] at this
-      exact this.1.2
-    have hrep : (List.replicate (ruleTele cv.type).1 (none : Option Expr)) =
-        (List.replicate (ruleTele cv.type).1 none).map (Option.map (shiftFrom p)) := by
-      simp
-    dsimp only
-    rw [hrep, ruleMatch_shiftFrom l₀ hl, ← hrep]
-    cases ruleMatch (ruleTele cv.type).1 cv.levelParams
+  · rename_i _ _ _ l₀ _ _
+    have hm := ruleMatchM_shift (n := (ruleTele cv.type).1) (lps := cv.levelParams) henv ih hpd l₀
+      (List.replicate (ruleTele cv.type).1 none, List.replicate cv.levelParams.length none) hw
+    rw [show shiftSt p (List.replicate (ruleTele cv.type).1 (none : Option Expr),
+        List.replicate cv.levelParams.length (none : Option Level)) =
         (List.replicate (ruleTele cv.type).1 none, List.replicate cv.levelParams.length none)
-        l₀ e with
+        by simp [shiftSt]] at hm
+    dsimp only
+    refine bind_rel (Option.map fun sx => (shiftSt p sx.1, shiftFrom p sx.2)) _ hm fun o _ => ?_
+    cases o with
     | none => rfl
-    | some st =>
-      obtain ⟨sl, lv⟩ := st
-      simp only [Option.map_some, mapM_optShift sl]
+    | some x =>
+      obtain ⟨⟨sl, lv⟩, e₁⟩ := x
+      simp only [Option.map_some, shiftSt, mapM_optShift sl]
       cases sl.mapM id <;> cases lv.mapM id <;> rfl
   · rfl
 
@@ -1838,7 +1883,7 @@ private theorem rewriteAttempt_shift (henv : EnvWF env)
     rewriteAttempt (pureFns mode eager env fuel) env (d + 1) (shiftFrom p e) t =
       (rewriteAttempt (pureFns mode eager env fuel) env d e t).map
         (Option.map (shiftFrom p)) := by
-  unfold rewriteAttempt
+  unfold rewriteAttempt rewriteFire
   cases hft : env.find? t with
   | none => rfl
   | some ci =>
@@ -1846,11 +1891,14 @@ private theorem rewriteAttempt_shift (henv : EnvWF env)
     case thmInfo cv =>
       have hcl : cv.type.hasFvar = false := (henv.consts _ (Env.find?_mem hft)).1
       try dsimp only
-      rw [ruleArgs_shiftFrom hcl]
-      cases hra : ruleArgs cv e with
+      refine bind_rel (Option.map fun au => (au.1.map (shiftFrom p), au.2.1, shiftFrom p au.2.2))
+        _ (ruleArgsM_shift henv ih hpd cv hw) fun o ho => ?_
+      cases o with
       | none => rfl
       | some au =>
-        obtain ⟨args, us⟩ := au
+        obtain ⟨args, us, e₁⟩ := au
+        have hw₁ : WScoped d e₁ :=
+          ruleArgsM_pres (MatchPres.wscoped fun h hw => whnf_WScoped henv fuel h hw) ho hw
         simp only [Option.map_some]
         have hTf : (cv.type.instantiateLevelParams cv.levelParams us).hasFvar = false := by
           rw [hasFvar_instantiateLevelParams]; exact hcl
@@ -1872,16 +1920,16 @@ private theorem rewriteAttempt_shift (henv : EnvWF env)
             simp only [Option.map_some]
             have hwT : WScoped d (cv.type.instantiateLevelParams cv.levelParams us) :=
               WScoped.of_not_hasFvar hTf
-            have hwR (hsub : ∀ x ∈ args, x ∈ appSubterms e) :
+            have hwR (hsub : ∀ x ∈ args, x ∈ appSubterms e₁) :
                 WScoped d (Expr.app (.app (.app (.const eqn [u]) A) l) rhs) :=
-              piResidual_WScoped hres hwT fun x hx => appSubterms_WScoped e (hsub x hx) hw
-            have hcst : (shiftFrom p e).getAppFn.isConstB = e.getAppFn.isConstB := by
+              piResidual_WScoped hres hwT fun x hx => appSubterms_WScoped e₁ (hsub x hx) hw₁
+            have hcst : (shiftFrom p e₁).getAppFn.isConstB = e₁.getAppFn.isConstB := by
               rw [getAppFn_shiftFrom]
-              cases e.getAppFn with
+              cases e₁.getAppFn with
               | fvar i ty => rw [shiftFrom_fvar]; rfl
               | _ => rfl
-            have hiff : RuleGate cv us (args.map (shiftFrom p)) (shiftFrom p e) eqn
-                  (shiftFrom p l) (shiftFrom p rhs) ↔ RuleGate cv us args e eqn l rhs := by
+            have hiff : RuleGate cv us (args.map (shiftFrom p)) (shiftFrom p e₁) eqn
+                  (shiftFrom p l) (shiftFrom p rhs) ↔ RuleGate cv us args e₁ eqn l rhs := by
               unfold RuleGate
               rw [appSubterms_shiftFrom, forall_mem_map_inj fun _ _ h => shiftFrom_injective h,
                 hcst]
@@ -1889,21 +1937,21 @@ private theorem rewriteAttempt_shift (henv : EnvWF env)
               · rintro ⟨h1, h2, h3, h4, h5, h6⟩
                 have hr : WScoped d rhs := by
                   have := hwR h4; simp only [WScoped] at this; exact this.2
-                rw [fvarLeaves_shiftFrom hpd hr, fvarLeaves_shiftFrom hpd hw,
+                rw [fvarLeaves_shiftFrom hpd hr, fvarLeaves_shiftFrom hpd hw₁,
                   forall_mem_map_inj fun _ _ h => shiftLeaf_injective h] at h5
                 exact ⟨h1, h2, shiftFrom_injective h3, h4, h5, h6⟩
               · rintro ⟨h1, h2, h3, h4, h5, h6⟩
                 have hr : WScoped d rhs := by
                   have := hwR h4; simp only [WScoped] at this; exact this.2
-                rw [fvarLeaves_shiftFrom hpd hr, fvarLeaves_shiftFrom hpd hw,
+                rw [fvarLeaves_shiftFrom hpd hr, fvarLeaves_shiftFrom hpd hw₁,
                   forall_mem_map_inj fun _ _ h => shiftLeaf_injective h]
                 exact ⟨h1, h2, congrArg _ h3, h4, h5, h6⟩
-            by_cases hc : RuleGate cv us args e eqn l rhs
+            by_cases hc : RuleGate cv us args e₁ eqn l rhs
             · rw [ite_eq_left (hiff.mpr hc), ite_eq_left hc]
               have hR := hwR hc.2.2.2.1
               simp only [WScoped] at hR
               have hwargs : ∀ x ∈ args, WScoped d x :=
-                fun x hx => appSubterms_WScoped e (hc.2.2.2.1 x hx) hw
+                fun x hx => appSubterms_WScoped e₁ (hc.2.2.2.1 x hx) hw₁
               have hio := iotaCertsFull_shift henv ih hpd hwT hwargs
               rw [shiftFrom_eq_self_of_not_hasFvar hTf] at hio
               refine bind_rel_eq _ hio fun b _ => ?_
@@ -1985,7 +2033,7 @@ private theorem whnfCore_step (henv : EnvWF env)
     intro o ho
     cases o with
     | none => rfl
-    | some te => exact ih.whnfCore hpd (rewriteStep_WScoped henv ho hw)
+    | some te => exact ih.whnfCore hpd (rewriteStep_WScoped henv (fun h hw => whnf_WScoped henv fuel h hw) ho hw)
   | .lit l => rfl
   | .letE ty v body =>
     -- ζ: the body at the value
@@ -2026,7 +2074,7 @@ private theorem whnfCore_step (henv : EnvWF env)
       | some e'' =>
         rcases iotaThenRule_inv ho with ho' | ⟨-, t, hrw⟩
         · exact ih.whnfCore hpd (iotaRec_WScoped henv ho' hwapp)
-        · exact ih.whnfCore hpd (rewriteStep_WScoped henv hrw hwapp)
+        · exact ih.whnfCore hpd (rewriteStep_WScoped henv (fun h hw => whnf_WScoped henv fuel h hw) hrw hwapp)
     cases f' with
     | lam ty₁ body₁ =>
       simp only [WScoped] at hwf'

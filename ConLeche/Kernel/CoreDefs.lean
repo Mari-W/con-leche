@@ -753,13 +753,12 @@ def appSubterms : Expr → List Expr
 
 A rule is a stored theorem `∀ x₀ … x_{n-1}, @Eq A l r`.  The matcher reads
 the left side under its `n` binders (loose bound variables name them,
-innermost `0`) against a term: a bound variable takes the subterm it
-meets (the same one at every occurrence), an application matches an
-application, a constant matches a constant of the same name whose levels
-match the pattern's (a theorem level parameter takes the level it meets,
-consistently), and every other node must be closed and equal to the
-term's.  No proof is needed of it: the firing checks what it produced
-(`rewriteAttempt`). -/
+innermost `0`) against a term (`ruleMatchM`, `Kernel/Core.lean`): a bound
+variable takes the subterm it meets (the same one at every occurrence), an
+application matches an application, a constant matches a constant of the
+same name whose levels match the pattern's (a theorem level parameter takes
+the level it meets, consistently).  A failed argument position is retried
+once on the argument's `whnf`. -/
 
 /-- The leading `∀` binders of a statement and its body. -/
 def ruleTele : Expr → Nat × Expr
@@ -785,21 +784,22 @@ def matchLevels (lps : List Name) :
   | st, l :: ls, l' :: ls' => (matchLevel lps st l l').bind fun st => matchLevels lps st ls ls'
   | _, _, _ => none
 
-/-- **The first-order match** of a rule's left side under `n` binders against a term, from the
-binder slots (outermost first) and the level slots. -/
-def ruleMatch (n : Nat) (lps : List Name) :
-    List (Option Expr) × List (Option Level) → Expr → Expr →
-      Option (List (Option Expr) × List (Option Level))
-  | (sl, lv), .bvar k, e =>
+/-- The index of a bound variable. -/
+def Expr.bvarIdx? : Expr → Option Nat
+  | .bvar k => some k
+  | _ => none
+
+/-- **A pattern variable's position** (`ruleMatchM`'s argument arm): the variable `k` of the
+`n` binders takes the subterm it meets, or, already bound, compares it with its binding. -/
+def ruleBindVar (n k : Nat) :
+    List (Option Expr) × List (Option Level) → Expr →
+      Option ((List (Option Expr) × List (Option Level)) × Expr)
+  | (sl, lv), e =>
     if k < n then
       match sl.getD (n - 1 - k) none with
-      | some e' => if e' = e then some (sl, lv) else none
-      | none => some (sl.set (n - 1 - k) (some e), lv)
+      | some e' => if e' = e then some ((sl, lv), e) else none
+      | none => some ((sl.set (n - 1 - k) (some e), lv), e)
     else none
-  | st, .app f a, .app f' a' => (ruleMatch n lps st f f').bind fun st => ruleMatch n lps st a a'
-  | (sl, lv), .const c ls, .const c' ls' =>
-    if c = c' then (matchLevels lps lv ls ls').map fun lv => (sl, lv) else none
-  | st, p, e => if p.looseBVarsBounded 0 = true ∧ p = e then some st else none
 
 /-- Is `e` a constant? -/
 def Expr.isConstB : Expr → Bool
@@ -833,21 +833,6 @@ def RuleGate (cv : ConstantVal) (us : List Level) (args : List Expr) (e : Expr) 
 instance (cv : ConstantVal) (us : List Level) (args : List Expr) (e : Expr) (eqn : Name)
     (l rhs : Expr) : Decidable (RuleGate cv us args e eqn l rhs) :=
   inferInstanceAs (Decidable (_ ∧ _))
-
-/-- **The arguments and levels at which a stored theorem's left side is the term**, in binder
-order and in the order of the theorem's level parameters. -/
-def ruleArgs (cv : ConstantVal) (e : Expr) : Option (List Expr × List Level) :=
-  match (ruleTele cv.type).2 with
-  | .app (.app (.app (.const _ [_]) _) l₀) _ =>
-    let n := (ruleTele cv.type).1
-    match ruleMatch n cv.levelParams
-        (List.replicate n none, List.replicate cv.levelParams.length none) l₀ e with
-    | some (sl, lv) =>
-      match sl.mapM id, lv.mapM id with
-      | some args, some us => some (args, us)
-      | _, _ => none
-    | none => none
-  | _ => none
 
 /-- The fabricated projections of a structure-eta spine: the
 `.proj T j b` nodes, one per field of the family's projection table
