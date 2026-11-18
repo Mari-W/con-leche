@@ -115903,3 +115903,81 @@ engineering question.
 
 Consumers to repair: the shift, scope, leaves, member-freedom, extension, `atF` and pair lemmas
 of `rewriteAttempt` (as for `RuleGate` today), the bridge, and the cached simulation.
+
+## Aligning the rule budget, order and re-firing with the Lean kernel (2026-11-18, rewrite-rules, item 1 of round 6)
+
+**(a) The per-declaration budget. Done.** The cached loop now counts every firing twice. The
+per-loop counter (`ruleFireBudget = 2^16`, reset at each `whnfCore` call) is unchanged. A second
+counter `CState.ruleTotal` holds the declaration's firings so far, and `tickRuleI` rejects the
+firing past `ruleDeclBudget = 2^22` with `ruleDeclBudgetError`, as the C++ kernel's
+`m_rewrite_total` and `LEAN_REWRITE_DECL_BUDGET` do. The count lives in the per-declaration state,
+so every declaration starts at zero (`{ maxNatSize := … }` in `Cached/Decls.lean` and
+`Cached/StreamIndex.lean`), and `CState.flushed` keeps it. No clause of `CSOK` reads it, so the
+simulation needed one lemma (`CSOK.tickRule`, by `{ hs with }`) and `tickRuleI` in the loop's
+`vcgen` list. The specification has no budget, as before, and the cached triple constrains no
+exception, so nothing else changed.
+
+The fixture `rewrite_rule_decl_budget` (`scripts/rewrite-fixtures/RrLoop.lean`, the new
+`mk.py loop` subcommand) registers `op_apply : o.op a = apply' o a` with `apply' o a := o.op a`
+and checks a theorem whose statement `mk.py` replaces by the false `o.op a = o.op (a + 1)`. Each
+`whnfCore` call fires once, and lazy δ in `isDefEq` unfolds `apply'` back to `o.op a`. Before
+the change the check ran into the 60 s timeout (exit 124). Now it is rejected with
+`rewrite rule budget exhausted: op_apply would fire past 4194304 firings in this declaration`
+after 18.5 s. The C++ kernel has the same total, but the patched record is not replayed there.
+
+Cost. `perf stat -e instructions:u` against the A4 build is between -0.02% and +0.10% on the
+twelve fixtures of `_tmp/r6/perf.sh`, which is noise. On `rewrite_rule_priority_loop`, which
+fires 65 536 rules, it is +0.32% (1.2712 G to 1.2753 G), about 63 instructions per firing for
+reading and writing the state. Results in `_tmp/r6/perf-{base,a,master}.txt`.
+
+**(b) Rule order. Not done. It needs the specification's application clause restructured.**
+`whnfCoreBody` is chained. At `.app f a` it head-normalizes `f` by the knot, so at `c a₁ … aₙ` it
+reaches every prefix `c a₁ … aₖ` first and tries ι and the rules there (`iotaThenRule`). A rule
+fires only at the prefix of its own arity, so con-leche fires the matching rule of least arity,
+ties broken by the table order. The Lean kernel tries the head's rules in table order (priority,
+then name) against prefixes of the whole spine and fires the first that matches. The two differ
+exactly when two rules of different arity both match and the table puts the longer one first.
+Then Lean fires `f a b ↦ y` where con-leche fires `f a ↦ x` and continues with `x b`. Both are
+proved equations, so `x b = y` holds propositionally, and acceptance differs only where `x b` and
+`y` are not convertible, that is, for a rule set that is not confluent.
+
+No local change to the per-prefix step gives Lean's order, because the step at a prefix cannot
+see the arguments that follow. Deferring a rule at prefix `k` while an earlier rule of larger
+arity exists loses the firing when `k` is already the whole spine. The fix is a second arm in
+the application clause. When the spine's head is a constant with rules, `whnfCoreBody` takes
+the spine whole, as the C++ `whnf_core` does. It fires the bare constant's rules, then ι at the
+recursor's prefix applied to the rest of the spine, then the rules in table order against
+prefixes (the reduct applied to the rest), and continues with the result. A spine whose head has
+no rules keeps the chained arm, so nothing changes without rules. This needs an over-applied
+form of `iotaRec` and of `rewriteStep`, the new arm in every consumer of `whnfCoreBody` (scope,
+leaves, bound variables, member freedom, shift, the extension relation, the `Red` bridge through
+application congruence, `atF`, the pair projections, the `NfMemberFree` and `InferLeaves`
+lemmas), the arm in the pure mirror `whnfCoreStepW` and its identification in `BetaSpine.lean`,
+and a cached arm in `whnfCoreStepI` beside `whnfStuckI` with its simulation. About 11 proof
+files carry `iotaThenRule` today.
+
+**(c) Re-firing. Not done. It differs from Lean only for rules on recursors, and it needs the
+same arm.** After a firing the Lean kernel runs `reduce_rewrite_step` again on the reduct until
+no rule matches, and only then `whnf_core`. con-leche continues the loop, which on a reduct with
+a constant head tries ι before the rules. A rule step needs a constant head, and β, projection
+and ζ need a head that is no constant, so the two orders differ only when the reduct's head is a
+recursor that carries user rules and both its ι and one of its rules apply. The Lean
+registration forbids only the basis recursors (`Nat.rec`, `Eq.rec`, `False.rec`, the `Quot`
+eliminators), so such a rule set can be written, and it overlaps ι. With the arm of (b) the
+re-firing is one more case of it (rules first after a firing), at the cost of a flag in the
+cached step and a fuelled rule loop in the specification.
+
+Open, found while reading the reference. `match_rewrite_levels` compares a level pattern that is
+no parameter after instantiating it (`lchecks`), and con-leche's `matchLevel` compares it
+syntactically before. A rule with a left-side level like `succ u` fires in Lean and never in
+con-leche. The Lean matcher also retries a string literal as its constructor form, which item 2
+covers only for `Nat` literals.
+
+Gates (item 1). `lake build` and `lake test` warning-free (`_tmp/r6/build-a.log`,
+`_tmp/r6/test-a.log`), `tests/shake.sh` passes (667/667 allowlisted, none demotable,
+`_tmp/r6/shake-a.log`). `tests/plain-reach.sh` passes with `ruleDeclBudget` and
+`ruleDeclBudgetError` allowlisted beside the per-loop pair (667 reached). The anchors that moved
+in OVERVIEW and the whitepaper were repointed and their expectations regenerated. README needed
+none. `tests/arena.sh` exits 0 (log `_tmp/r6/arena-a2.log`). e2e 624/624 with the new fixture,
+axioms pinned, olean gate 122/122, tutorial 90/92 as before, trusted and `--jobs` sweeps without
+divergence. Lake has no `-j`, so builds ran as `LEAN_NUM_THREADS=8 nice -n 19 lake build`.

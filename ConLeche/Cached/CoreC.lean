@@ -359,6 +359,13 @@ nothing to store. -/
 @[inline] def storeChainI (cheap : Bool) (pend pendC : List Expr) (v : Expr) : CheckCM Unit :=
   if cheap || pend.isEmpty then pure () else modify fun st => storeChain st pend pendC v
 
+/-- **Count one rule firing against the declaration's budget** (official `m_rewrite_total`):
+past `ruleDeclBudget` firings in the declaration, the rule `t` that would fire is rejected
+(`ruleDeclBudgetError`). -/
+@[inline] def tickRuleI (t : Name) : CheckCM Unit := do
+  if (← get).ruleTotal < ruleDeclBudget then modify CState.tickRule
+  else throw (ruleDeclBudgetError t)
+
 /-- The `whnfCore` memo of a mode: the full mode reads `whnfCoreC`, the
 cheap mode `whnfCoreCheapC` (see `whnfCoreLoopI`). -/
 @[inline] def whnfCoreLookupI (cheap : Bool) (e : Expr) : CheckCM (Option Expr) := do
@@ -1345,7 +1352,8 @@ def whnfCoreLoopI (eager : Bool) (lv : Nat) (cheap : Bool) (depth : Nat) :
           -- `whnf_core` call)
           match fires with
           | 0 => throw (ruleBudgetError t)
-          | k + 1 =>
+          | k + 1 => do
+            tickRuleI t
             let st := !cheap && key
             whnfCoreLoopI eager lv cheap depth n k (pushKey st e pend)
               (pushCheapKey safe st e pendC) e'

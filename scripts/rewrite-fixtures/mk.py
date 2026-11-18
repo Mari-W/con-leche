@@ -12,6 +12,44 @@ type, which no unfolding of `rrT` gives at a variable `n`).
     python3 -I scripts/rewrite-fixtures/mk.py tests/e2e/rewrite_rule_base.ndjson tests/e2e
 """
 import json, sys
+
+def stmt_patch(src, out, pairs):
+    """Give each theorem in `pairs` (theorem, definition) the statement the definition's value
+    states: its leading lambdas become the theorem's binders.  The theorem keeps its proof, so
+    the record is the false declaration the fixture wants rejected."""
+    recs = [json.loads(l) for l in open(src).read().splitlines()]
+    names = {r["in"]: r for r in recs if "in" in r}
+    exprs = {r["ie"]: r for r in recs if "ie" in r}
+    def nid(s):
+        for k, r in names.items():
+            if r.get("str", {}).get("str") == s and r["str"]["pre"] == 0: return k
+        raise KeyError(s)
+    nxt = max(exprs) + 1
+    new = []
+    for thm, dfn in pairs:
+        T, D = nid(thm), nid(dfn)
+        d = next(r["def"] for r in recs if "def" in r and r["def"]["name"] == D)
+        v = exprs[d["value"]]; lams = []
+        while "lam" in v:
+            lams.append(v["lam"]); v = exprs[v["lam"]["body"]]
+        ty = v["ie"]
+        for l in reversed(lams):
+            ty_r = {"forallE": {"name": l["name"], "type": l["type"], "body": ty,
+                                "binderInfo": l["binderInfo"]}, "ie": nxt}
+            new.append(ty_r); ty = nxt; nxt += 1
+        t = next(r["thm"] for r in recs if "thm" in r and r["thm"]["name"] == T)
+        t["type"] = ty
+    J = lambda r: json.dumps(r, separators=(",", ":"))
+    # the new types go right before the first patched theorem, after everything they mention
+    i = min(i for i, r in enumerate(recs) if "thm" in r and r["thm"]["name"] in {nid(t) for t, _ in pairs})
+    lines = [J(r) for r in recs[:i]] + [J(r) for r in new] + [J(r) for r in recs[i:]]
+    open(out, "w").write("\n".join(lines) + "\n")
+
+if sys.argv[1] == "loop":
+    # RrLoop.lean: a rule whose right side unfolds back to its left side, in a false conversion
+    stmt_patch(sys.argv[2], f"{sys.argv[3]}/rewrite_rule_decl_budget.ndjson", [("loopBad", "loopTgt")])
+    sys.exit(0)
+
 src, outdir = sys.argv[1], sys.argv[2]
 recs = [json.loads(l) for l in open(src).read().splitlines()]
 names = {r["in"]: r for r in recs if "in" in r}

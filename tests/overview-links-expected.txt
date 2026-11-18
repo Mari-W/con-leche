@@ -318,13 +318,13 @@
     53  def ensureSortCore (env : Env) (fuel depth : Nat) (e : Expr) : CheckM Level :=
     54    ensureSort (pureFns mode eager env fuel) env depth e
 
-== ConLeche/Kernel/Core.lean#L1968-L1973
-  1968        whnf := fun _ _ => throw (.internal "fuel exhausted: whnf")
-  1969        infer := fun _ _ => throw (.internal "fuel exhausted: infer")
-  1970        defeq := fun _ _ _ => throw (.internal "fuel exhausted: defeq")
-  1971        defeqE := fun _ _ _ => throw (.internal "fuel exhausted: defeq")
-  1972        inferIO := fun _ _ => throw (.internal "fuel exhausted: infer") }
-  1973    | fuel + 1 =>
+== ConLeche/Kernel/Core.lean#L1979-L1984
+  1979        whnf := fun _ _ => throw (.internal "fuel exhausted: whnf")
+  1980        infer := fun _ _ => throw (.internal "fuel exhausted: infer")
+  1981        defeq := fun _ _ _ => throw (.internal "fuel exhausted: defeq")
+  1982        defeqE := fun _ _ _ => throw (.internal "fuel exhausted: defeq")
+  1983        inferIO := fun _ _ => throw (.internal "fuel exhausted: infer") }
+  1984    | fuel + 1 =>
 
 == ConLeche/Model/Fold.lean#L458-L465
    458  theorem no_proof_of_False_pure (V : Type w) [SetTheory V]
@@ -367,44 +367,44 @@
 == ConLeche/Kernel/Env.lean#L55
     55  inductive CheckMode where
 
-== ConLeche/Kernel/Core.lean#L1226
-  1226  def whnfBody (r : CoreFns m) (env : Env) : Nat → Expr → m Expr :=
+== ConLeche/Kernel/Core.lean#L1237
+  1237  def whnfBody (r : CoreFns m) (env : Env) : Nat → Expr → m Expr :=
 
-== ConLeche/Kernel/Core.lean#L1500
-  1500  def defeqSpine (r : CoreFns m) (env : Env) (depth : Nat) (a b : Expr) :
+== ConLeche/Kernel/Core.lean#L1511
+  1511  def defeqSpine (r : CoreFns m) (env : Env) (depth : Nat) (a b : Expr) :
 
-== ConLeche/Kernel/Core.lean#L1935-L1953
-  1935  def defeqBody (eager : Bool) (r : CoreFns m) (env : Env) : Nat → Expr → Expr → m Bool :=
-  1936    fun depth a b => do
-  1937      if a == b then pure true else
-  1938      match ctorTargetFor env eager a b with
-  1939      | some c =>
-  1940        let w ← r.whnf depth a
-  1941        match ctorHeadAgainst env c w with
-  1942        | some true => defeqLazy mode eager r env depth w b
-  1943        | some false => pure false
-  1944        | none => defeqLazy mode eager r env depth a b
-  1945      | none =>
-  1946      match ctorTargetFor env eager b a with
-  1947      | some c =>
-  1948        let w ← r.whnf depth b
-  1949        match ctorHeadAgainst env c w with
-  1950        | some true => defeqLazy mode eager r env depth a w
-  1951        | some false => pure false
-  1952        | none => defeqLazy mode eager r env depth a b
-  1953      | none => defeqLazy mode eager r env depth a b
+== ConLeche/Kernel/Core.lean#L1946-L1964
+  1946  def defeqBody (eager : Bool) (r : CoreFns m) (env : Env) : Nat → Expr → Expr → m Bool :=
+  1947    fun depth a b => do
+  1948      if a == b then pure true else
+  1949      match ctorTargetFor env eager a b with
+  1950      | some c =>
+  1951        let w ← r.whnf depth a
+  1952        match ctorHeadAgainst env c w with
+  1953        | some true => defeqLazy mode eager r env depth w b
+  1954        | some false => pure false
+  1955        | none => defeqLazy mode eager r env depth a b
+  1956      | none =>
+  1957      match ctorTargetFor env eager b a with
+  1958      | some c =>
+  1959        let w ← r.whnf depth b
+  1960        match ctorHeadAgainst env c w with
+  1961        | some true => defeqLazy mode eager r env depth a w
+  1962        | some false => pure false
+  1963        | none => defeqLazy mode eager r env depth a b
+  1964      | none => defeqLazy mode eager r env depth a b
 
-== ConLeche/Kernel/Core.lean#L1410
-  1410  def inferBodyIO (r : CoreFns m) (env : Env) : Nat → Expr → m Expr :=
+== ConLeche/Kernel/Core.lean#L1421
+  1421  def inferBodyIO (r : CoreFns m) (env : Env) : Nat → Expr → m Expr :=
 
-== ConLeche/Kernel/Core.lean#L1522
-  1522  def defeqBindersInner (r : CoreFns m) (lam : Bool) (depth : Nat) (b₁ b₂ : Expr) : m Bool := do
+== ConLeche/Kernel/Core.lean#L1533
+  1533  def defeqBindersInner (r : CoreFns m) (lam : Bool) (depth : Nat) (b₁ b₂ : Expr) : m Bool := do
 
 == ConLeche/Verify/Cached/BridgeC.lean#L347
    347  theorem checkDeclStepC_run {env : Env} (henv : EnvWF env) {pd : Declaration}
 
-== ConLeche/Kernel/Core.lean#L2013
-  2013  @[irreducible, noinline] def checkFuel : Nat := 4611686018427387904  -- 2^62
+== ConLeche/Kernel/Core.lean#L2024
+  2024  @[irreducible, noinline] def checkFuel : Nat := 4611686018427387904  -- 2^62
 
 == ConLeche/Kernel/Exclusive.lean#L6-L42
      6  # `withExclusive`: the reference-count read behind the walk memo
@@ -1314,9 +1314,9 @@
     37  record installs nothing and any use of it declines
     38  (`sorryAxName`, `ConLeche/Kernel/Basis/Names.lean`).
 
-== ConLeche/Kernel/Core.lean#L1276-L1277
-  1276    match env.find? entry.structName with
-  1277    | some (.indInfo cvT caps) => do
+== ConLeche/Kernel/Core.lean#L1287-L1288
+  1287    match env.find? entry.structName with
+  1288    | some (.indInfo cvT caps) => do
 
 >>> README.md
 

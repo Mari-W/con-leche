@@ -1086,6 +1086,17 @@ has no budget (its knot fuel bounds it).  A placeholder for a static termination
 def ruleBudgetError (t : Name) : CheckError :=
   .invalid s!"rewrite rule budget exhausted: {t} would fire past {ruleFireBudget} firings"
 
+/-- **How many rewrite rules one declaration may fire** (official `LEAN_REWRITE_DECL_BUDGET`,
+counted in `m_rewrite_total` and never reset within the declaration).  The per-loop budget resets
+at every `whnfCore` call, so a rule whose right side unfolds back to its left side cycles through
+the lazy δ steps of `isDefEq` without ever exhausting it; this total stops such a cycle.  The
+cached loop counts every firing in the declaration's state (`CState.ruleTotal`, `tickRuleI`). -/
+@[irreducible, noinline] def ruleDeclBudget : Nat := 4194304  -- 2^22
+
+/-- The error past the declaration's firing budget, naming the rule that would fire. -/
+def ruleDeclBudgetError (t : Name) : CheckError :=
+  .invalid s!"rewrite rule budget exhausted: {t} would fire past {ruleDeclBudget} firings in this declaration"
+
 /-- The head-normalization body: beta (with the per-redex argument
 certificate, unconditional since the task-#100 de-gating), iota (with
 the stuck-major machinery), the native basis pair projection and the

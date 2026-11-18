@@ -3519,3 +3519,10 @@
 # its block by a later block under another rule set (scripts/rewrite-fixtures/RrFam.lean).  The cut
 # below the block carries the rule table in force at the block's record.  Official 0 (rr-dev), target 0.
 0 rewrite_rule_family.ndjson
+# a rule whose right side δ-unfolds back to its left side (`op_apply : o.op a = apply' o a`,
+# `apply' o a := o.op a`) in the false `o.op a = o.op (a + 1)` (scripts/rewrite-fixtures/RrLoop.lean,
+# patched by `mk.py loop`).  Each `whnfCore` call fires once and lazy δ unfolds back, so the per-loop
+# budget never runs out; the per-declaration total (2^22, official `LEAN_REWRITE_DECL_BUDGET`)
+# rejects it (about 18 s).  Before the total it ran into the timeout.  Target 1 (the C++ kernel has
+# the same total; the patched record is not replayed there).
+1 rewrite_rule_decl_budget.ndjson

@@ -296,8 +296,15 @@ structure CState where
   takes in or computes (`natOpRefusal`).  Not a memo: set when the
   declaration's state is made (`Cached.declStep`) and only read. -/
   maxNatSize : Nat := maxNatSizeDefault
+  /-- **The declaration's rule firings so far** (official `m_rewrite_total`): every firing of
+  the head-normalization loop counts here, and the declaration is rejected past
+  `ruleDeclBudget`.  Not a memo: zero in a declaration's fresh state, kept by the flush. -/
+  ruleTotal : Nat := 0
 
 instance : Inhabited CState := ⟨{}⟩
+
+/-- The state after one more rule firing (`tickRuleI`). -/
+def CState.tickRule (s : CState) : CState := { s with ruleTotal := s.ruleTotal + 1 }
 
 /-- Entry bound for the persistent bulk-instantiation memo. -/
 def instCCapC : Nat := 32000000

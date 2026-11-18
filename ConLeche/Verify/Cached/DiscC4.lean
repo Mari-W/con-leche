@@ -957,6 +957,12 @@ grind_pattern [conleche_grind] CSOK.chainStoredDone =>
   storeChain s (pushKey b e pend) (pushCheapKey (whnfCoreCheapSafeC e.getAppFn e && noRulesC (mkFEnv env) e.getAppFn) b e pendC) v,
   Runs (whnfCoreStepW mode (fueledFns mode eager env) env c d e) (.done v)
 
+/-- A rule firing's count (`tickRuleI`) keeps the invariant: no clause reads the count. -/
+theorem CSOK.tickRule {s : CState} (hs : CSOK mode eager env s) :
+    CSOK mode eager env s.tickRule :=
+  { hs with }
+grind_pattern [conleche_grind] CSOK.tickRule => CSOK mode eager env s, s.tickRule
+
 /-- The head-normalization *loop* answers the chained `whnfCore` of its
 term, by induction on the shared step budget (task #106); a step's
 outcome is the same on both sides, a continuation re-enters the loop
@@ -980,8 +986,9 @@ theorem whnfCoreLoopC_spec (ih : SSimC .verified eager env f)
   | succ n ihn =>
     intro fires pend pendC i s₀ hs hw hp hpc
     sym only [conleche_grind, CSOK.chainStored henv, CSOK.chainStored_nil henv,
-        CSOK.chainStoredDone henv, CSOK.whnfCore_hit henv, CSOK.whnfCoreCheap_hit henv] =>
-      vcgen [whnfCoreLoopI.eq_def, storeChainI, whnfCoreLookupI,
+        CSOK.chainStoredDone henv, CSOK.whnfCore_hit henv, CSOK.whnfCoreCheap_hit henv,
+        CSOK.tickRule] =>
+      vcgen [whnfCoreLoopI.eq_def, storeChainI, whnfCoreLookupI, tickRuleI,
         whnfCoreStepC_spec ih henv, ihn] <;> finish
 
 /-- The cached head-normalization body answers the chained `whnfCore`:
