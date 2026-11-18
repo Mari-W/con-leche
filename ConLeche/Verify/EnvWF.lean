@@ -246,6 +246,75 @@ inductive Env.Reach (L : List ConstantInfo) : List ConstantInfo → Prop
       Env.Reach L cs → cs.find? (·.name == n) = some (.indInfo cv caps) →
       Env.Reach L ((Env.suffixAfter cs n).drop caps.blockPos)
 
+/-- **The rule tables an environment recorded**: each at a number of constants it has reached,
+and the one in force at its own number the active one (`RuleTable.cut`). -/
+structure RulesWF (env : Env) : Prop where
+  le : ∀ s ∈ env.rules.snaps, s.1 ≤ env.consts.length
+  active : activeAtS env.rules.snaps env.consts.length = env.rules.active
+
+/-- A list whose every entry passes finds its head. -/
+theorem find?_of_all {α : Type} {p : α → Bool} :
+    ∀ {S : List α}, (∀ s ∈ S, p s = true) → S.find? p = S.head?
+  | [], _ => rfl
+  | a :: S, h => by simp [h a List.mem_cons_self]
+
+/-- Past every recorded number, the table in force is the newest. -/
+theorem activeAtS_of_le {S : List (Nat × List (Name × Name))} {k k' : Nat}
+    (h : ∀ s ∈ S, s.1 ≤ k) (hk : k ≤ k') : activeAtS S k' = activeAtS S k := by
+  unfold activeAtS
+  rw [find?_of_all (fun s hs => by simpa using Nat.le_trans (h s hs) hk),
+    find?_of_all (fun s hs => by simpa using h s hs)]
+
+/-- Tables recorded past `k` leave the one in force at `k` alone. -/
+theorem activeAtS_append_gt {N S : List (Nat × List (Name × Name))} {k : Nat}
+    (h : ∀ s ∈ N, k < s.1) : activeAtS (N ++ S) k = activeAtS S k := by
+  unfold activeAtS
+  rw [List.find?_append, List.find?_eq_none.mpr (fun s hs => by simpa using h s hs), Option.none_or]
+
+/-- The cut at `k` reads the tables recorded up to `k` alone. -/
+theorem RuleTable.cut_append_gt {rt rt' : RuleTable} {N : List (Nat × List (Name × Name))} {k : Nat}
+    (hs : rt'.snaps = N ++ rt.snaps) (h : ∀ s ∈ N, k < s.1) : rt'.cut k = rt.cut k := by
+  unfold RuleTable.cut
+  rw [hs, activeAtS_append_gt h, List.filter_append,
+    List.filter_eq_nil_iff.mpr (fun s hs => by simpa using h s hs), List.nil_append]
+
+/-- The empty environment records no table. -/
+theorem RulesWF.empty : RulesWF Env.empty := ⟨fun _ h => (nomatch h), rfl⟩
+
+/-- More constants under the same rules keep `RulesWF`. -/
+theorem RulesWF.mono {env env' : Env} (h : RulesWF env) (hR : env'.rules = env.rules)
+    (hl : env.consts.length ≤ env'.consts.length) : RulesWF env' := by
+  refine ⟨fun s hs => Nat.le_trans (h.le s (hR ▸ hs)) hl, ?_⟩
+  rw [hR, activeAtS_of_le h.le hl, h.active]
+
+/-- A record's rule effect keeps `RulesWF`: a `useRules` records its table at the current number. -/
+theorem RulesWF.stepRules {env : Env} (h : RulesWF env) (d : Declaration) :
+    RulesWF (env.stepRules d) := by
+  cases d with
+  | useRules S =>
+    refine ⟨fun s hs => ?_, ?_⟩
+    · rcases List.mem_cons.mp hs with rfl | hs
+      · exact Nat.le_refl _
+      · exact h.le s hs
+    · simp [Env.stepRules, RuleTable.step, activeAtS]
+  | rewriteDecl t c p => exact ⟨h.le, h.active⟩
+  | _ => exact h
+
+/-- The recorded tables up to `k` find the one in force at `k` as all of them do. -/
+theorem activeAtS_filter (S : List (Nat × List (Name × Name))) (k : Nat) :
+    activeAtS (S.filter (fun s => decide (s.1 ≤ k))) k = activeAtS S k := by
+  unfold activeAtS
+  induction S with
+  | nil => rfl
+  | cons a S ih =>
+    by_cases ha : a.1 ≤ k
+    · simp [ha]
+    · rw [List.filter_cons_of_neg (by simpa using ha), ih, List.find?_cons_of_neg (by simpa using ha)]
+
+/-- Every cut keeps `RulesWF`: it records the tables up to its own number. -/
+theorem RulesWF.cutAt (env : Env) (cs : List ConstantInfo) : RulesWF (env.cutAt cs) :=
+  ⟨fun s hs => by simpa [Env.cutAt, RuleTable.cut] using (List.mem_filter.mp hs).2, activeAtS_filter _ _⟩
+
 /-- Every stored constant and every stored table is syntactically
 well-formed, every stored family's sort fact holds, and every stored constructor's family
 name is its type's. -/
@@ -262,6 +331,8 @@ structure EnvWF (env : Env) : Prop where
   rules : ∀ c ∈ env.consts, RuleWF c
   /-- every cut a family's telescope is read at holds what its constants refer to -/
   below : ∀ cs, Env.Reach env.consts cs → ∀ c ∈ cs, ConstWF ⟨cs, [], {}⟩ c
+  /-- the rule tables recorded, the active one in force -/
+  ruleSnaps : RulesWF env
 
 /-- The table of a stored structure, off `EnvWF`. -/
 theorem EnvWF.table {env : Env} (henv : EnvWF env) {T : Name} {tbl : ProjTable}
@@ -676,7 +747,8 @@ theorem EnvWF.cons {c : ConstantInfo} {env : Env} (hs : litShapeOk c = true)
     fun t ht => (henv.tables t ht).cons,
     fun c' hc' => (List.mem_cons.mp hc').elim (fun e => e ▸ hi) (henv.inds c'),
     fun c' hc' => (List.mem_cons.mp hc').elim (fun e => e ▸ hk) (henv.ctors c'),
-    fun c' hc' => (List.mem_cons.mp hc').elim (fun e => e ▸ hr) (henv.rules c'), ?_⟩
+    fun c' hc' => (List.mem_cons.mp hc').elim (fun e => e ▸ hr) (henv.rules c'), ?_,
+    henv.ruleSnaps.mono rfl (Nat.le_succ _)⟩
   intro cs hcut
   rcases Env.Reach.of_cons hb hcut with rfl | hold
   · intro c' hc'
@@ -721,7 +793,8 @@ theorem TableWF.of_find {env env' : Env} (h : env'.find? = env.find?) {t : ProjT
 well-formedness reads looks at the rules. -/
 theorem EnvWF.stepRules {env : Env} (h : EnvWF env) (d : Declaration) : EnvWF (env.stepRules d) :=
   ⟨fun c hc => ConstWF.of_find (env := env) (env' := env.stepRules d) rfl (h.consts c hc), h.shapes,
-    fun t ht => TableWF.of_find (env := env) (env' := env.stepRules d) rfl (h.tables t ht), h.inds, h.ctors, h.rules, h.below⟩
+    fun t ht => TableWF.of_find (env := env) (env' := env.stepRules d) rfl (h.tables t ht), h.inds, h.ctors, h.rules, h.below,
+    h.ruleSnaps.stepRules d⟩
 
 /-- **Installing a well-formed table preserves `EnvWF`** (task #362): the
 constants read the environment only through `find?`, which a table
@@ -732,7 +805,7 @@ theorem EnvWF.pushTable {env : Env} {t : ProjTable} (henv : EnvWF env)
     rcases List.mem_cons.mp ht' with rfl | hmem
     · exact ht.of_find (Env.find?_pushTable env _)
     · exact (henv.tables t' hmem).of_find (Env.find?_pushTable env t), henv.inds, henv.ctors,
-    henv.rules, henv.below⟩
+    henv.rules, henv.below, ⟨henv.ruleSnaps.le, henv.ruleSnaps.active⟩⟩
 
 /-- **Tables pushed onto a well-formed environment, each well formed there, keep it well
 formed**: a table install changes no lookup. -/
@@ -740,7 +813,7 @@ theorem EnvWF.pushTables {env : Env} (henv : EnvWF env) {Q : List ProjTable}
     (hQ : ∀ t ∈ Q, TableWF env t) : EnvWF ⟨env.consts, Q ++ env.tables, env.rules⟩ := by
   have hf : Env.find? ⟨env.consts, Q ++ env.tables, env.rules⟩ = env.find? := rfl
   refine ⟨fun c hc => (henv.consts c hc).of_find hf, henv.shapes, fun t ht => ?_, henv.inds,
-    henv.ctors, henv.rules, henv.below⟩
+    henv.ctors, henv.rules, henv.below, ⟨henv.ruleSnaps.le, henv.ruleSnaps.active⟩⟩
   rcases List.mem_append.mp ht with ht | ht
   · exact (hQ t ht).of_find hf
   · exact (henv.tables t ht).of_find hf
@@ -827,7 +900,8 @@ theorem EnvWF.cut {env : Env} (henv : EnvWF env) {cs : List ConstantInfo}
   have hsub : ∀ c ∈ cs, c ∈ env.consts := fun c hc => hr.suffix.subset hc
   refine ⟨fun c hc => ConstWF.of_find (env := ⟨cs, [], {}⟩) (env' := env.cutAt cs) rfl (henv.below cs hr c hc), fun c hc => henv.shapes c (hsub c hc),
     fun t ht => ?_, fun c hc => henv.inds c (hsub c hc), fun c hc => henv.ctors c (hsub c hc),
-    fun c hc => henv.rules c (hsub c hc), fun cs' hr' => henv.below cs' (hr.trans hr')⟩
+    fun c hc => henv.rules c (hsub c hc), fun cs' hr' => henv.below cs' (hr.trans hr'),
+    RulesWF.cutAt env cs⟩
   obtain ⟨htm, hok⟩ := Env.mem_liveTables ht
   obtain ⟨-, h1, h2⟩ := henv.tables t htm
   simp only [Env.tableOkAt, Bool.and_eq_true] at hok
@@ -852,8 +926,10 @@ theorem EnvWF.of_append {env E : Env} {new : List ConstantInfo} (henv : EnvWF en
     (hsplit : E.consts = new ++ env.consts) (hnew : ∀ c ∈ new, ∀ cv caps, c ≠ .indInfo cv caps)
     (hc : ∀ c ∈ E.consts, ConstWF E c) (hs : ∀ c ∈ E.consts, litShapeOk c = true)
     (ht : ∀ t ∈ E.tables, TableWF E t) (hi : ∀ c ∈ E.consts, IndWF c)
-    (hk : ∀ c ∈ E.consts, CtorWF c) (hr : ∀ c ∈ E.consts, RuleWF c) : EnvWF E := by
-  refine ⟨hc, hs, ht, hi, hk, hr, fun cs hcs => ?_⟩
+    (hk : ∀ c ∈ E.consts, CtorWF c) (hr : ∀ c ∈ E.consts, RuleWF c) (hR : E.rules = env.rules) :
+    EnvWF E := by
+  refine ⟨hc, hs, ht, hi, hk, hr, fun cs hcs => ?_,
+    henv.ruleSnaps.mono hR (by rw [hsplit, List.length_append]; exact Nat.le_add_left _ _)⟩
   rw [hsplit] at hcs
   rcases Env.Reach.of_append hnew hcs with rfl | h
   · intro c hc'
@@ -872,6 +948,19 @@ theorem Env.suffixAfter_append_of_ne {n : Name} :
   | c :: new, cs, h => by
     rw [List.cons_append, Env.suffixAfter_cons, ite_eq_right (h c List.mem_cons_self)]
     exact Env.suffixAfter_append_of_ne cs (fun c' hc' => h c' (List.mem_cons_of_mem _ hc'))
+
+/-- The constants past a stored name are fewer than all of them. -/
+theorem Env.suffixAfter_length_lt {cs : List ConstantInfo} {n : Name} {ci : ConstantInfo}
+    (h : cs.find? (·.name == n) = some ci) : (Env.suffixAfter cs n).length < cs.length := by
+  induction cs with
+  | nil => exact nomatch h
+  | cons c cs ih =>
+    rw [Env.suffixAfter_cons]
+    split
+    · simp
+    · rename_i hc
+      rw [List.find?_cons_of_neg (by simpa using hc)] at h
+      exact Nat.lt_succ_of_lt (ih h)
 
 /-- Tables of structures absent from a cut leave its tables alone. -/
 theorem Env.liveTables_append_dead {cs : List ConstantInfo} :

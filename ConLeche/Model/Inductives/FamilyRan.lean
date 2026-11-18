@@ -69,11 +69,14 @@ theorem readTelescope_eq {env : Env} {cv : ConstantVal} {caps : IndCaps} {F : Na
   exact familyTelescope_unique hx.choose_spec.choose_spec h
 
 /-- **An extension under fresh names**: the constants and the tables pushed name nothing the
-environment stores.  The rules are free to change: a family's telescope is read without them
-(`Env.cutAt`). -/
+environment stores, and the rule tables recorded since were recorded at its number of constants
+or later.  The active rules are free to change: a family's telescope is read under the table in
+force at its block (`Env.cutAt`). -/
 structure FreshExt (env env' : Env) : Prop where
   consts : ∃ new, env'.consts = new ++ env.consts ∧ ∀ c ∈ new, env.find? c.name = none
   tables : ∃ newT, env'.tables = newT ++ env.tables ∧ ∀ t ∈ newT, env.find? t.structName = none
+  snaps : ∃ newS, env'.rules.snaps = newS ++ env.rules.snaps ∧
+    ∀ s ∈ newS, env.consts.length ≤ s.1
 
 /-- A stored name keeps its constant across fresh pushes. -/
 theorem FreshExt.find {env env' : Env} (hx : FreshExt env env') {n : Name} {ci : ConstantInfo}
@@ -99,14 +102,22 @@ theorem FreshExt.trans {env₁ env₂ env₃ : Env} (h₁ : FreshExt env₁ env�
     cases hc : env₁.find? n with
     | none => rfl
     | some ci => rw [h₁.find hc] at h; exact nomatch h
+  obtain ⟨S₁, hs₁, hk₁⟩ := h₁.snaps
+  obtain ⟨S₂, hs₂, hk₂⟩ := h₂.snaps
+  have hlen : env₁.consts.length ≤ env₂.consts.length := by
+    rw [hc₁, List.length_append]; exact Nat.le_add_left _ _
   refine ⟨⟨new₂ ++ new₁, by rw [hc₂, hc₁, List.append_assoc], fun c hc => ?_⟩,
-    ⟨T₂ ++ T₁, by rw [ht₂, ht₁, List.append_assoc], fun t ht => ?_⟩⟩
+    ⟨T₂ ++ T₁, by rw [ht₂, ht₁, List.append_assoc], fun t ht => ?_⟩,
+    ⟨S₂ ++ S₁, by rw [hs₂, hs₁, List.append_assoc], fun s hs => ?_⟩⟩
   · rcases List.mem_append.mp hc with hc | hc
     · exact hnone _ (hf₂ c hc)
     · exact hf₁ c hc
   · rcases List.mem_append.mp ht with ht | ht
     · exact hnone _ (hg₂ t ht)
     · exact hg₁ t ht
+  · rcases List.mem_append.mp hs with hs | hs
+    · exact Nat.le_trans hlen (hk₂ s hs)
+    · exact hk₁ s hs
 
 /-- **The environment below a stored family's block across pushes**: constants under fresh names,
 tables of structures outside the cut. -/
@@ -114,8 +125,11 @@ theorem Env.famBelow_push {env env' : Env} {new : List ConstantInfo} {newT : Lis
     {n : Name} (hc : env'.consts = new ++ env.consts) (hne : ∀ c ∈ new, c.name ≠ n)
     (ht : env'.tables = newT ++ env.tables)
     {ci : ConstantInfo} (h : env.find? n = some ci)
-    (hT : ∀ t ∈ newT, ∀ E, env.famBelow n = some E → E.consts.find? (·.name == t.structName) = none) :
+    (hT : ∀ t ∈ newT, ∀ E, env.famBelow n = some E → E.consts.find? (·.name == t.structName) = none)
+    {newS : List (Nat × List (Name × Name))} (hS : env'.rules.snaps = newS ++ env.rules.snaps)
+    (hSk : ∀ s ∈ newS, env.consts.length ≤ s.1) :
     env'.famBelow n = env.famBelow n := by
+  have hlt0 : (Env.suffixAfter env.consts n).length < env.consts.length := Env.suffixAfter_length_lt h
   have hfind : env'.find? n = env.find? n := by
     show env'.consts.find? _ = env.consts.find? _
     rw [hc, List.find?_append, List.find?_eq_none.mpr (fun c hc' he => hne c hc' (by simpa using he)),
@@ -129,6 +143,9 @@ theorem Env.famBelow_push {env env' : Env} {new : List ConstantInfo} {newT : Lis
     congr 1
     unfold Env.cutAt at hT' ⊢
     rw [hc, Env.suffixAfter_append_of_ne _ hne, ht]
+    have hlt : ((Env.suffixAfter env.consts n).drop caps.blockPos).length < env.consts.length :=
+      Nat.lt_of_le_of_lt ((by simp)) hlt0
+    rw [RuleTable.cut_append_gt hS (fun s hs => Nat.lt_of_lt_of_le hlt (hSk s hs))]
     congr 1
     exact Env.liveTables_append_dead _ fun t htm => hT' t htm _ rfl
   all_goals rfl
@@ -138,6 +155,7 @@ theorem FreshExt.famBelow {env env' : Env} (hx : FreshExt env env') {n : Name} {
     (h : env.find? n = some ci) : env'.famBelow n = env.famBelow n := by
   obtain ⟨new, hc, hfr⟩ := hx.consts
   obtain ⟨newT, ht, hgt⟩ := hx.tables
+  obtain ⟨newS, hS, hSk⟩ := hx.snaps
   have hne : ∀ c ∈ new, c.name ≠ n := fun c hc' he => by
     have := hfr c hc'
     rw [he, h] at this
@@ -161,11 +179,11 @@ theorem FreshExt.famBelow {env env' : Env} (hx : FreshExt env env') {n : Name} {
       rw [hm] at hfound
       exact nomatch hfound
     all_goals exact nomatch hE
-  exact Env.famBelow_push hc hne ht h (fun t htm => hcut _ (hgt t htm))
+  exact Env.famBelow_push hc hne ht h (fun t htm => hcut _ (hgt t htm)) hS hSk
 
 /-- No push is an extension under fresh names. -/
 theorem FreshExt.refl (env : Env) : FreshExt env env :=
-  ⟨⟨[], rfl, fun _ h => nomatch h⟩, ⟨[], rfl, fun _ h => nomatch h⟩⟩
+  ⟨⟨[], rfl, fun _ h => nomatch h⟩, ⟨[], rfl, fun _ h => nomatch h⟩, ⟨[], rfl, fun _ h => nomatch h⟩⟩
 
 /-- Head normalization's equations do not see the environment where `whnf` does not. -/
 theorem whnfTelescope_congr_whnf {ops₁ ops₂ : ConLeche.CheckerOps ConLeche.CheckM}
@@ -209,9 +227,9 @@ theorem reducedFormer_below_eq {mode : ConLeche.CheckMode} {F : Nat} {env E : En
   unfold ConLeche.reducedFormer
   rw [whnfTelescope_congr_whnf hw]
 
-/-- The environment cut at all its constants extends it while no rule is active: the same
-constants, every stored structure's table live, and no rule on either side. -/
-theorem envExt_cutAt_self {env : Env} (hsf : StoredFacts env) (hnil : env.rules.active = []) :
+/-- The environment cut at all its constants extends it: the same constants, every stored
+structure's table live, and the active table in force (`RulesWF`). -/
+theorem envExt_cutAt_self {env : Env} (hsf : StoredFacts env) :
     EnvExt env (env.cutAt env.consts) where
   find := fun _ _ h => h
   table := fun T hT => by
@@ -231,7 +249,9 @@ theorem envExt_cutAt_self {env : Env} (hsf : StoredFacts env) (hnil : env.rules.
         exact (ConLeche.Expr.constsResolve_eq_of_find (env := env) (env' := ⟨env.consts, [], {}⟩) rfl b).trans
           (h2 i b hi).2.2.1
       simp [Option.filter, hres]
-  rules := fun c => by simp [Env.rulesFor, Env.cutAt, hnil]
+  rules := fun c => by
+    simp only [Env.rulesFor, Env.cutAt, RuleTable.cut, hsf.wf.ruleSnaps.active]
+    rfl
   facts := hsf
 
 /-- **The reductions behind a carrier's recorded telescopes**: a member whose declared type does

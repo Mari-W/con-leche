@@ -235,9 +235,10 @@ def Expr.constsResolve (env : Env) : Expr → Bool
 A family declared at a definition has its telescope read by a reduction
 (`familyTelescope`).  Every reading runs at the environment its block ran
 at, found from the family's own entry: the constants older than it, less
-the block's formers installed before it (`IndCaps.blockPos`), and the
-tables live there.  So a reading never sees a constant or a rule installed
-after the block. -/
+the block's formers installed before it (`IndCaps.blockPos`), the
+tables live there, and the rule table in force at the block's record.  So a
+reading never sees a constant, a table or a rule set installed after the
+block. -/
 
 /-- The constants of `cs` strictly older than the first entry named `n`
 (none where `n` has no entry). -/
@@ -258,10 +259,12 @@ def Env.liveTables (cs : List ConstantInfo) : List ProjTable → List ProjTable
     if Env.tableOkAt cs t then t :: rest else rest
 
 /-- The environment cut at `cs` (a suffix of its constants): those constants, the tables live
-there, and no rewrite rule.  A family's telescope is reduced without rules (`familyTelescope`):
-the active rules change with every `useRules`, and a reading below a block must not. -/
+there, and the rewrite rules in force when the environment had that many constants
+(`RuleTable.cut`).  A family's telescope is reduced under the rules of its block's record
+(`familyTelescope`): a later `useRules` changes the active table, and a reading below a block
+must not change with it. -/
 def Env.cutAt (env : Env) (cs : List ConstantInfo) : Env :=
-  ⟨cs, Env.liveTables cs env.tables, {}⟩
+  ⟨cs, Env.liveTables cs env.tables, env.rules.cut cs.length⟩
 
 /-- **Where the family named `n` has its telescope read**: below its block,
 cut at the constants older than its entry, less the `caps.blockPos` formers

@@ -246,6 +246,13 @@ theorem consBlockRecsT_tables (q : BlockShape) :
   | _, [], _ => rfl
   | m, _ :: rest, _ => consBlockRecsT_tables q (m + 1) rest _
 
+/-- The recursors' conses at their majors leave the rules alone. -/
+theorem consBlockRecsT_rules' (q : BlockShape) :
+    ∀ (m : Nat) (out : List (ConstantVal × TargetMajor × List Expr)) (env : Env),
+      (consBlockRecsT q m out env).rules = env.rules
+  | _, [], _ => rfl
+  | m, _ :: rest, _ => consBlockRecsT_rules' q (m + 1) rest _
+
 /-! ### The cons at the majors
 
 The install conses the checked family with each recursor's rules
@@ -379,7 +386,7 @@ theorem envWF_consBlockRecsT {q : BlockShape}
   refine EnvWF.of_append henv hsplit hnew (fun c hc => ?_) (fun c hc => ?_)
     (fun t ht => TableWF.mono hdomEnv
     (henv.tables t (by rw [consBlockRecsT_tables] at ht; exact ht))) (fun c hc => ?_)
-    (fun c hc => ?_) (fun c hc => ?_)
+    (fun c hc => ?_) (fun c hc => ?_) (consBlockRecsT_rules' q 0 out env)
   rotate_left
   · rcases mem_consBlockRecsT hc with hc' | ⟨i, t, hti, rfl⟩
     · exact henv.shapes c hc'

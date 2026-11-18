@@ -90,6 +90,12 @@ structure Twin (fe₁ fe₂ : FEnv) : Prop where
   chk₂ : fe₂.base.chk = false
   /-- the same rule map -/
   rls : fe₁.base.rls = fe₂.base.rls
+  /-- the same number of constants below the top -/
+  cnt : fe₁.cnt = fe₂.cnt
+  /-- the same rule tables recorded -/
+  snaps : fe₁.snapsAll = fe₂.snapsAll
+  /-- the views below a block read the same rule map -/
+  rlsB : ∀ n k, (fe₁.below n k).base.rls = (fe₂.below n k).base.rls
 
 /-- Twins read the same rules. -/
 theorem Twin.rulesFor {fe₁ fe₂ : FEnv} (h : Twin fe₁ fe₂) : fe₁.rulesFor = fe₂.rulesFor :=
@@ -114,16 +120,19 @@ theorem FEnv.below_rawTable (fe : FEnv) (n : Name) (k : Nat) :
   · exact FEnv.dropTop_rawTable fe _
   · funext T; rfl
 
-theorem FEnv.dropTop_rls (fe : FEnv) (k : Nat) : (fe.dropTop k).base.rls = {} := by
+/-- The view under the `k` newest constants reads the rule table in force there. -/
+theorem FEnv.dropTop_rls (fe : FEnv) (k : Nat) : (fe.dropTop k).base.rls = fe.rlsAt (fe.cnt - k) := by
   unfold FEnv.dropTop
   split <;> rfl
 
-/-- A view below a block has no rule (`Env.cutAt`). -/
-theorem FEnv.below_rls (fe : FEnv) (n : Name) (k : Nat) : (fe.below n k).base.rls = {} := by
-  unfold FEnv.below
-  split
-  · exact FEnv.dropTop_rls fe _
-  · rfl
+/-- Twins read the same rule table at every counter. -/
+theorem Twin.rlsAt {fe₁ fe₂ : FEnv} (h : Twin fe₁ fe₂) : fe₁.rlsAt = fe₂.rlsAt := by
+  funext c; unfold FEnv.rlsAt; rw [h.snaps]
+
+/-- Twins read the same rule table under their newest constants. -/
+theorem Twin.dropTop_rls {fe₁ fe₂ : FEnv} (h : Twin fe₁ fe₂) (k : Nat) :
+    (fe₁.dropTop k).base.rls = (fe₂.dropTop k).base.rls := by
+  rw [FEnv.dropTop_rls, FEnv.dropTop_rls, h.rlsAt, h.cnt]
 
 theorem FEnv.dropTop_chk (fe : FEnv) (k : Nat) : (fe.dropTop k).base.chk = true := by
   unfold FEnv.dropTop
@@ -146,8 +155,7 @@ theorem Twin.famBelow {fe₁ fe₂ : FEnv} (h : Twin fe₁ fe₂) (n : Name) :
     exact ⟨h.below n caps.blockPos, FEnv.findTable?_congr (h.below n caps.blockPos)
       (by rw [FEnv.below_rawTable, FEnv.below_rawTable, h.raw])
       (by rw [FEnv.below_chk, FEnv.below_chk]),
-      FEnv.rulesFor_congr (h.below n caps.blockPos)
-        (by rw [FEnv.below_rls, FEnv.below_rls])⟩
+      FEnv.rulesFor_congr (h.below n caps.blockPos) (h.rlsB n caps.blockPos)⟩
   · trivial
 
 /-- The view under no constant answers as the index. -/
@@ -160,11 +168,20 @@ theorem FEnv.dropTop_zero_find {fe : FEnv} (h : fe.ovl = []) (hi : fe.idx = mkId
     findIn, lookupIn_eq, hi]
   rfl
 
+/-- A push is one more constant below the top. -/
+theorem FEnv.push_cnt (fe : FEnv) (ci : ConstantInfo) : (fe.push ci).cnt = fe.cnt + 1 := by
+  show fe.base.below + (fe.env.consts.length + 1) = fe.base.below + fe.env.consts.length + 1
+  omega
+
+/-- A push records no rule table. -/
+theorem FEnv.push_rlsAt (fe : FEnv) (ci : ConstantInfo) : (fe.push ci).rlsAt = fe.rlsAt := rfl
+
 /-- A push is one more constant to look under. -/
 theorem FEnv.dropTop_push_succ (fe : FEnv) (ci : ConstantInfo) (k : Nat) :
     (fe.push ci).dropTop (k + 1) = fe.dropTop k := by
   unfold FEnv.dropTop
-  rw [show (fe.push ci).env = ⟨ci :: fe.env.consts, fe.env.tables, fe.env.rules⟩ from rfl]
+  rw [show (fe.push ci).env = ⟨ci :: fe.env.consts, fe.env.tables, fe.env.rules⟩ from rfl,
+    FEnv.push_rlsAt, FEnv.push_cnt, Nat.add_sub_add_right]
   by_cases hk : k ≤ fe.env.consts.length
   · rw [ite_eq_left (by simpa using hk), ite_eq_left hk]
     rfl
@@ -215,7 +232,8 @@ theorem Twin.push {fe₁ fe₂ : FEnv} (h : Twin fe₁ fe₂) (ci : ConstantInfo
   have hf : (fe₁.push ci).find? = (fe₂.push ci).find? := by
     funext n
     rw [find?_push h.ovl₁, find?_push h.ovl₂, h.find]
-  refine ⟨hf, h.raw, h.ovl₁, h.ovl₂, hi₁, hi₂, fun k => ?_, fun n k => ?_, h.chk₁, h.chk₂, h.rls⟩
+  refine ⟨hf, h.raw, h.ovl₁, h.ovl₂, hi₁, hi₂, fun k => ?_, fun n k => ?_, h.chk₁, h.chk₂, h.rls,
+    by rw [FEnv.push_cnt, FEnv.push_cnt, h.cnt], h.snaps, fun n k => ?_⟩
   · cases k with
     | zero =>
       rw [FEnv.dropTop_zero_find (fe := fe₁.push ci) h.ovl₁ hi₁,
@@ -225,15 +243,29 @@ theorem Twin.push {fe₁ fe₂ : FEnv} (h : Twin fe₁ fe₂) (ci : ConstantInfo
     split
     · exact h.drop k
     · exact h.below n k
+  · rw [FEnv.below_push, FEnv.below_push]
+    split
+    · exact h.dropTop_rls k
+    · exact h.rlsB n k
+
+/-- A table push leaves every view's rule map alone. -/
+theorem FEnv.below_pushTable_rls (fe : FEnv) (t : ProjTable) (n : Name) (k : Nat) :
+    ((fe.pushTable t).below n k).base.rls = (fe.below n k).base.rls := by
+  unfold FEnv.below
+  rw [show (fe.pushTable t).env = ⟨fe.env.consts, t :: fe.env.tables, fe.env.rules⟩ from rfl]
+  cases fe.env.consts.findIdx? (·.name == n) with
+  | some j => simp only; rw [FEnv.dropTop_rls, FEnv.dropTop_rls]; rfl
+  | none => rfl
 
 theorem Twin.pushTable {fe₁ fe₂ : FEnv} (h : Twin fe₁ fe₂) (t : ProjTable) :
     Twin (fe₁.pushTable t) (fe₂.pushTable t) := by
   refine ⟨h.find, ?_, h.ovl₁, h.ovl₂, h.idx₁, h.idx₂, fun k => ?_, fun n k => ?_, h.chk₁, h.chk₂,
-    h.rls⟩
+    h.rls, h.cnt, h.snaps, fun n k => ?_⟩
   · funext T
     rw [FEnv.rawTable?_pushTable, FEnv.rawTable?_pushTable, h.raw]
   · rw [FEnv.dropTop_pushTable_find, FEnv.dropTop_pushTable_find, h.drop k]
   · rw [FEnv.below_pushTable_find, FEnv.below_pushTable_find, h.below n k]
+  · rw [FEnv.below_pushTable_rls, FEnv.below_pushTable_rls, h.rlsB n k]
 
 theorem Twin.pushTables :
     ∀ (Q : List ProjTable) {fe₁ fe₂ : FEnv}, Twin fe₁ fe₂ →
@@ -1387,31 +1419,29 @@ theorem checkBlockTailS_twin {fe₁ fe₂ : FEnv} (ht : Twin fe₁ fe₂)
 theorem reduceMemberS_congr {fe₁ fe₂ : FEnv} (hfe : fe₁.find? = fe₂.find?)
     (htb : fe₁.findTable? = fe₂.findTable?)
     (hru : fe₁.rulesFor = fe₂.rulesFor)
-    (hfb : ∀ n, FEnv.BelowReads (fe₁.famBelow n) (fe₂.famBelow n))
-    (hrl : fe₁.base.rls = fe₂.base.rls) (nP : Nat) (ms : MemberShape) :
+    (hfb : ∀ n, FEnv.BelowReads (fe₁.famBelow n) (fe₂.famBelow n)) (nP : Nat) (ms : MemberShape) :
     reduceMemberS mode fe₁ ms nP = reduceMemberS mode fe₂ ms nP := by
   have h := sharedOpsC_envFree mode fe₂
-  simp only [reduceMemberS, reducedFormerC_eq, reducedFormer, knotI_congr hfe htb hru, hrl,
+  simp only [reduceMemberS, reducedFormerC_eq, reducedFormer, knotI_congr hfe htb hru,
     sharedOpsC_congr hfe hru htb hfb, checkConstantValC_congr hfe htb hru,
     whnfTelescope_env h fe₁.env, whnfTelescope_env h fe₂.env]
 
 theorem reduceMembersS_congr {fe₁ fe₂ : FEnv} (hfe : fe₁.find? = fe₂.find?)
     (htb : fe₁.findTable? = fe₂.findTable?)
     (hru : fe₁.rulesFor = fe₂.rulesFor)
-    (hfb : ∀ n, FEnv.BelowReads (fe₁.famBelow n) (fe₂.famBelow n))
-    (hrl : fe₁.base.rls = fe₂.base.rls) (nP : Nat) :
+    (hfb : ∀ n, FEnv.BelowReads (fe₁.famBelow n) (fe₂.famBelow n)) (nP : Nat) :
     ∀ l, reduceMembersS mode fe₁ nP l = reduceMembersS mode fe₂ nP l
   | [] => rfl
   | ms :: rest => by
     unfold reduceMembersS
-    simp only [reduceMemberS_congr hfe htb hru hfb hrl, reduceMembersS_congr hfe htb hru hfb hrl nP rest]
+    simp only [reduceMemberS_congr hfe htb hru hfb, reduceMembersS_congr hfe htb hru hfb nP rest]
 
 theorem checkBlockKS_twin {fe₁ fe₂ : FEnv} (ht : Twin fe₁ fe₂)
     (block : List ConstantInfo) (p₀ : BlockShape) :
     RelRun (PushedFrom fe₁ fe₂) (checkBlockKS mode fe₁ block p₀)
       (checkBlockKS mode fe₂ block p₀) := by
   unfold checkBlockKS
-  rw [reduceMembersS_congr (mode := mode) ht.find ht.findTable ht.rulesFor ht.famBelow ht.rls]
+  rw [reduceMembersS_congr (mode := mode) ht.find ht.findTable ht.rulesFor ht.famBelow]
   relrun
   all_goals
     exact RelRun.bind (checkBlockPassS_twin ht _ _) fun _ _ hq =>

@@ -125,7 +125,7 @@ theorem envWF_consBlockInds {p₁ : BlockShape} {isRec : Bool} :
 /-- A member under check meets `MemberDeclaredWF`. -/
 theorem MemberAt.declaredWF {F : Nat} {env : Env} {nP : Nat} {m : MemberShape}
     (h : MemberAt F env nP m) : MemberDeclaredWF env m := by
-  rcases h.how with ⟨-, he⟩ | ⟨-, -, -, hc, -⟩
+  rcases h.how with ⟨-, he⟩ | ⟨-, -, hc, -⟩
   · exact .inl he.symm
   · obtain ⟨g1, g2, g3, g4⟩ := checkConstantVal_typeWF hc
     exact .inr ⟨g1, g2, g3, g4, checkConstantVal_litShapeAt hc⟩
@@ -382,6 +382,14 @@ theorem consBlockRecsR_tables
   | _, [], _ => rfl
   | m, _ :: rest, _ => consBlockRecsR_tables R q (m + 1) rest _
 
+theorem consBlockRecsR_rules
+    (R : Nat → ConstantVal × List Expr × Nat × List (ConstantVal × Nat) → Bool × List RecRule)
+    (q : BlockShape) :
+    ∀ (m : Nat) (rs : List (ConstantVal × List Expr × Nat × List (ConstantVal × Nat))) (env : Env),
+      (consBlockRecsR R q m rs env).rules = env.rules
+  | _, [], _ => rfl
+  | m, _ :: rest, _ => consBlockRecsR_rules R q (m + 1) rest _
+
 /-- The rule-less recursors' conses leave the tables alone. -/
 theorem consBlockRecsBare_tables (q : BlockShape) :
     ∀ (m : Nat) (rs : List (ConstantVal × Nat)) (env : Env),
@@ -547,7 +555,7 @@ theorem envWF_consBlockRecsR
   refine EnvWF.of_append henv hsplit hnew (fun c hc => ?_) (fun c hc => ?_)
     (fun t ht => TableWF.mono hdomEnv
     (henv.tables t (by rw [consBlockRecsR_tables] at ht; exact ht))) (fun c hc => ?_)
-    (fun c hc => ?_) (fun c hc => ?_)
+    (fun c hc => ?_) (fun c hc => ?_) (consBlockRecsR_rules R q 0 rs env)
   rotate_left
   · rcases mem_consBlockRecsR hc with hc' | ⟨j, r, hr, rfl⟩
     · exact henv.shapes c hc'

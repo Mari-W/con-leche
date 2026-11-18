@@ -38,7 +38,8 @@ open ConLeche
 /-- The index under construction, and finished: the frozen layer (its bounds unused here), each
 record's first counter, and the next counter; the rules after the records so far, and the rule
 map each record is checked under (`rlsAt`, the active table's map before the record; `rlsCur`,
-after the last). -/
+after the last), and the active tables recorded before each record (`snapsAt`, `RuleTable.snaps`),
+which a view below a block reads its rule table from (`FEnv.rlsAt`). -/
 structure StreamIndex where
   base : FBase := {}
   firsts : Array Nat := #[]
@@ -46,6 +47,7 @@ structure StreamIndex where
   rules : RuleTable := {}
   rlsAt : Array (Std.HashMap Name (List Name)) := #[]
   rlsCur : Std.HashMap Name (List Name) := {}
+  snapsAt : Array (List (Nat × List (Name × Name))) := #[]
 
 /-- Insert a record's constants from counter `c` on, a name's first entry winning. -/
 def insertConsts (idx : Std.HashMap Name (Nat × ConstantInfo)) (c : Nat) :
@@ -63,12 +65,13 @@ def insertTables (tbls : Std.HashMap Name (Nat × ProjTable)) (r : Nat) :
 after it. -/
 def StreamIndex.add (I : StreamIndex) (pd : Declaration) : StreamIndex :=
   let (idx, next) := insertConsts I.base.idx I.next (declConstantsC pd)
-  let rules := I.rules.step pd
+  let rules := I.rules.step I.next pd
   { base := { I.base with idx, tbls := insertTables I.base.tbls I.firsts.size (declTablesC pd) }
     firsts := I.firsts.push I.next
     next
     rules
     rlsAt := I.rlsAt.push I.rlsCur
+    snapsAt := I.snapsAt.push I.rules.snaps
     rlsCur := match pd with
       | .useRules _ => mkRlsGo rules.active
       | _ => I.rlsCur }
@@ -92,20 +95,27 @@ def StreamIndex.freeze (I : StreamIndex) : FrozenIndex :=
   ⟨I, litFrom I.base.idx natLitNames, litFrom I.base.idx strLitNames, rfl, rfl⟩
 
 /-- **The view of record `k`**: no constants or tables of its own, the index visible below the
-record's first counter and its position, and the rule map the record is checked under. -/
+record's first counter and its position, the rule map the record is checked under, and the rule
+tables recorded before it. -/
 def FrozenIndex.view (F : FrozenIndex) (k : Nat) : FEnv :=
   let c := F.I.firsts.getD k F.I.next
-  ⟨⟨[], [], {}⟩, ∅, { F.I.base with below := c, belowRec := k, rls := F.I.rlsAt.getD k F.I.rlsCur },
+  ⟨⟨[], [], {}⟩, ∅, { F.I.base with
+          below := c, belowRec := k, rls := F.I.rlsAt.getD k F.I.rlsCur,
+          snaps := F.I.snapsAt.getD k F.I.rules.snaps },
     [], ∅,
     fromLe F.natFrom c, fromLe F.strFrom c,
     by
       rw [F.natFrom_eq, findIn_empty, natLitStoredBy_all]
       exact FBase.fromLe_litFrom
-        { F.I.base with below := c, belowRec := k, rls := F.I.rlsAt.getD k F.I.rlsCur } natLitNames,
+        { F.I.base with
+          below := c, belowRec := k, rls := F.I.rlsAt.getD k F.I.rlsCur,
+          snaps := F.I.snapsAt.getD k F.I.rules.snaps } natLitNames,
     by
       rw [F.strFrom_eq, findIn_empty, strLitStoredBy_all]
       exact FBase.fromLe_litFrom
-        { F.I.base with below := c, belowRec := k, rls := F.I.rlsAt.getD k F.I.rlsCur } strLitNames⟩
+        { F.I.base with
+          below := c, belowRec := k, rls := F.I.rlsAt.getD k F.I.rlsCur,
+          snaps := F.I.snapsAt.getD k F.I.rules.snaps } strLitNames⟩
 
 /-- **Record `pd`'s job, at position `k`**: what the fold's step asks of it, at its view. -/
 def recordJob (mode : CheckMode) (pins : List NatOpPinSet) (maxNatSize : Nat) (F : FrozenIndex)

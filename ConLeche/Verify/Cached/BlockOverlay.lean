@@ -162,8 +162,11 @@ theorem FEnv.tbls_pushAll : ∀ (cis : List ConstantInfo) (fe : FEnv),
 theorem FEnv.famBelow_congr {fe₁ fe₂ : FEnv} (hf : fe₁.find? = fe₂.find?) (he : fe₁.env = fe₂.env)
     (hb : fe₁.base = fe₂.base) (ht : fe₁.tbls = fe₂.tbls) : fe₁.famBelow = fe₂.famBelow := by
   funext n
+  have hr : fe₁.rlsAt = fe₂.rlsAt := by
+    funext c; unfold FEnv.rlsAt FEnv.snapsAll; rw [he, hb]
+  have hc : fe₁.cnt = fe₂.cnt := by unfold FEnv.cnt; rw [he, hb]
   unfold FEnv.famBelow FEnv.below FEnv.dropTop
-  rw [hf, he, hb, ht]
+  rw [hf, he, hb, ht, hr, hc]
 
 /-- An overlay reads below a block as pushing its constants would. -/
 theorem famBelow_overlay_pushAll {fe : FEnv} (h : fe.ovl = []) (cis : List ConstantInfo) :

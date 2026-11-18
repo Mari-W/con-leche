@@ -500,18 +500,37 @@ def activeTable (reg : List RewriteRule) (S : List Name) : List (Name × Name) :
   ((reg.filter fun r => S.contains r.thm).mergeSort RewriteRule.before).map fun r => (r.head, r.thm)
 
 /-- The rewrite rules of an environment: the active table, `(head, theorem)` entries in firing
-order (`Env.rulesFor`), and every registered rule, newest first. -/
+order (`Env.rulesFor`), every registered rule, newest first, and the active tables the
+environment has had (`snaps`, newest first): each `useRules` records its table with the number
+of constants it ran at.  A cut below a block reads the table in force at that number
+(`RuleTable.activeAt`, `Env.cutAt`). -/
 structure RuleTable where
   active : List (Name × Name) := []
   registered : List RewriteRule := []
+  snaps : List (Nat × List (Name × Name)) := []
   deriving Repr, Inhabited
 
-/-- A record's effect on the rules: a registration adds its rule, a `useRules` rebuilds the
-active table from the registered rules, every other record keeps them. -/
-def RuleTable.step (rt : RuleTable) : Declaration → RuleTable
+/-- A record's effect on the rules, at an environment of `len` constants: a registration adds
+its rule, a `useRules` rebuilds the active table from the registered rules and records it at
+`len`, every other record keeps them. -/
+def RuleTable.step (rt : RuleTable) (len : Nat) : Declaration → RuleTable
   | .rewriteDecl thm head prio => { rt with registered := ⟨thm, head, prio⟩ :: rt.registered }
-  | .useRules S => { rt with active := activeTable rt.registered S }
+  | .useRules S =>
+    let a := activeTable rt.registered S
+    { rt with active := a, snaps := (len, a) :: rt.snaps }
   | _ => rt
+
+/-- **The active table in force at `k` constants**: the newest one recorded at `k` constants or
+fewer, none before the first `useRules`. -/
+def activeAtS (snaps : List (Nat × List (Name × Name))) (k : Nat) : List (Name × Name) :=
+  match snaps.find? (fun s => decide (s.1 ≤ k)) with
+  | some s => s.2
+  | none => []
+
+/-- The rules of the environment cut at `k` constants: the table in force there, and the
+tables recorded up to there.  No registered rule (`Env.rulesFor` reads the active table only). -/
+def RuleTable.cut (rt : RuleTable) (k : Nat) : RuleTable :=
+  { active := activeAtS rt.snaps k, snaps := rt.snaps.filter (fun s => decide (s.1 ≤ k)) }
 
 /-- The global environment: the constants accepted so far and the
 structures' projection tables, each list newest first.  Names are
@@ -540,7 +559,7 @@ def empty : Env := ⟨[], [], {}⟩
 /-- **The environment after a record's rule effect**: a registration adds the rule, a `useRules`
 rebuilds the active table, any other record keeps the rules. -/
 def stepRules (env : Env) (d : Declaration) : Env :=
-  { env with rules := env.rules.step d }
+  { env with rules := env.rules.step env.consts.length d }
 
 def find? (env : Env) (n : Name) : Option ConstantInfo :=
   env.consts.find? (·.name == n)

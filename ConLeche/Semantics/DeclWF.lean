@@ -322,7 +322,7 @@ theorem checkDecl_envWF {F : Nat} {env env₂ : Env} {d : Declaration} (henv : E
 theorem EnvWF.empty : EnvWF Env.empty :=
   ⟨fun _ hc => (nomatch hc), fun _ hc => (nomatch hc), fun _ ht => (nomatch ht),
     fun _ hc => (nomatch hc), fun _ hc => (nomatch hc), fun _ hc => (nomatch hc),
-    fun _ hr _ hc => nomatch hr.suffix.subset hc⟩
+    fun _ hr _ hc => (nomatch hr.suffix.subset hc), RulesWF.empty⟩
 
 /-- **The pure fold keeps the environment well formed**, from any well-formed start. -/
 theorem foldlM_checkDecl_envWF {F : Nat} :

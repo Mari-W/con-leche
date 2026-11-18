@@ -487,8 +487,6 @@ theorem reduceMemberS_same (mode : CheckMode) (fe : FEnv) (ms : MemberShape) (nP
   split
   · split
     · exact Yields.ofThrow
-    split
-    · exact Yields.ofThrow
     refine Yields.bind fun _ => ?_
     refine Yields.bind' (Q := fun cvR => cvR.name = ms.cvT.name) ?_ fun cvR hc => ?_
     · unfold reducedFormerC

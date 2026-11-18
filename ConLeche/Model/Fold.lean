@@ -123,7 +123,8 @@ theorem PlainStep.close {env env₂ : Env} {mp : EnvModelM V env} (h : PlainStep
     (hstep : CoverStep mp env₂) (hcov : LfpCover mp []) (hS : FamilyRan mp) (hN : NatFacts env) :
     (∃ mp' : EnvModelM V env₂, LfpCover mp' [] ∧ FamilyRan mp') ∧ NatFacts env₂ := by
   obtain ⟨new, hnew, htab, hrul, hres, hfr⟩ := h
-  exact ⟨hstep.covered hcov hS ⟨⟨new, hnew, hfr⟩, ⟨[], by rw [htab]; rfl, fun _ h => nomatch h⟩⟩,
+  exact ⟨hstep.covered hcov hS ⟨⟨new, hnew, hfr⟩, ⟨[], by rw [htab]; rfl, fun _ h => nomatch h⟩,
+    ⟨[], by rw [hrul]; rfl, fun _ h => nomatch h⟩⟩,
     hN.append hnew hres⟩
 
 /-- A declaration's constant, stored under an unreserved name. -/
@@ -361,10 +362,10 @@ theorem declStep_preserves
           have hm := List.mem_of_find?_eq_some hk
           simp at hm
         have hinst := basisInstallRun_of_block hk hok hdf hrun'
-        obtain ⟨hc, htb, -⟩ := basisInstallRun_consts hinst
+        obtain ⟨hc, htb, hrb⟩ := basisInstallRun_consts hinst
         exact ⟨(declBasisPB_at mp hnq hok hinst hwf₂).covered hcov hS
           ⟨⟨_, hc, fun c hcm => basisInstallRun_fresh hinst c (List.mem_reverse.mp hcm)⟩,
-            ⟨[], by rw [htb]; rfl, fun _ h => nomatch h⟩⟩,
+            ⟨[], by rw [htb]; rfl, fun _ h => nomatch h⟩, ⟨[], by rw [hrb]; rfl, fun _ h => nomatch h⟩⟩,
           natFacts_basis hN hk hinst⟩
       | none =>
         -- the uniform install, at any number of members, nested blocks included

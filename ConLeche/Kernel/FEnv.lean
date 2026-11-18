@@ -42,9 +42,12 @@ structure FBase where
   its bodies resolve in the view (`FEnv.findTable?`, `Env.liveTables`). -/
   chk : Bool := false
   /-- The active rewrite rules by head constant (`Env.rules`), in firing order; a rule
-  fires only where its theorem is stored (`FEnv.rulesFor`).  Empty in a view below a block
-  (`Env.cutAt`). -/
+  fires only where its theorem is stored (`FEnv.rulesFor`).  In a view below a block, the map of
+  the table in force at the block's record (`Env.cutAt`). -/
   rls : Std.HashMap Name (List Name) := {}
+  /-- The active tables recorded before the layer's view, each with its counter
+  (`RuleTable.snaps`); the frozen layer's part of `FEnv.snapsAll`. -/
+  snaps : List (Nat × List (Name × Name)) := []
 
 /-- The base layer's lookup: a visible entry's constant. -/
 def FBase.find? (b : @& FBase) (n : Name) : Option ConstantInfo :=
@@ -475,18 +478,31 @@ theorem findTable?_of_chk {fe : FEnv} (h : fe.base.chk = false) (T : Name) :
     fe.findTable? T = if (fe.find? T).isSome then fe.rawTable? T else none := by
   simp only [findTable?, h, Bool.false_eq_true, ↓reduceIte]
 
+/-- The number of constants below this index's top: the frozen layer's counter and the pushed
+constants (the length of `Env.consts` for `mkFEnv`). -/
+def cnt (fe : FEnv) : Nat := fe.base.below + fe.env.consts.length
+
+/-- The active tables recorded so far, each with its counter: the pushed environment's, then the
+frozen layer's. -/
+def snapsAll (fe : FEnv) : List (Nat × List (Name × Name)) := fe.env.rules.snaps ++ fe.base.snaps
+
+/-- **The rule map in force at counter `c`** (`activeAtS`, `RuleTable.cut`).  Built on demand: it
+is read only at a view below a block, which only a family declared at a definition asks for. -/
+def rlsAt (fe : FEnv) (c : Nat) : Std.HashMap Name (List Name) := mkRlsGo (activeAtS fe.snapsAll c)
+
 /-- **The view under the `k` newest constants pushed onto this index** (`env`; all of them for
 `mkFEnv`), continuing into the frozen layer by its counter: the tables as they are, each answered
 only where it is live there (`FBase.chk`). -/
 def dropTop (fe : FEnv) (k : Nat) : FEnv :=
   if k ≤ fe.env.consts.length then
     let cs := fe.env.consts.drop k
-    ofParts ⟨cs, fe.env.tables, fe.env.rules⟩ (mkIdxGo cs) { fe.base with chk := true, rls := {} } []
-      fe.tbls
+    ofParts ⟨cs, fe.env.tables, fe.env.rules⟩ (mkIdxGo cs)
+      { fe.base with chk := true, rls := fe.rlsAt (fe.cnt - k) } [] fe.tbls
   else
     ofParts ⟨[], fe.env.tables, fe.env.rules⟩ ∅
-      { fe.base with below := fe.base.below - (k - fe.env.consts.length), chk := true, rls := {} } []
-      fe.tbls
+      { fe.base with
+        below := fe.base.below - (k - fe.env.consts.length), chk := true, rls := fe.rlsAt (fe.cnt - k) }
+      [] fe.tbls
 
 /-- **The view below the first entry named `n`, less `k` more constants** (`Env.suffixAfter`,
 `Env.cutAt`).  The entry is among the constants pushed onto this index, or in the frozen layer,
@@ -498,8 +514,8 @@ def below (fe : FEnv) (n : Name) (k : Nat) : FEnv :=
     let c := match fe.base.idx[n]? with
       | some (c, _) => if c < fe.base.below then c - k else 0
       | none => 0
-    ofParts ⟨[], fe.env.tables, fe.env.rules⟩ ∅ { fe.base with below := c, chk := true, rls := {} } []
-      fe.tbls
+    ofParts ⟨[], fe.env.tables, fe.env.rules⟩ ∅
+      { fe.base with below := c, chk := true, rls := fe.rlsAt c } [] fe.tbls
 
 /-- **The rules registered for the head constant `c`** (`Env.rulesFor` through the index):
 newest first, each theorem stored here. -/

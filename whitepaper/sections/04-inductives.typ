@@ -268,7 +268,7 @@ the checker answers each with the level oracle:
 === When a block is accepted
 
 A block #src("whitepaper/Fragment/Decl.lean", 719, 764)[is accepted] when
-(#src("ConLeche/Kernel/Inductives/BlockTail.lean", 162, 172)[as in con-leche]):
+(#src("ConLeche/Kernel/Inductives/BlockTail.lean", 153, 163)[as in con-leche]):
 
 - its names are distinct and fresh;
 - the specification is in scope, positivity included;
@@ -1003,7 +1003,7 @@ assumed of the environment they extend.
 
 #real[
   The block step is one theorem,
-  #src("ConLeche/Model/Inductives/DeclBlockStep.lean", 104, 108)[the install of a block],
+  #src("ConLeche/Model/Inductives/DeclBlockStep.lean", 105, 109)[the install of a block],
   read off the checker's run stage by stage.
 ]
 
@@ -1013,7 +1013,7 @@ assumed of the environment they extend.
   environment. Then #src("whitepaper/Fragment/Consistency.lean", 89, 98)[no closed term $e$ has] $tack e => I$; in
   particular no stored constant has type $I$
   (#src("whitepaper/Fragment/Consistency.lean", 134, 138)[at the block `inductive False : Prop`]\;
-  #src("ConLeche/Model/Fold.lean", 452, 459)[as in con-leche]).
+  #src("ConLeche/Model/Fold.lean", 453, 460)[as in con-leche]).
 ] <cor:consistency>
 
 #proof[
@@ -1041,7 +1041,7 @@ assumed of the environment they extend.
   name `False` and say that it denotes the empty set and `Eq` set
   equality, with no hypothesis about the stream (#overview(1)); and
   its acceptance is the run of a program,
-  #src("ConLeche/Model/Fold.lean", 381, 383)[the declaration fold],
+  #src("ConLeche/Model/Fold.lean", 382, 384)[the declaration fold],
   rather than a relation, so a bridge theorem turns each accepting
   run into the derivations §3 and §4 consume (@sec:left-out). The
   argument in between is the one above.

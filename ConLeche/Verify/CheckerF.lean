@@ -278,6 +278,33 @@ theorem mkFEnv_below_find (env : Env) (n : Name) (k : Nat) :
     rw [FEnv.find?_ofParts_nil, Std.HashMap.getElem?_empty, FBase.find?_of_idx_empty rfl]
     simp
 
+/-- The index under the `k` newest constants of `mkFEnv` reads the rule table in force there. -/
+theorem mkFEnv_dropTop_rls (env : Env) (k : Nat) :
+    ((mkFEnv env).dropTop k).base.rls = mkRlsGo (activeAtS env.rules.snaps (env.consts.drop k).length) := by
+  have h : (mkFEnv env).rlsAt ((mkFEnv env).cnt - k)
+      = mkRlsGo (activeAtS env.rules.snaps (env.consts.drop k).length) := by
+    simp [FEnv.rlsAt, FEnv.snapsAll, FEnv.cnt, mkFEnv_base, show (mkFEnv env).env = env from rfl]
+  unfold FEnv.dropTop
+  split <;> exact h
+
+/-- **The view below a name's entry under `mkFEnv` reads the rule table of the environment cut
+there.** -/
+theorem mkFEnv_below_rls (env : Env) (n : Name) (k : Nat) :
+    ((mkFEnv env).below n k).base.rls
+      = mkRlsGo (env.cutAt ((Env.suffixAfter env.consts n).drop k)).rules.active := by
+  rw [Env.suffixAfter_eq_findIdx]
+  unfold FEnv.below
+  rw [show (mkFEnv env).env = env from rfl]
+  cases env.consts.findIdx? (·.name == n) with
+  | some j =>
+    simp only
+    rw [mkFEnv_dropTop_rls, List.drop_drop]
+    rfl
+  | none =>
+    simp [FEnv.rlsAt, FEnv.snapsAll, mkFEnv_base, show (mkFEnv env).env = env from rfl, Env.cutAt,
+      RuleTable.cut]
+    rfl
+
 /-- **The view below a name's entry under `mkFEnv` answers the table lookups of the environment
 cut there.** -/
 theorem mkFEnv_below_findTable (env : Env) (n : Name) (k : Nat) :

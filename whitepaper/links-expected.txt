@@ -2467,8 +2467,8 @@
    124  /-- Store one more constant. -/
    125  def add (env : Env) (n : Name) (ci : ConstInfo) : Env := ⟨(n, ci) :: env.consts⟩
 
-== ConLeche/Kernel/Env.lean#L529
-   529  structure Env where
+== ConLeche/Kernel/Env.lean#L548
+   548  structure Env where
 
 == whitepaper/Fragment/Env.lean#L63-L100
     63  /-- What kind of constant a name is stored as. -/
@@ -3264,18 +3264,18 @@
    763    (S.large = true → ¬ S.NeverProp → S.ctors.length ≤ 1) ∧
    764    (∃ T, Infer (S.envCtors env) [] S.recType T)
 
-== ConLeche/Kernel/Inductives/BlockTail.lean#L162-L172
-   162  def checkBlock (ops : CheckerOps m) (env : Env) (block : List ConstantInfo) (p₀ : BlockShape) :
-   163      m Env := do
-   164    unless (p₀.allCtors.map (·.1.name)).Nodup ∧ p₀.memberNames.Nodup do
-   165      throw (.invalid "direct rec: duplicate constructor")
-   166    unless boolTrueName ∉ p₀.memberNames ∧ boolFalseName ∉ p₀.memberNames do
-   167      throw (.invalid "direct rec: a family at a `Bool` constructor's name")
-   168    let ms ← reduceMembers ops env p₀.nP p₀.members
-   169    let q ← checkBlockPass ops env { p₀ with members := ms } (blockIsRec p₀)
-   170    let Q ← unwrapOr (blockTables p₀ p₀.members) (.internal "direct structure: projection bodies")
-   171    checkBlockTail ops block q Q
-   172    pure (env.pushDelta (blockConstants p₀) Q)
+== ConLeche/Kernel/Inductives/BlockTail.lean#L153-L163
+   153  def checkBlock (ops : CheckerOps m) (env : Env) (block : List ConstantInfo) (p₀ : BlockShape) :
+   154      m Env := do
+   155    unless (p₀.allCtors.map (·.1.name)).Nodup ∧ p₀.memberNames.Nodup do
+   156      throw (.invalid "direct rec: duplicate constructor")
+   157    unless boolTrueName ∉ p₀.memberNames ∧ boolFalseName ∉ p₀.memberNames do
+   158      throw (.invalid "direct rec: a family at a `Bool` constructor's name")
+   159    let ms ← reduceMembers ops env p₀.nP p₀.members
+   160    let q ← checkBlockPass ops env { p₀ with members := ms } (blockIsRec p₀)
+   161    let Q ← unwrapOr (blockTables p₀ p₀.members) (.internal "direct structure: projection bodies")
+   162    checkBlockTail ops block q Q
+   163    pure (env.pushDelta (blockConstants p₀) Q)
 
 == whitepaper/Fragment/Decl.lean#L307-L312
    307  /-- **A rule's type**: `∀ params motive minors fields, motive idx (C params fields)`
@@ -5210,12 +5210,12 @@
    180      ∃ m' : EnvModel V (S.install env), ∀ n, (env.find? n).isSome → ∀ ls, m'.M n ls = m.M n ls :=
    181    ⟨S.mInstall hpl hs m hok, fun n hn ls => (S.agree_M₃ hok m.M n hn ls).symm⟩
 
-== ConLeche/Model/Inductives/DeclBlockStep.lean#L104-L108
-   104  `BlockCtorsCore` → (at the recursors) `BlockTablesCore`. -/
-   105  theorem declBlockAt {F : Nat} {env env₂ : Env}
-   106      {block : List ConstantInfo} {p₀ : BlockShape}
-   107      (mp : EnvModelM V env)
-   108      (hlps₀ : ∀ ms ∈ p₀.members, ms.cvT.levelParams = p₀.lps)
+== ConLeche/Model/Inductives/DeclBlockStep.lean#L105-L109
+   105  `BlockCtorsCore` → (at the recursors) `BlockTablesCore`. -/
+   106  theorem declBlockAt {F : Nat} {env env₂ : Env}
+   107      {block : List ConstantInfo} {p₀ : BlockShape}
+   108      (mp : EnvModelM V env)
+   109      (hlps₀ : ∀ ms ∈ p₀.members, ms.cvT.levelParams = p₀.lps)
 
 == whitepaper/Fragment/Consistency.lean#L89-L98
     89  /-- **No closed term inhabits an empty inductive type.**  For a block
@@ -5236,20 +5236,20 @@
    137    no_empty_inductive_inhabitant V hacc (S := IndSpec.falseSpec name recName elim) rfl rfl rfl rfl
    138      hrec e
 
-== ConLeche/Model/Fold.lean#L452-L459
-   452  theorem no_proof_of_False_pure (V : Type w) [SetTheory V]
-   453      {F : Nat}
-   454      {ds : List Declaration} {env' : Env}
-   455      (h : checkDeclsPure .verified (fueledOps .verified F) pins ds = .ok env') :
-   456      ∀ c ∈ env'.consts,
-   457        c.toConstantVal.type = .const falseName [] → False := by
-   458    obtain ⟨mp⟩ := checkDeclsPure_sound_of (V := V) h
-   459    exact fun c hc hty => no_constant_of_False mp c hc hty
+== ConLeche/Model/Fold.lean#L453-L460
+   453  theorem no_proof_of_False_pure (V : Type w) [SetTheory V]
+   454      {F : Nat}
+   455      {ds : List Declaration} {env' : Env}
+   456      (h : checkDeclsPure .verified (fueledOps .verified F) pins ds = .ok env') :
+   457      ∀ c ∈ env'.consts,
+   458        c.toConstantVal.type = .const falseName [] → False := by
+   459    obtain ⟨mp⟩ := checkDeclsPure_sound_of (V := V) h
+   460    exact fun c hc hty => no_constant_of_False mp c hc hty
 
-== ConLeche/Model/Fold.lean#L381-L383
-   381  theorem foldPM {F : Nat} :
-   382      ∀ (ds : List Declaration) (env : Env) {env' : Env},
-   383        EnvModelOk V env →
+== ConLeche/Model/Fold.lean#L382-L384
+   382  theorem foldPM {F : Nat} :
+   383      ∀ (ds : List Declaration) (env : Env) {env' : Env},
+   384        EnvModelOk V env →
 
 >>> whitepaper/sections/05-nested.typ
 
@@ -5659,18 +5659,18 @@
    454      rules.map fun rl => { rl with fire := fire }
    455    | some _ => rules
 
-== ConLeche/Kernel/CoreDefs.lean#L1135-L1145
-  1135      (rP : Nat) : List Level × List Expr :=
-  1136    match rl.fire with
-  1137    | .nested lvls pins =>
-  1138      (lvls.map (Level.subst lps us),
-  1139       pins.map fun p => Expr.instSpine (args.take rP) (rP - 1)
-  1140         (p.instantiateLevelParams lps us))
-  1141    | .plain =>
-  1142      (cvjLps.map fun p => Level.subst lps us (.param p),
-  1143       args.take cnP)
-  1144    | .levels lvls =>
-  1145      (lvls.map (Level.subst lps us), args.take cnP)
+== ConLeche/Kernel/CoreDefs.lean#L1138-L1148
+  1138      (rP : Nat) : List Level × List Expr :=
+  1139    match rl.fire with
+  1140    | .nested lvls pins =>
+  1141      (lvls.map (Level.subst lps us),
+  1142       pins.map fun p => Expr.instSpine (args.take rP) (rP - 1)
+  1143         (p.instantiateLevelParams lps us))
+  1144    | .plain =>
+  1145      (cvjLps.map fun p => Level.subst lps us (.param p),
+  1146       args.take cnP)
+  1147    | .levels lvls =>
+  1148      (lvls.map (Level.subst lps us), args.take cnP)
 
 == ConLeche/Rules/Rel.lean#L246-L257
    246        IotaCaseS env isK induct (recFireComparands rl cnP cv.levelParams us cvj.levelParams
@@ -6395,12 +6395,12 @@
     84  
 
 == ConLeche/Cached/StreamIndex.lean#L65
-    65    let (idx, next) := insertConsts I.base.idx I.next (declConstantsC pd)
+    65  after it. -/
 
-== ConLeche/Verify/Cached/StreamIndex.lean#L719-L721
-   719  theorem checkDecls_of_jobs {ds : Array Declaration}
-   720      (h : ∀ k (hk : k < ds.size), recordJob mode pins maxNatSize (buildIndex ds).freeze k ds[k] = .ok ()) :
-   721      checkDecls mode pins maxNatSize ds = .ok (streamEnv ds.toList) := by
+== ConLeche/Verify/Cached/StreamIndex.lean#L794-L796
+   794  theorem checkDecls_of_jobs {ds : Array Declaration}
+   795      (h : ∀ k (hk : k < ds.size), recordJob mode pins maxNatSize (buildIndex ds).freeze k ds[k] = .ok ()) :
+   796      checkDecls mode pins maxNatSize ds = .ok (streamEnv ds.toList) := by
 
 == ConLeche/Kernel/Expr.lean#L435-L437
    435  inductive Expr where

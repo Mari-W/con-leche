@@ -3512,3 +3512,7 @@
 0 rewrite_rule_conv.ndjson
 # the same without the rule in the declaration's `rewrites`: `rrT n` is stuck at a variable
 1 rewrite_rule_conv_omitted.ndjson
+# a family stored at a definition (`Fam : Code`), its block checked under `code_eq`, and read below
+# its block by a later block under another rule set (scripts/rewrite-fixtures/RrFam.lean).  The cut
+# below the block carries the rule table in force at the block's record.  Official 0 (rr-dev), target 0.
+0 rewrite_rule_family.ndjson

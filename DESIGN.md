@@ -115745,3 +115745,64 @@ install-time law a law about `l`'s subterms), and then `IsTy.eq_of_ne_pt`. That 
 `Red.rewrite` premise relating `e` to `l` position by position, its soundness lemma, a monadic
 matcher (`whnf` inside) with its cached twin and every consumer lemma (shift, scope, leaves,
 member freedom, extension, `atF`, pair projections, bridge, cached simulation). Not started.
+
+## The rule table below a family's block (2026-11-18, rewrite-rules, item 3 of the parity pass)
+
+A family stored at a definition is now checked while rules are active, and the decline
+(`ruleScopedFamilyMsg`, exit 2) is gone from both checkers. The cut below a block carries the
+rule table in force at the block's record instead of no rule. The fixture
+`rewrite_rule_family` (`inductive Fam : Code` under `code_eq`, read below its block by a later
+block `Box` under `code_eq` and `code_eq2`, `scripts/rewrite-fixtures/RrFam.lean`, exported with
+rr-dev) flips from 2 to 0.
+
+**The record of tables.** `RuleTable` gained `snaps`, the active tables the environment has had,
+newest first, each with the number of constants it was set at. A `useRules` at an environment
+of `len` constants records `(len, table)` (`RuleTable.step` takes `len`, `Env.stepRules` passes
+`env.consts.length`). `activeAtS snaps k` is the newest table recorded at `k` constants or fewer.
+`Env.cutAt env cs` keeps `env.rules.cut cs.length`: the table in force at `cs.length` as the active
+one, the tables recorded up to there, no registered rule. A family's cut is the constants before
+its block, so its length is the number of constants the block's record ran at, and every table
+recorded later has a larger number. The pure checker keys the map by the number of constants
+because the pure environment has no record counter. The cached index's counter is the same
+number, so the two keys agree.
+
+**The model.** `FamilyRan` needs the family's telescope to read the same at every later
+environment. `FreshExt` gained `snaps`: the tables recorded since were recorded at the old number
+of constants or later. A family stored in the old environment has a cut strictly shorter
+(`Env.suffixAfter_length_lt`), so `RuleTable.cut_append_gt` keeps the cut, and
+`FreshExt.famBelow` holds as before. `freshExt_stepRules` records a `useRules` at the current
+number. At the block's own check the cut at all constants must have the active table, which is
+the invariant `RulesWF` (each recorded number reached, the table in force at the current number
+the active one), a new field `EnvWF.ruleSnaps`. `RulesWF.stepRules`, `RulesWF.mono` (more
+constants, same rules) and `RulesWF.cutAt` (any cut) keep it, and `envExt_cutAt_self` reads the
+active table from it in place of the empty table the decline guaranteed. `MemberAt.how` lost
+the clause that no rule is active. `hranAll` in `DeclBlockStep` takes the block's environment's
+tables unchanged, because a table recorded at exactly the block's number would be read by the
+block's own families.
+
+**The cached side.** `FBase` gained `snaps`, the frozen layer's recorded tables. A view below a
+block reads `FEnv.rlsAt (fe.cnt - k)` (`FEnv.dropTop`, `FEnv.below`), the map of the table in force
+at the view's counter over `FEnv.snapsAll` (the pushed environment's tables, then the frozen
+layer's). The map is built on demand, at each view below a block, which only a family stored at a
+definition asks for. The stream index stores the recorded tables before each record
+(`StreamIndex.snapsAt`, a shared list per record), and a job's view reads them
+(`IndexSpec.snapsAt`, `view_snaps`). `Twin` gained the counter, the recorded tables and the rule
+map below every block (`cnt`, `snaps`, `rlsB`), which `viewTwin` proves by the same case split as
+the lookups below a block, and `mkFEnv_below_rls` relates the view below a block to the pure cut.
+`reduceMemberS_congr` lost its rule-map premise.
+
+`model_exists`, `no_False_declaration` and `main_oleans_no_False` keep their axioms.
+
+Cost. A view below a block builds its rule map from the recorded tables (one `mkRlsGo` over the
+active table in force), on top of the index it already builds. Nothing changes on any other path.
+Not measured, because the item touches no hot path.
+
+Gates (item 3). `lake build` and `lake test` warning-free, `tests/shake.sh` passes (667/667
+allowlisted, none demotable). OVERVIEW's and the whitepaper's anchors that moved were repointed
+and their expectations regenerated; README needed none. `tests/arena.sh` (log
+`_tmp/r5/i1-arena.log`) passed every gate but plain-reach, which named the view's new readers
+(`FEnv.rlsAt`, `FEnv.cnt`, `FEnv.snapsAll`, `activeAtS`) and the decline's stale message. The
+allowlist now names them with their reason, and `tests/plain-reach.sh` passes on its own (664
+reached, all allowlisted). e2e 622/622 with the new fixture, self-check 55 966 declarations,
+axioms pinned, olean gate 122/122, tutorial 90/92 as before, trusted and `--jobs` sweeps without
+divergence.

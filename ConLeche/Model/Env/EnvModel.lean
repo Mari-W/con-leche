@@ -95,7 +95,7 @@ theorem EnvModel.acval_closed {env : Env} (m : EnvModel V env)
 @[expose] def EnvModel.empty : EnvModel V Env.empty where
   wf := ⟨fun c hc => (by cases hc), fun c hc => (by cases hc), fun t ht => (by cases ht),
     fun c hc => (by cases hc), fun c hc => (by cases hc), fun c hc => (by cases hc),
-    fun _ hr _ hc => nomatch hr.suffix.subset hc⟩
+    fun _ hr _ hc => (nomatch hr.suffix.subset hc), RulesWF.empty⟩
   acval := fun _ _ => .const .empty [0]
   cval_closed := fun _ _ => trivial
   basis_pinned := BasisPinnedTT.empty _

@@ -133,8 +133,12 @@ theorem stepRules_cover (mp : EnvModelM V env) (d : Declaration) : CoverStep mp 
     fun D hD => (hc.own D (hlb ▸ hD)).monoOn (fun _ _ => rfl) (fun _ _ _ _ => rfl)
       (fun _ _ => rfl), fun D hD => hc.wid D (hlb ▸ hD)⟩
 
-/-- A rule record is an extension under fresh names: it pushes nothing. -/
+/-- A rule record is an extension under fresh names: it pushes nothing, and a `useRules` records
+its table at the current number of constants. -/
 theorem freshExt_stepRules (env : Env) (d : Declaration) : FreshExt env (env.stepRules d) :=
-  ⟨⟨[], rfl, fun _ h => nomatch h⟩, ⟨[], rfl, fun _ h => nomatch h⟩⟩
+  ⟨⟨[], rfl, fun _ h => nomatch h⟩, ⟨[], rfl, fun _ h => nomatch h⟩, by
+    cases d with
+    | useRules S => exact ⟨[_], rfl, fun s hs => by simp at hs; simp [hs]⟩
+    | _ => exact ⟨[], rfl, fun _ h => nomatch h⟩⟩
 
 end ConLeche.Model

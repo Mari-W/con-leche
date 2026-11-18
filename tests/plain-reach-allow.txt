@@ -312,11 +312,17 @@ ConLeche.strLitNames
 
 # ConLeche.Kernel.FEnv — the view below a family's block (a definition-headed family's telescope
 # reading only): O(1) over the frozen layer, the record's own few pushes re-indexed, and a live
-# table's bodies resolved once per lookup there (tables' bodies are small fixed terms)
+# table's bodies resolved once per lookup there (tables' bodies are small fixed terms), and the
+# rule map of the table in force at the view's counter, built once per view from the recorded
+# tables (a find over the tables recorded so far, newest first, and one `mkRlsGo`)
 ConLeche.Expr.constsResolveF
 ConLeche.FEnv.below
+ConLeche.FEnv.cnt
 ConLeche.FEnv.dropTop
 ConLeche.FEnv.famBelow
+ConLeche.FEnv.rlsAt
+ConLeche.FEnv.snapsAll
+ConLeche.activeAtS
 ConLeche.mkIdxGo
 
 # User rewrite rules (Kernel/Core, Kernel/CoreDefs, Kernel/FEnv), run by the cached rule step as
@@ -344,8 +350,7 @@ ConLeche.ruleTele
 # statement once (its telescope, its left side as a pattern, its right side's variables and
 # universe parameters: `hasLooseBVar` and `allLevelParamsDefined` are those walks, on the
 # rule's two sides). A `useRules` filters and sorts the registered rules (`activeTable`) and
-# builds the rule map once (`mkRlsGo`); the stream index does the same once per `useRules`. The
-# family decline's message is a constant.
+# builds the rule map once (`mkRlsGo`); the stream index does the same once per `useRules`.
 ConLeche.Env.stepRules
 ConLeche.Expr.allLevelParamsDefined
 ConLeche.Expr.hasLooseBVar
@@ -358,7 +363,6 @@ ConLeche.mkRlsGo
 ConLeche.ruleDeclError?
 ConLeche.ruleLhsParams
 ConLeche.rulePat
-ConLeche.ruleScopedFamilyMsg
 
 # ConLeche.Kernel.Level — the level algorithms (levels are small trees; the cached tier memoises them by level, the official kernel runs the same walks)
 ConLeche.Expr.instantiateLevelParams

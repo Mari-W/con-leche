@@ -71,16 +71,8 @@ theorem whnfBS_spec (henv : EnvWF env) {n : Name} {d : Nat} {e : Expr} {s₀ : C
       have hru : ((mkFEnv env).below n caps.blockPos).rulesFor
           = (mkFEnv (env.cutAt ((Env.suffixAfter env.consts n).drop caps.blockPos))).rulesFor := by
         funext c
-        rw [mkFEnv_rulesFor]
         unfold FEnv.rulesFor
-        have hb : ((mkFEnv env).below n caps.blockPos).base.rls = {} := by
-          unfold FEnv.below
-          split
-          · unfold FEnv.dropTop
-            split <;> rfl
-          · rfl
-        rw [hb]
-        simp [Env.rulesFor, Env.cutAt]
+        rw [mkFEnv_below_rls, hf, mkFEnv_base]
       rw [(knotI_congr hf ht hru).2.1] at hrun
       obtain ⟨hs₁, ⟨F, hF⟩, hwt⟩ :=
         triple_iff_run.mp (opW_spec henv' (flushC_csok hs.residue) hw) t s₁ hrun
