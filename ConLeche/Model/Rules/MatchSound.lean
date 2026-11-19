@@ -186,4 +186,54 @@ theorem MatchArg.defeq_sound {d : Nat} {P : List Expr} {a a' : Expr}
   exact (hd hf' hf (hC.of_subset hsub') (hC.of_subset hsub) hea' hea ρ hρ (hL.of_subset hsub')
     (hL.of_subset hsub) hg' hg hne' hne).symm
 
+/-! ### The view and the instance (task r13)
+
+A rule fires when its matched view equals the instance of the left side up to the official form
+of the constants' levels (`Expr.levelFormEq`).  Levels of the same official form evaluate the
+same (`Level.substFn_formsEq`), so the two read as the same term, and they share their leaves,
+their scoping and their bound variables. -/
+
+/-- The view and the instance share their leaves. -/
+theorem levelFormEq_fvarLeaves : ∀ {a b : Expr}, a.levelFormEq b = true →
+    a.fvarLeaves = b.fvarLeaves :=
+  Expr.levelFormEq_rec (P := fun a b => a.fvarLeaves = b.fvarLeaves) (fun _ => rfl)
+    (fun f x g y hf hx => by simp only [Expr.fvarLeaves, hf, hx])
+    (fun _ _ _ _ => by simp only [Expr.fvarLeaves]) _ _
+
+/-- The view and the instance share their scoping. -/
+theorem levelFormEq_WScoped {d : Nat} : ∀ {a b : Expr}, a.levelFormEq b = true →
+    (Expr.WScoped d a ↔ Expr.WScoped d b) :=
+  Expr.levelFormEq_rec (P := fun a b => Expr.WScoped d a ↔ Expr.WScoped d b) (fun _ => .rfl)
+    (fun f x g y hf hx => by simp only [Expr.WScoped, hf, hx])
+    (fun _ _ _ _ => by simp only [Expr.WScoped]) _ _
+
+/-- The view and the instance share their bound variables. -/
+theorem levelFormEq_looseBVarsBounded {k : Nat} : ∀ {a b : Expr}, a.levelFormEq b = true →
+    a.looseBVarsBounded k = b.looseBVarsBounded k :=
+  Expr.levelFormEq_rec (P := fun a b => a.looseBVarsBounded k = b.looseBVarsBounded k)
+    (fun _ => rfl) (fun f x g y hf hx => by simp only [Expr.looseBVarsBounded, hf, hx])
+    (fun _ _ _ _ => by simp only [Expr.looseBVarsBounded]) _ _
+
+/-- The view and the instance read the same. -/
+theorem levelFormEq_denote {d : Nat} : ∀ {a b : Expr}, a.levelFormEq b = true →
+    denote m.acval env φ d a = denote m.acval env φ d b :=
+  Expr.levelFormEq_rec (P := fun a b => denote m.acval env φ d a = denote m.acval env φ d b)
+    (fun _ => rfl) (fun f x g y hf hx => by rw [denote_app, denote_app, hf, hx])
+    (fun c ls ls' h => by
+      have hk := fun ks => Level.substFn_formsEq φ ks h
+      simp only [denote, Level.formsEq_length h, hk]) _ _
+
+/-- **A match that ends at a view of the instance is a match of the instance.** -/
+theorem MatchRelSem.of_levelFormEq {d : Nat} {P : List Expr} {e e₁ l : Expr}
+    (h : MatchRelSem m φ d P e e₁) (hl : e₁.levelFormEq l = true) :
+    MatchRelSem m φ d P e l := by
+  intro E Δa ea hf hsub hC hP hea
+  obtain ⟨⟨hw, hb, hlb⟩, hsub', ea', hea', hs⟩ := h hf hsub hC hP hea
+  have hleaves := levelFormEq_fvarLeaves hl
+  refine ⟨⟨(levelFormEq_WScoped hl).mp hw, (levelFormEq_looseBVarsBounded hl) ▸ hb, ?_⟩,
+    fun y hy => hsub' y (hleaves ▸ hy), ea',
+    (levelFormEq_denote (m := m) (φ := φ) (d := d) hl).symm.trans hea', hs⟩
+  intro y hy
+  exact hlb y (hleaves ▸ hy)
+
 end ConLeche.Model.Rules

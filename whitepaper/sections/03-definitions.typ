@@ -45,14 +45,14 @@ $
 declared with level parameters $arrow(p)$ is taken at the levels
 $arrow(ell)$, replaces the parameters in sorts and in the level lists
 of constants
-(#src("ConLeche/Kernel/Level.lean", 234, 247)[as in con-leche]).
+(#src("ConLeche/Kernel/Level.lean", 288, 301)[as in con-leche]).
 
 *The rules for constants.* A constant
 #src("whitepaper/Fragment/Rules.lean", 749, 753)[has its declared type] at the
 levels it is used at, and two constants of the same name
 #src("whitepaper/Fragment/Rules.lean", 563, 566)[are compared] through the level oracle
-(in con-leche: #src("ConLeche/Rules/Rel.lean", 630, 636)[inference]
-and #src("ConLeche/Rules/Rel.lean", 402, 407)[equality]).
+(in con-leche: #src("ConLeche/Rules/Rel.lean", 633, 639)[inference]
+and #src("ConLeche/Rules/Rel.lean", 405, 410)[equality]).
 
 #rules(
   rule(name: "const",

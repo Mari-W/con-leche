@@ -488,18 +488,19 @@ theorem ruleArgsM_pres {r : CoreFns CheckM} {env : Env} {d : Nat} {cv : Constant
   exact (ruleMatchM_pres hQ l₀ (SlotsP.replicate Q _ _) he hm).1
 
 /-- **Inversion for a rule firing**: the firing's checks, read back, at the matched view `e₁`
-of the term. -/
+of the term and the instance `l` of the left side. -/
 theorem rewriteAttempt_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {e e₂ : Expr} {t : Name}
     (h : rewriteAttempt r env d e t = .ok (some e₂)) :
     ∃ (cv : ConstantVal) (args : List Expr) (us : List Level) (u : Level) (A : Expr) (c : Name)
-      (ls : List Level) (e₁ : Expr),
+      (ls : List Level) (e₁ l : Expr),
       env.find? t = some (.thmInfo cv) ∧
       ruleArgsM r env d cv e = .ok (some (args, us, e₁)) ∧
       piResidual (cv.type.instantiateLevelParams cv.levelParams us) args
-        = some (.app (.app (.app (.const eqName [u]) A) e₁) e₂) ∧
+        = some (.app (.app (.app (.const eqName [u]) A) l) e₂) ∧
       e₁.getAppFn = .const c ls ∧ us.length = cv.levelParams.length ∧
       (∀ x ∈ args, x ∈ appSubterms e₁) ∧ (∀ x ∈ e₂.fvarLeaves, x ∈ e₁.fvarLeaves) ∧
-      iotaCertsFull r env d (cv.type.instantiateLevelParams cv.levelParams us) args = .ok true := by
+      iotaCertsFull r env d (cv.type.instantiateLevelParams cv.levelParams us) args = .ok true ∧
+      e₁.levelFormEq l = true := by
   unfold rewriteAttempt rewriteFire at h
   split at h
   · rename_i cv hfind
@@ -515,7 +516,6 @@ theorem rewriteAttempt_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {e e₂ : 
         split at h
         · rename_i hchk
           obtain ⟨rfl, hlen, hle, hsub, hleaf, hcst⟩ := hchk
-          subst l
           obtain ⟨c, ls, hhead⟩ : ∃ c ls, e₁.getAppFn = .const c ls := by
             revert hcst
             cases e₁.getAppFn <;> simp [Expr.isConstB]
@@ -523,12 +523,57 @@ theorem rewriteAttempt_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {e e₂ : 
           split at h
           · rename_i hb
             obtain rfl : rhs = e₂ := by simpa [pure, Except.pure] using h
-            exact ⟨cv, args, us, u, A, c, ls, e₁, hfind, ho, hres, hhead, hlen, hsub, hleaf,
-              by rw [hcert, hb]⟩
+            exact ⟨cv, args, us, u, A, c, ls, e₁, l, hfind, ho, hres, hhead, hlen, hsub, hleaf,
+              by rw [hcert, hb], hle⟩
           · simp [pure, Except.pure] at h
         · simp [pure, Except.pure] at h
       · simp [pure, Except.pure] at h
   · simp [pure, Except.pure] at h
+
+/-- `levelFormEq` off the application and constant pairs is equality. -/
+theorem Expr.levelFormEq_other {a b : Expr}
+    (h1 : ∀ f x g y, a = .app f x → b = .app g y → False)
+    (h2 : ∀ c ls c' ls', a = .const c ls → b = .const c' ls' → False) :
+    a.levelFormEq b = decide (a = b) := by
+  unfold Expr.levelFormEq
+  split
+  · exact (h1 _ _ _ _ rfl rfl).elim
+  · exact (h2 _ _ _ _ rfl rfl).elim
+  · rfl
+
+/-- **Induction on `levelFormEq`**: a relation that is reflexive, closed under application and
+relates constants of the same name at levels of the same official forms holds of every pair
+`levelFormEq` accepts. -/
+theorem Expr.levelFormEq_rec {P : Expr → Expr → Prop} (hrefl : ∀ e, P e e)
+    (happ : ∀ f x g y, P f g → P x y → P (.app f x) (.app g y))
+    (hconst : ∀ c ls ls', Level.formsEq ls ls' = true → P (.const c ls) (.const c ls')) :
+    ∀ (a b : Expr), a.levelFormEq b = true → P a b := by
+  have hother : ∀ {a b : Expr}, (∀ f x g y, a = .app f x → b = .app g y → False) →
+      (∀ c ls c' ls', a = .const c ls → b = .const c' ls' → False) →
+      a.levelFormEq b = true → P a b := by
+    intro a b h1 h2 h
+    rw [Expr.levelFormEq_other h1 h2, decide_eq_true_eq] at h
+    subst h; exact hrefl _
+  intro a
+  induction a with
+  | app f x ihf ihx =>
+    intro b h
+    cases b with
+    | app g y =>
+      simp only [Expr.levelFormEq, Bool.or_eq_true, Bool.and_eq_true, decide_eq_true_eq] at h
+      rcases h with h | ⟨hf, hx⟩
+      · rw [h]; exact hrefl _
+      · exact happ _ _ _ _ (ihf g hf) (ihx y hx)
+    | _ => exact hother (by simp) (by simp) h
+  | const c ls =>
+    intro b h
+    cases b with
+    | const c' ls' =>
+      simp only [Expr.levelFormEq, Bool.and_eq_true, decide_eq_true_eq] at h
+      obtain ⟨rfl, h⟩ := h
+      exact hconst _ _ _ h
+    | _ => exact hother (by simp) (by simp) h
+  | _ => intro b h; exact hother (by simp) (by simp) h
 
 /-- Inversion for the rules in order: a firing is one of the rules', the first. -/
 theorem rewriteRules_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {e e₂ : Expr} {t : Name} :
@@ -3226,7 +3271,7 @@ theorem rewriteStep_WScoped {env : Env} (henv : EnvWF env) {r : CoreFns CheckM} 
     (hwh : ∀ {a w : Expr}, r.whnf d a = .ok w → WScoped d a → WScoped d w)
     {stuck : Bool} {e e₂ : Expr} {t : Name} (h : rewriteStep r env d stuck e = .ok (some (t, e₂)))
     (hw : WScoped d e) : WScoped d e₂ := by
-  obtain ⟨cv, args, us, u, A, c, ls, e₁, hf, hm, hres, -, -, hsub, -⟩ :=
+  obtain ⟨cv, args, us, u, A, c, ls, e₁, _, hf, hm, hres, -, -, hsub, -⟩ :=
     rewriteAttempt_inv (rewriteStep_inv h)
   have hw₁ := ruleArgsM_pres (MatchPres.wscoped hwh) hm hw
   have hT : WScoped d (cv.type.instantiateLevelParams cv.levelParams us) :=

@@ -461,13 +461,13 @@ theorem rewriteStep_bridge (hw : WhnfBridge μ eager env fuel) (hd : DefEqBridge
     {d : Nat} {stuck : Bool} {e e₂ : Expr} {t : Name}
     (h : rewriteStep (pureFns μ eager env fuel) env d stuck e = .ok (some (t, e₂))) :
     Red env d e e₂ := by
-  obtain ⟨cv, args, us, u, A, c, ls, e₁, hf, hm, hres, -, hlen, hsub, hleaf, hcert⟩ :=
+  obtain ⟨cv, args, us, u, A, c, ls, e₁, l, hf, hm, hres, -, hlen, hsub, hleaf, hcert, hlf⟩ :=
     rewriteAttempt_inv (rewriteStep_inv h)
   obtain ⟨c', ls', hfn', hmem⟩ := rewriteStep_mem h
   obtain ⟨l₀, st', hm'⟩ := ruleArgsM_inv hm
   exact .rewrite hf hlen (iotaCertsFull_bridge hd hi hcert) hres hfn'
     (ruleMatchM_bridge hw hd l₀ [] (SlotsIn.replicate _ _ _) hm').1
-    hsub hleaf hmem
+    hlf hsub hleaf hmem
 
 /-- ι-then-rules ⇒ `Red.iota` or `Red.rewrite`. -/
 theorem iotaThenRule_bridge (hw : WhnfBridge .verified eager env fuel)

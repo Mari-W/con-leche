@@ -3550,6 +3550,14 @@
 # same theorem with its rule list dropped (`mk.py nonlinear`), rejected by the failed conversion.
 0 rewrite_rule_nonlinear_retry.ndjson
 1 rewrite_rule_nonlinear_retry_norule.ndjson
+# levels the official kernel simplifies when it instantiates (scripts/rewrite-fixtures/RrLevel.lean,
+# rr-dev 0): `lift.{u, 0}` unfolds to `Box.mk.{max u 0}` here and to `Box.mk.{u}` there (`mk_max`),
+# and the matcher compares official forms (`Level.officialForm`), so `H_mk` fires.  Before the
+# comparison of official forms this was 1 (the Mathlib PoC's `Cardinal.lift_zero`).  Target 0.
+0 rewrite_rule_level_inst.ndjson
+# `H.{max a b}` against `Box.mk.{max b a}` (`mk.py level` patches the statement): the same value,
+# different official forms, so the rule does not fire, as in the official kernel.  Target 1.
+1 rewrite_rule_level_swap.ndjson
 # the reduction order (scripts/rewrite-fixtures/RrOrder.lean, rr-dev 0): δ first, and a rule on a
 # definition only where its unfolding gets stuck (official `whnf` and `is_def_eq_core`'s rules last).
 # `swap (1, 2) = (2, 1)` under `swap_loop : swap (a, b) = swap (swap (b, a))`: δ gives a pair, a

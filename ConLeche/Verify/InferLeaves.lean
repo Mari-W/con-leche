@@ -390,7 +390,7 @@ theorem rewriteStep_looseBVars {env : Env} (henv : EnvWF env) {r : CoreFns Check
       a.looseBVarsBounded 0 = true → w.looseBVarsBounded 0 = true)
     {stuck : Bool} {e e₂ : Expr} {t : Name} (h : rewriteStep r env d stuck e = .ok (some (t, e₂)))
     (hb : e.looseBVarsBounded 0 = true) : e₂.looseBVarsBounded 0 = true := by
-  obtain ⟨cv, args, us, u, A, c, ls, e₁, hf, hm, hres, -, -, hsub, -⟩ :=
+  obtain ⟨cv, args, us, u, A, c, ls, e₁, _, hf, hm, hres, -, -, hsub, -⟩ :=
     rewriteAttempt_inv (rewriteStep_inv h)
   have hQ : MatchPres r env d (fun a => a.looseBVarsBounded 0 = true) :=
     ⟨by intro f a; simp only [looseBVarsBounded, Bool.and_eq_true],
@@ -408,7 +408,7 @@ theorem rewriteStep_fvarLeaves {env : Env} {r : CoreFns CheckM} {d : Nat}
     (hwh : ∀ {a w : Expr}, r.whnf d a = .ok w → ∀ l ∈ w.fvarLeaves, l ∈ a.fvarLeaves)
     {stuck : Bool} {e e₂ : Expr} {t : Name} (h : rewriteStep r env d stuck e = .ok (some (t, e₂))) :
     ∀ l ∈ e₂.fvarLeaves, l ∈ e.fvarLeaves := by
-  obtain ⟨_, _, _, _, _, _, _, e₁, -, hm, -, -, -, -, hleaf, -⟩ :=
+  obtain ⟨_, _, _, _, _, _, _, e₁, _, -, hm, -, -, -, -, hleaf, -⟩ :=
     rewriteAttempt_inv (rewriteStep_inv h)
   have hQ : MatchPres r env d (fun a => ∀ l ∈ a.fvarLeaves, l ∈ e.fvarLeaves) :=
     ⟨by intro f a; simp only [fvarLeaves, List.mem_append, or_imp, forall_and],

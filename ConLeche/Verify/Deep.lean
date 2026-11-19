@@ -147,6 +147,38 @@ lemma that leaves `fvar` leaves to `shiftFrom_fvar`). -/
 private theorem shiftFrom_app (p : Nat) (f a : Expr) :
     shiftFrom p (.app f a) = .app (shiftFrom p f) (shiftFrom p a) := rfl
 
+/-- A rule's gate compares the view and the instance the same after a shift. -/
+private theorem levelFormEq_shiftFrom (p : Nat) :
+    ∀ (a b : Expr), (shiftFrom p a).levelFormEq (shiftFrom p b) = a.levelFormEq b := by
+  have hinj : ∀ a b : Expr, ∀ [Decidable (shiftFrom p a = shiftFrom p b)] [Decidable (a = b)],
+      decide (shiftFrom p a = shiftFrom p b) = decide (a = b) :=
+    fun a b => decide_eq_decide.mpr ⟨shiftFrom_injective, congrArg _⟩
+  intro a
+  induction a with
+  | app f x ihf ihx =>
+    intro b
+    cases b with
+    | app g y =>
+      simp only [shiftFrom, Expr.levelFormEq, ihf, ihx]
+      congr 1
+      exact decide_eq_decide.mpr ⟨fun h => shiftFrom_injective (p := p) (a := .app f x)
+        (b := .app g y) (by simpa only [shiftFrom] using h), fun h => by cases h; rfl⟩
+    | _ =>
+      rw [Expr.levelFormEq_other, Expr.levelFormEq_other, hinj] <;>
+        first | (simp [shiftFrom]; done) | (simp only [shiftFrom]; intros; split at * <;> simp_all)
+  | const c ls =>
+    intro b
+    cases b with
+    | const c' ls' => simp only [shiftFrom, Expr.levelFormEq]
+    | _ =>
+      rw [Expr.levelFormEq_other, Expr.levelFormEq_other, hinj] <;>
+        first | (simp [shiftFrom]; done) | (simp only [shiftFrom]; intros; split at * <;> simp_all)
+  | _ =>
+    intro b
+    rw [Expr.levelFormEq_other, Expr.levelFormEq_other, hinj] <;>
+      first | (simp [shiftFrom]; done) | (simp only [shiftFrom]; intros; split at * <;> simp_all) |
+        (cases b <;> first | (simp [shiftFrom]; done) | (simp only [shiftFrom]; intros; split at * <;> simp_all))
+
 /-- `getD` with the (shift-invariant) `bvar 0` default commutes with
 mapping the shift. -/
 private theorem getD_map_shiftFrom (p : Nat) :
@@ -1951,13 +1983,13 @@ private theorem rewriteAttempt_shift (henv : EnvWF env)
                   have := hwR h4; simp only [WScoped] at this; exact this.2
                 rw [fvarLeaves_shiftFrom hpd hr, fvarLeaves_shiftFrom hpd hw₁,
                   forall_mem_map_inj fun _ _ h => shiftLeaf_injective h] at h5
-                exact ⟨h1, h2, shiftFrom_injective h3, h4, h5, h6⟩
+                exact ⟨h1, h2, (levelFormEq_shiftFrom p e₁ l) ▸ h3, h4, h5, h6⟩
               · rintro ⟨h1, h2, h3, h4, h5, h6⟩
                 have hr : WScoped d rhs := by
                   have := hwR h4; simp only [WScoped] at this; exact this.2
                 rw [fvarLeaves_shiftFrom hpd hr, fvarLeaves_shiftFrom hpd hw₁,
                   forall_mem_map_inj fun _ _ h => shiftLeaf_injective h]
-                exact ⟨h1, h2, congrArg _ h3, h4, h5, h6⟩
+                exact ⟨h1, h2, (levelFormEq_shiftFrom p e₁ l).symm ▸ h3, h4, h5, h6⟩
             by_cases hc : RuleGate cv us args e₁ eqn l rhs
             · rw [ite_eq_left (hiff.mpr hc), ite_eq_left hc]
               have hR := hwR hc.2.2.2.1

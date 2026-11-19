@@ -825,31 +825,31 @@
    108  inductive Red (env : Env) : Nat → Expr → Expr → Prop where
    109    /-- Every `pure e` exit: the value clauses of `whnfCoreBody`
 
-== ConLeche/Rules/Rel.lean#L360-L383
-   360  checker only ever compares terms that are well-formed *together* — a
-   361  fact the rules never state, because well-formedness (scoping, the
-   362  readability of the terms, the grading of the reading) is semantic
-   363  and may not enter this inductive.  Every rule respects one syntactic
-   364  discipline instead: **the subject of each `DefEq` premise is either a
-   365  subterm of the conclusion or is produced by an existence-form `Red` /
-   366  `Infer` premise** (a reduct, an inferred type), so the soundness proof
-   367  (`ConLeche/Model/Rules/Sound.lean`) always has the premise's terms in
-   368  hand.  `trans` is the unique rule that would break it: its middle
-   369  term comes from nowhere, and with it two rules that are each sound
-   370  alone meet — `fvar` compares free variables by index only (their
-   371  types are not compared, as the checker does not), while
-   372  `proofFast` *reads* a head's stored data to decide "definitely a
-   373  proof" — and derive `DefEq env d (.fvar i ty) (.fvar i' ty')` for
-   374  every `i`, `i'`, which no model satisfies.  The recursive-structure rules
-   375  (`redL`, `natSucc`, `eta`, `structUnit`) are therefore not a
-   376  proof-engineering convenience but what keeps the relation sound; the
-   377  one chaining that is sound, "reduce, then continue", is `redL`, and
-   378  its right-hand and δ variants are derived in `Derived.lean`. -/
-   379  inductive DefEq (env : Env) : Nat → Expr → Expr → Prop where
-   380    /-- The syntactic fast paths (`defeqBody`, `quickDefEq`),
-   381    the literal leaf (`:1582`), a same-index `fvar` pair is `fvar`
-   382    below. -/
-   383    | refl {d : Nat} {a : Expr} : DefEq env d a a
+== ConLeche/Rules/Rel.lean#L363-L386
+   363  checker only ever compares terms that are well-formed *together* — a
+   364  fact the rules never state, because well-formedness (scoping, the
+   365  readability of the terms, the grading of the reading) is semantic
+   366  and may not enter this inductive.  Every rule respects one syntactic
+   367  discipline instead: **the subject of each `DefEq` premise is either a
+   368  subterm of the conclusion or is produced by an existence-form `Red` /
+   369  `Infer` premise** (a reduct, an inferred type), so the soundness proof
+   370  (`ConLeche/Model/Rules/Sound.lean`) always has the premise's terms in
+   371  hand.  `trans` is the unique rule that would break it: its middle
+   372  term comes from nowhere, and with it two rules that are each sound
+   373  alone meet — `fvar` compares free variables by index only (their
+   374  types are not compared, as the checker does not), while
+   375  `proofFast` *reads* a head's stored data to decide "definitely a
+   376  proof" — and derive `DefEq env d (.fvar i ty) (.fvar i' ty')` for
+   377  every `i`, `i'`, which no model satisfies.  The recursive-structure rules
+   378  (`redL`, `natSucc`, `eta`, `structUnit`) are therefore not a
+   379  proof-engineering convenience but what keeps the relation sound; the
+   380  one chaining that is sound, "reduce, then continue", is `redL`, and
+   381  its right-hand and δ variants are derived in `Derived.lean`. -/
+   382  inductive DefEq (env : Env) : Nat → Expr → Expr → Prop where
+   383    /-- The syntactic fast paths (`defeqBody`, `quickDefEq`),
+   384    the literal leaf (`:1582`), a same-index `fvar` pair is `fvar`
+   385    below. -/
+   386    | refl {d : Nat} {a : Expr} : DefEq env d a a
 
 == ConLeche/Verify/Rules/Bridge.lean#L29-L32
     29  theorem bridgeAt (env : Env) :

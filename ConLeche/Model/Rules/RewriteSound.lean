@@ -147,33 +147,40 @@ universe, so `eq_law` reads the residual spine as `eqv ⟦l⟧ ⟦r⟧`, whose i
 sides. -/
 theorem Red.rewrite_sound (hin : RulesInputs V m φ) {d : Nat} {h : Name}
     {cv : ConstantVal} {us : List Level} {args : List Expr} {u : Level}
-    {A l r e : Expr} {c : Name} {ls : List Level}
+    {A l r e e₁ : Expr} {c : Name} {ls : List Level}
     (hthm : env.find? h = some (.thmInfo cv))
     (hus : us.length = cv.levelParams.length)
     (hcerts : CertsFSem m φ d (cv.type.instantiateLevelParams cv.levelParams us) args)
     (hres : ConLeche.piResidual (cv.type.instantiateLevelParams cv.levelParams us) args
       = some (.app (.app (.app (.const eqName [u]) A) l) r))
     (_hhead : e.getAppFn = .const c ls)
-    (hmatch : MatchRelSem m φ d [] e l)
-    (hsub : ∀ x ∈ args, x ∈ ConLeche.appSubterms l)
-    (hleaves : ∀ x ∈ r.fvarLeaves, x ∈ l.fvarLeaves)
+    (hmatch₁ : MatchRelSem m φ d [] e e₁)
+    (hlf : e₁.levelFormEq l = true)
+    (hsub : ∀ x ∈ args, x ∈ ConLeche.appSubterms e₁)
+    (hleaves₁ : ∀ x ∈ r.fvarLeaves, x ∈ e₁.fvarLeaves)
     (hmem : h ∈ env.rulesFor c) :
     RedSem m φ d e r := by
   intro hfe Δa ee hCe hee
-  obtain ⟨hfl, hLS, ea, hea, hsem⟩ := hmatch hfe (fun _ h => h) hCe
+  obtain ⟨hfl₁, hLS₁, ea₁, hea₁, -⟩ := hmatch₁ hfe (fun _ h => h) hCe
+    (fun _ hq => nomatch hq) hee
+  have hCl₁ : CtxOkS m φ d Δa e₁ := hCe.of_subset hLS₁
+  obtain ⟨hfl, hLS, ea, hea, hsem⟩ := hmatch₁.of_levelFormEq hlf hfe (fun _ h => h) hCe
     (fun _ hq => nomatch hq) hee
   have hCl : CtxOkS m φ d Δa l := hCe.of_subset hLS
+  have hleaves : ∀ x ∈ r.fvarLeaves, x ∈ l.fvarLeaves :=
+    fun x hx => levelFormEq_fvarLeaves hlf ▸ hleaves₁ x hx
   -- the theorem's stored type: closed, read, graded, inhabited
   obtain ⟨ta, hTd, hTok, hTmem, hnfT, hbdT⟩ :=
     constTy_pkg (ci := .thmInfo cv) hin.const_ty hthm hus
   obtain ⟨hfT, hCT⟩ := frame_of_not_hasFvar (m := m) (φ := φ) hnfT hbdT hCl.1
   -- the arguments are subterms of the left side
   have hfargs : ∀ x ∈ args, Frame d x ∧ CtxOkS m φ d Δa x :=
-    fun x hx => appSubterms_frame (hsub x hx) hfl hCl
+    fun x hx => appSubterms_frame (hsub x hx) hfl₁ hCl₁
   have hlargs : ∀ x ∈ args, ∀ y ∈ x.fvarLeaves, y ∈ l.fvarLeaves :=
-    fun x hx => (appSubterms_pkg (m := m) (φ := φ) (d := d) l (hsub x hx)).1
+    fun x hx y hy => levelFormEq_fvarLeaves hlf ▸
+      (appSubterms_pkg (m := m) (φ := φ) (d := d) e₁ (hsub x hx)).1 y hy
   obtain ⟨vs, hsp⟩ := denoteSpine_of_forall args fun x hx =>
-    (appSubterms_pkg (m := m) (φ := φ) (d := d) l (hsub x hx)).2.2.2 hea
+    (appSubterms_pkg (m := m) (φ := φ) (d := d) e₁ (hsub x hx)).2.2.2 hea₁
   -- the residual `Eq` spine: framed, in context, read
   obtain ⟨hfR, hCR⟩ := piResidual_frameK hres hfT hCT hfargs
   obtain ⟨RA, hRA⟩ := denote_piResidual_exists m.acval_closed (acval_inst_self m) args

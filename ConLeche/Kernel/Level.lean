@@ -184,6 +184,60 @@ def isNonZero : Level → Bool
   | .imax _ b => b.isNonZero
   | .param _ => false
 
+/-- A level without parameters (official `is_explicit`): `succ`s over `zero`. -/
+def isExplicit : Level → Bool
+  | .zero => true
+  | .succ l => l.isExplicit
+  | _ => false
+
+/-- The `succ`s on top of a level (official `to_offset`): the base and their number. -/
+def toOffset : Level → Level × Nat
+  | .succ l => (l.toOffset.1, l.toOffset.2 + 1)
+  | l => (l, 0)
+
+/-- Is `l` a `max` with `x` on one side? -/
+def maxHas : Level → Level → Bool
+  | .max a b, x => a = x || b = x
+  | _, _ => false
+
+/-- **Official `mk_max`**: the `max` the official kernel builds when it instantiates level
+parameters, with its simplifications (`level.cpp`). -/
+def mkMaxOff (a b : Level) : Level :=
+  if a.isExplicit && b.isExplicit then (if b.toOffset.2 ≤ a.toOffset.2 then a else b)
+  else if a = b then a
+  else if a = .zero then b
+  else if b = .zero then a
+  else if b.maxHas a then b
+  else if a.maxHas b then a
+  else if a.toOffset.1 = b.toOffset.1 then (if b.toOffset.2 < a.toOffset.2 then a else b)
+  else .max a b
+
+/-- **Official `mk_imax`**, as `mkMaxOff`. -/
+def mkIMaxOff (a b : Level) : Level :=
+  if b.isNonZero then mkMaxOff a b
+  else if b = .zero then b
+  else if a = .zero || a = .succ .zero then b
+  else if a = b then a
+  else .imax a b
+
+/-- **The official form of a level** (task r13): every `max` and `imax` rebuilt bottom-up by
+`mkMaxOff`/`mkIMaxOff`.  The official kernel builds levels that way when it instantiates level
+parameters (`instantiate` through `update_max`), while `subst` here keeps them as written, so a
+level the official kernel holds is the official form of the one held here whenever the levels
+the input writes are official forms themselves.  The rewrite matcher compares levels
+structurally, so it compares official forms. -/
+def officialForm : Level → Level
+  | .succ l => .succ l.officialForm
+  | .max a b => mkMaxOff a.officialForm b.officialForm
+  | .imax a b => mkIMaxOff a.officialForm b.officialForm
+  | l => l
+
+/-- Pairwise equal official forms, and equal lengths. -/
+def formsEq : List Level → List Level → Bool
+  | [], [] => true
+  | l :: ls, r :: rs => l.officialForm = r.officialForm && formsEq ls rs
+  | _, _ => false
+
 /-- The zero-ness datum of a level (task #161): the exact reading of
 `{φ | eval φ l = 0}`.  `ConLeche.Verify.PropWhen` proves
 `(zeronessOf l).holds φ = (eval φ l == 0)`.  Case notes: a `max` is

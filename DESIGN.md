@@ -116278,3 +116278,53 @@ allowlisted in place of `ruleBindVar`), e2e 645/645, olean gate 122/122, self-ch
 declarations, axioms pinned, tutorial 90/92 as before, and the trusted and `--jobs` sweeps without
 divergence. Eleven OVERVIEW anchors and 29 whitepaper citations moved and were repointed, all
 pure moves. README needed none.
+
+## Levels in the official form (2026-11-19, rewrite-rules, r13, PoC parity)
+
+**The disagreement.** In the Mathlib PoC export (closure of
+`Mathlib.Analysis.Complex.UpperHalfPlane.Metric`, `Quotient.map₂`, `Quotient.map` and `Quot.map`
+abstract, the KRPoc rules in force) the official kernel accepted `Cardinal.lift_zero` and
+`Cardinal.commSemiring._proof_2` and con-leche rejected them. The official kernel builds every
+`max` and `imax` it instantiates through `mk_max`/`mk_imax` (`level.cpp`, `instantiate` through
+`update_max`), which simplify: `max u 0` is `u`. `Level.subst` here keeps a level as written.
+`lift.{u, 0}` unfolds through `Cardinal.map.{0, max u 0}`, so the official kernel holds
+`Quot.mk.{u+2}` where con-leche holds `Quot.mk.{(max u 0)+2}`. The matcher compares levels
+structurally on both sides (`match_rewrite_levels`), so `quotient_map_quot_mk`, whose head
+`Quotient.map.{u+2, …}` binds the parameter to `u+2`, fires there and not here. The official
+firing is sound, because `max u 0` and `u` have the same value. con-leche was incomplete.
+
+**The decision.** `Level.subst` stays as it is: 1195 places in the proofs use its structure, and
+everywhere outside the matcher levels are compared up to equivalence, where the form is invisible.
+The matcher compares official forms instead. `Level.officialForm` rebuilds a level bottom-up with
+`mkMaxOff` and `mkIMaxOff`, ports of `mk_max` and `mk_imax` case for case. If the levels the
+input writes are official forms, the official kernel holds the official form of the level con-leche
+holds: induction over the written level, where the official short cut for unchanged children
+(`update_max` by pointer) returns a level that is its own official form. The PoC export writes 8 of
+its 10 513 levels in another form (`max 0 u`, `imax 1 u`, `max 1 1`). A declaration checked at its
+own parameters holds such a level unsimplified in the official kernel, and con-leche compares its
+official form. That is the remaining deviation, and no fixture or export has met it.
+
+**Where the comparison sits.** `matchLevel` binds a parameter at its first position and compares
+official forms where it repeats. A pattern level that is not a parameter is no longer compared
+during the match, because the official kernel defers it (`lchecks`) to after the whole match and
+a failed one triggers no retry on whnf. The gate does the deferred checks: `RuleGate` compared
+`l = e₁`, the instance of the left side against the matched view, and now asks
+`e₁.levelFormEq l`, the same application tree with constant levels of the same official forms
+(`Level.formsEq`). That covers the deferred checks and the repeated parameters at once. A
+parameter that no `.param` position binds still blocks the firing, as before (the official
+kernel instantiates it with `0` when no deferred check mentions it). `levelFormEq` compares by
+pointer first, so a firing whose levels agree as written walks nothing more than `l = e₁` did.
+
+**Proofs.** `Red.rewrite` takes the view: `MatchRel e e₁`, `e₁.levelFormEq l`, and the argument
+and leaf conditions on `e₁`. `MatchRelSem.of_levelFormEq` (`Model/Rules/MatchSound.lean`) moves
+the match claim from the view to the instance: levels of the same official form evaluate the same
+(`Level.eval_officialForm`, `substFn_formsEq`, `Verify/Level.lean`), so view and instance denote
+the same term and share leaves, scoping and bound variables (`Expr.levelFormEq_rec`,
+`Verify/InferLemmas.lean`). `rewriteAttempt_inv` hands out the instance as a separate witness, and
+`Deep.lean`'s shift invariance of the gate uses `levelFormEq_shiftFrom`. No model change.
+
+**Fixtures.** `scripts/rewrite-fixtures/RrLevel.lean`, `mk.py level`.
+`rewrite_rule_level_inst` (rr-dev 0) unfolds `lift.{u, 0}` to `Box.mk.{max u 0}` under
+`H_mk : H.{l} n (Box.mk.{l} y) = n`; it flips from 1 to 0. `rewrite_rule_level_swap` meets
+`Box.mk.{max b a}` after binding `l := max a b`; the official kernel rejects it (checked through
+`addDecl` in an rr-dev `#eval`), and con-leche does too.

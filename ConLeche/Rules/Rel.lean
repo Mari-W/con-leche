@@ -178,28 +178,31 @@ inductive Red (env : Env) : Nat → Expr → Expr → Prop where
   its telescope applied to `args` under the full-grade certificate,
   rewrites a term `e` that matches the left side to the right side, both
   instantiated at `args`.  The match (`MatchRel`, `ruleMatchM`) relates `e`
-  to the instance `l` of the left side position by position: equal,
+  to its matched view `e₁` position by position: equal,
   reduced first (the retry on `whnf`), or, at a repeated variable,
-  definitionally equal.  The term has a constant head, so a ∀
+  definitionally equal.  The view is the instance `l` of the left side up to
+  the official form of its constants' levels (`Expr.levelFormEq`).  The term
+  has a constant head, so a ∀
   or a sort never rewrites (`Red.rigid`), every argument is a subterm of the
-  instance's application tree (where a first-order matcher finds it), and
-  the right side has no free-variable leaf the instance lacks.  The theorem
+  view's application tree (where a first-order matcher finds it), and
+  the right side has no free-variable leaf the view lacks.  The theorem
   is one of the rules in force at the term's head (`Env.rulesFor`): the
   theorem's type alone does not type its `Eq` spine in the model (over an
   empty `A` the spine reads as the point and says nothing of the sides), and
   a rule's registration typed its sides once (`checkRuleLaw`, the model's
   `EnvModelM.rule_law`). -/
   | rewrite {d : Nat} {h : Name} {cv : ConstantVal} {us : List Level}
-      {args : List Expr} {u : Level} {A l r e : Expr} {c : Name} {ls : List Level} :
+      {args : List Expr} {u : Level} {A l r e e₁ : Expr} {c : Name} {ls : List Level} :
       env.find? h = some (.thmInfo cv) →
       us.length = cv.levelParams.length →
       CertsF env d (cv.type.instantiateLevelParams cv.levelParams us) args →
       piResidual (cv.type.instantiateLevelParams cv.levelParams us) args
         = some (.app (.app (.app (.const eqName [u]) A) l) r) →
       e.getAppFn = .const c ls →
-      MatchRel env d [] e l →
-      (∀ x ∈ args, x ∈ appSubterms l) →
-      (∀ x ∈ r.fvarLeaves, x ∈ l.fvarLeaves) →
+      MatchRel env d [] e e₁ →
+      e₁.levelFormEq l = true →
+      (∀ x ∈ args, x ∈ appSubterms e₁) →
+      (∀ x ∈ r.fvarLeaves, x ∈ e₁.fvarLeaves) →
       h ∈ env.rulesFor c →
       Red env d e r
   /-- **The structural projection** `proj_i (ctor p⃗ x⃗) ↦ x_i`

@@ -50,6 +50,14 @@ if sys.argv[1] == "match":
     stmt_patch(sys.argv[2], f"{sys.argv[3]}/rewrite_rule_nonlinear_diff.ndjson", [("nl_diff", "nlDiffTgt")])
     sys.exit(0)
 
+if sys.argv[1] == "level":
+    # RrLevel.lean: a level the official kernel simplifies when it instantiates, and two levels
+    # of the same value it does not simplify into each other
+    inst, swap, out = sys.argv[2:5]
+    open(f"{out}/rewrite_rule_level_inst.ndjson", "w").write(open(inst).read())
+    stmt_patch(swap, f"{out}/rewrite_rule_level_swap.ndjson", [("lvl_swap", "lvlSwapTgt")])
+    sys.exit(0)
+
 if sys.argv[1] == "nonlinear":
     # RrMatch.lean: a non-linear rule whose binding comes from a retried position, and the same
     # theorem with no rule in force

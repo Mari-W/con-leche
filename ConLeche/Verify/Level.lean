@@ -375,4 +375,116 @@ theorem substFn_param_self (φ : Name → Nat) :
     · simp only [List.map_cons, Level.substFn, ite_eq_right h]
       exact congrFun ih n
 
+/-! ### The official form (task r13) -/
+
+theorem eval_pos_of_isNonZero (φ : Name → Nat) :
+    ∀ {l : Level}, l.isNonZero = true → 0 < eval φ l
+  | .succ _, _ => by simp [eval]
+  | .max a b, h => by
+    simp only [isNonZero, Bool.or_eq_true] at h
+    rcases h with h | h
+    · have := eval_pos_of_isNonZero φ h; simp only [eval]; omega
+    · have := eval_pos_of_isNonZero φ h; simp only [eval]; omega
+  | .imax a b, h => by
+    simp only [isNonZero] at h
+    have := eval_pos_of_isNonZero φ h
+    simp only [eval]; split <;> omega
+  | .zero, h | .param _, h => by simp [isNonZero] at h
+
+theorem eval_of_isExplicit (φ : Name → Nat) :
+    ∀ {l : Level}, l.isExplicit = true → eval φ l = l.toOffset.2
+  | .zero, _ => rfl
+  | .succ l, h => by
+    simp only [isExplicit] at h
+    simp only [eval, toOffset, eval_of_isExplicit φ h]
+  | .max _ _, h | .imax _ _, h | .param _, h => by simp [isExplicit] at h
+
+theorem eval_toOffset (φ : Name → Nat) :
+    ∀ (l : Level), eval φ l = eval φ l.toOffset.1 + l.toOffset.2
+  | .succ l => by simp only [eval, toOffset, eval_toOffset φ l]; omega
+  | .zero | .max _ _ | .imax _ _ | .param _ => by simp [toOffset]
+
+theorem eval_mkMaxOff (φ : Name → Nat) (a b : Level) :
+    eval φ (mkMaxOff a b) = Max.max (eval φ a) (eval φ b) := by
+  unfold mkMaxOff
+  split
+  · rename_i h
+    simp only [Bool.and_eq_true] at h
+    have ha := eval_of_isExplicit φ h.1
+    have hb := eval_of_isExplicit φ h.2
+    split <;> omega
+  split
+  · subst_vars; omega
+  split
+  · subst_vars; simp [eval]
+  split
+  · subst_vars; simp [eval]
+  split
+  · rename_i h
+    cases b with
+    | max x y =>
+      simp only [maxHas, Bool.or_eq_true, decide_eq_true_eq] at h
+      rcases h with rfl | rfl <;> simp only [eval] <;> omega
+    | _ => simp [maxHas] at h
+  split
+  · rename_i h
+    cases a with
+    | max x y =>
+      simp only [maxHas, Bool.or_eq_true, decide_eq_true_eq] at h
+      rcases h with rfl | rfl <;> simp only [eval] <;> omega
+    | _ => simp [maxHas] at h
+  split
+  · rename_i h
+    have ha := eval_toOffset φ a
+    have hb := eval_toOffset φ b
+    rw [h] at ha
+    split <;> omega
+  · rfl
+
+theorem eval_mkIMaxOff (φ : Name → Nat) (a b : Level) :
+    eval φ (mkIMaxOff a b) = eval φ (.imax a b) := by
+  unfold mkIMaxOff
+  split
+  · rename_i h
+    have := eval_pos_of_isNonZero φ h
+    rw [eval_mkMaxOff]; simp only [eval]; split <;> omega
+  split
+  · subst_vars; simp [eval]
+  split
+  · rename_i h
+    simp only [Bool.or_eq_true, decide_eq_true_eq] at h
+    rcases h with rfl | rfl <;> simp only [eval] <;> split <;> omega
+  split
+  · subst_vars; simp only [eval]; split <;> omega
+  · rfl
+
+theorem eval_officialForm (φ : Name → Nat) :
+    ∀ (l : Level), eval φ l.officialForm = eval φ l
+  | .succ l => by simp only [officialForm, eval, eval_officialForm φ l]
+  | .max a b => by
+    simp only [officialForm, eval_mkMaxOff, eval, eval_officialForm φ a, eval_officialForm φ b]
+  | .imax a b => by
+    simp only [officialForm, eval_mkIMaxOff, eval, eval_officialForm φ a, eval_officialForm φ b]
+  | .zero | .param _ => rfl
+
+/-- Levels of the same official forms read the same. -/
+theorem substFn_formsEq (φ : Name → Nat) :
+    ∀ (ks : List Name) {ls ls' : List Level}, formsEq ls ls' = true →
+      substFn φ ks ls = substFn φ ks ls'
+  | [], _, _, _ => by funext n; rfl
+  | _ :: _, [], [], _ => rfl
+  | k :: ks, l :: ls, l' :: ls', h => by
+    simp only [formsEq, Bool.and_eq_true, decide_eq_true_eq] at h
+    funext n
+    simp only [substFn]
+    rw [← eval_officialForm φ l, h.1, eval_officialForm, substFn_formsEq φ ks h.2]
+  | _ :: _, [], _ :: _, h | _ :: _, _ :: _, [], h => by simp [formsEq] at h
+
+theorem formsEq_length : ∀ {ls ls' : List Level}, formsEq ls ls' = true → ls.length = ls'.length
+  | [], [], _ => rfl
+  | _ :: _, _ :: _, h => by
+    simp only [formsEq, Bool.and_eq_true] at h
+    simp [formsEq_length h.2]
+  | [], _ :: _, h | _ :: _, [], h => by simp [formsEq] at h
+
 end ConLeche.Level

@@ -572,7 +572,7 @@ theorem rewriteStep_occDeep {env : Env} {names : List Name} (hN : WhnfNamesFree 
     {stuck : Bool} {e e₂ : Expr} {t : Name}
     (hrw : rewriteStep r env d stuck e = .ok (some (t, e₂))) (h0 : e.occDeep names = false) :
     e₂.occDeep names = false := by
-  obtain ⟨cv, args, us, u, A, c, ls, e₁, hf, hm, hres, -, -, hsub, -⟩ :=
+  obtain ⟨cv, args, us, u, A, c, ls, e₁, _, hf, hm, hres, -, -, hsub, -⟩ :=
     rewriteAttempt_inv (rewriteStep_inv hrw)
   have hQ : MatchPres r env d (fun a => a.occDeep names = false) :=
     ⟨by intro f a; simp only [Expr.occDeep, Bool.or_eq_false_iff],

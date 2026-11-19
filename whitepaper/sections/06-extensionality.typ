@@ -138,14 +138,14 @@ not a rule of its relations.
 
 #real[
   The checker has the rule as Lean has it,
-  #src("ConLeche/Rules/Rel.lean", 480, 491)[the constructor's fields compared with the projections of the other side],
+  #src("ConLeche/Rules/Rel.lean", 483, 494)[the constructor's fields compared with the projections of the other side],
   with
   #src("ConLeche/Model/Rules/DefEqSound.lean", 554, 556)[its soundness case].
   It uses the same law when it prepares the major premise of a
   recursor on a structure that is never a proposition at the instance.
   The major is taken as found, before any head normalisation, and the
   constructor is applied to its projections, with no further check
-  (#src("ConLeche/Rules/Rel.lean", 303, 312)[the rule],
+  (#src("ConLeche/Rules/Rel.lean", 306, 315)[the rule],
   #src("ConLeche/Model/Rules/IotaSound.lean", 763, 764)[its soundness case]).
   Only if that does not give a constructor application is the major
   head-normalised, and the same expansion is tried once more on the
@@ -189,7 +189,7 @@ by the same argument.
 
 #real[
   The checker has the rule for
-  #src("ConLeche/Rules/Rel.lean", 517, 517)[any unit-like type] (Lean's:
+  #src("ConLeche/Rules/Rel.lean", 520, 520)[any unit-like type] (Lean's:
   a Π-type whose codomain is unit-like, or a structure whose fields are
   propositions or unit-like), with
   #src("ConLeche/Model/Rules/UnitSound.lean", 487, 487)[its soundness case].

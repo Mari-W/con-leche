@@ -161,6 +161,7 @@ ConLeche.whnfLoopFuel
 # ConLeche.Kernel.CoreDefs — O(1)/O(spine) readers, Nat-op tables and guards over environment lookups
 ConLeche.Expr.ioNeutral
 ConLeche.Expr.isNatSuccApp
+ConLeche.Expr.levelFormEq
 ConLeche.andRescueSlotsOf
 ConLeche.boolFalseName
 ConLeche.boolName
@@ -392,16 +393,24 @@ ConLeche.Expr.instantiateLevelParams
 ConLeche.Level.allParamsDefined
 ConLeche.Level.byCases
 ConLeche.Level.combining
+ConLeche.Level.formsEq
 ConLeche.Level.imaxRules
 ConLeche.Level.isAlwaysZero
 ConLeche.Level.isEquiv
+ConLeche.Level.isExplicit
+ConLeche.Level.isNonZero
 ConLeche.Level.leq
 ConLeche.Level.leqCore
+ConLeche.Level.maxHas
+ConLeche.Level.mkIMaxOff
+ConLeche.Level.mkMaxOff
+ConLeche.Level.officialForm
 ConLeche.Level.rest
 ConLeche.Level.simplify
 ConLeche.Level.subst
 ConLeche.Level.subst.go
 ConLeche.Level.substPW
+ConLeche.Level.toOffset
 ConLeche.Level.zeroWhereZero
 ConLeche.Level.zeronessOf
 ConLeche.Name.nodup
