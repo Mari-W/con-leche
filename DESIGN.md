@@ -116443,3 +116443,29 @@ else reads the definitions. No model change.
 is 0 and was 1 before. `_norule`, the same theorem with no rule in force, is 1.
 `rewrite_rule_level_swap` stays 1, because its patched statement keeps the proof `trivial`. The lean4 tests `tests/elab/rewriteRules.lean` (section `Levels`) cover the
 elaborator and the kernel, with a negative case at `u` against `v`.
+
+## Rules that fire before unfolding: model check and plumbing (2026-11-19, rewrite-rules)
+
+The C++ kernel (lean4 1358036438) lets a rule marked `@[rewrite ↓]` fire before its head is
+unfolded (`.claude/notes/rules-before-delta.md` in the monorepo). The export writes such a rule as
+`{"rewrite":{"name":t,"head":h,"prio":p,"beforeDeltaKey":k}}`, where `k` names the key argument
+(`k = i + 1` for argument `i` of the left side, `0` for no key).
+
+**The model needs no change.** `Red.rewrite` (`Rules/Rel.lean`) has no premise about δ or about
+the term being stuck: any stored theorem in `env.rulesFor c` rewrites a term that matches its
+left side. A firing before δ is `Red.rewrite` at the term itself, exactly like a firing at a head
+that does not unfold. The placement chooses which reduction the checker takes, and the key and the
+syntactic matching only restrict when a rule is tried. Restricting or reordering firings needs no
+soundness argument, so `Red.rewrite_sound` covers the feature as it stands.
+
+**Plumbing (commit e407a1e3a).** Both scanners read `beforeDeltaKey` (`Key.kBeforeDeltaKey`,
+optional, duplicates rejected) into `DeclRec.rule … (pre : Option Nat)`, and
+`Declaration.rewriteDecl thm head prio pre` carries it into `RewriteRule.pre`. Nothing reads it
+yet, so every verdict is unchanged. `lake build`, `lake test` and `tests/shake.sh` pass.
+
+**Not started.** The checker side waits for the kernel measurements, which decide the defeq policy
+and whether the feature stays. The plan for it: `rewriteStep` gets a third mode that tries only
+the head's rules with `pre = some k` whose key matches, with syntactic matching (`ruleArgStep`
+without `ruleOrRetry`, `ruleBindVar` without the defeq fallback); `whnfStep` tries it before
+`unfoldDefinition` without noting an origin; `lazyDeltaStep` follows the chosen policy, and a side
+that fired drops its origin when the origin is the fired term.
