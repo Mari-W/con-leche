@@ -1139,12 +1139,25 @@ def ruleRetryI (eager : Bool) (lv : Nat) (depth : Nat) (a : Expr) : CheckCM Expr
   litToCtorIfNatI fe w
 termination_by (lv, 28, 0, 0)
 
+/-- Twin of `ruleBindVar`: a repeated variable's binding compared through `defeqI`. -/
+def ruleBindVarI (eager : Bool) (lv : Nat) (depth n k : Nat)
+    (st : List (Option Expr) × List (Option Level)) (e : Expr) :
+    CheckCM (Option ((List (Option Expr) × List (Option Level)) × Expr)) :=
+  match ruleSlot? n k st.1 with
+  | none => pure none
+  | some none => pure (some ((st.1.set (n - 1 - k) (some e), st.2), e))
+  | some (some e') =>
+    if e' = e then pure (some (st, e'))
+    else do
+      if ← defeqI eager lv depth e' e then pure (some (st, e')) else pure none
+termination_by (lv, 28, 0, 0)
+
 /-- Twin of `ruleArgStep` at the match's own recursion: the retry through `ruleRetryI`. -/
 def ruleArgI (eager : Bool) (lv : Nat) (depth n : Nat) (lps : List Name) (p : Expr)
     (st : List (Option Expr) × List (Option Level)) (a : Expr) :
     CheckCM (Option ((List (Option Expr) × List (Option Level)) × Expr)) :=
   match p.bvarIdx? with
-  | some k => pure (ruleBindVar n k st a)
+  | some k => ruleBindVarI eager lv depth n k st a
   | none => do
     match ← ruleMatchI eager lv depth n lps p st a with
     | some x => pure (some x)

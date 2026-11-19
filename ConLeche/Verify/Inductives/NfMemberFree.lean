@@ -574,11 +574,9 @@ theorem rewriteStep_occDeep {env : Env} {names : List Name} (hN : WhnfNamesFree 
     e₂.occDeep names = false := by
   obtain ⟨cv, args, us, u, A, c, ls, e₁, hf, hm, hres, -, -, hsub, -⟩ :=
     rewriteAttempt_inv (rewriteStep_inv hrw)
-  have hQ : MatchPres r env d (fun a b => a.occDeep names = false → b.occDeep names = false) :=
-    ⟨fun _ => id,
-      fun hf ha h => by
-        simp only [Expr.occDeep, Bool.or_eq_false_iff] at h ⊢; exact ⟨hf h.1, ha h.2⟩,
-      fun hab hbc h => hbc (hab h), fun hw h => litToCtorIfNat_occDeep hN (hwh hw h)⟩
+  have hQ : MatchPres r env d (fun a => a.occDeep names = false) :=
+    ⟨by intro f a; simp only [Expr.occDeep, Bool.or_eq_false_iff],
+      fun hw h => litToCtorIfNat_occDeep hN (hwh hw h)⟩
   have h1 := ruleArgsM_pres hQ hm h0
   have hT := hN.1 t _ hf (hN.2.2.2.2.2.2.2.2.2 t cv hf)
   have hR := piResidual_occDeep hres

@@ -328,7 +328,7 @@ ConLeche.mkIdxGo
 # User rewrite rules (Kernel/Core, Kernel/CoreDefs, Kernel/FEnv), run by the cached rule step as
 # they are. The index's rules of a head are one hash lookup and a filter over that head's few
 # rules. The cached matcher (`ruleMatchI`) walks the rule's left side once against the term, its
-# slots indexed by the rule's binder count; a variable position (`ruleBindVar`, `Expr.bvarIdx?`) is
+# slots indexed by the rule's binder count; a variable position (`ruleSlot?`, `Expr.bvarIdx?`) is
 # one slot read or write. The firing's gate is one pass over the term's application tree and its
 # free-variable leaves, beside the certificate pass each firing runs anyway. The budget and its
 # error are constants, as are the per-declaration budget and its error.
@@ -341,11 +341,11 @@ ConLeche.eqSpine?
 ConLeche.instDecidableRuleGate
 ConLeche.matchLevel
 ConLeche.matchLevels
-ConLeche.ruleBindVar
 ConLeche.ruleBudgetError
 ConLeche.ruleDeclBudget
 ConLeche.ruleDeclBudgetError
 ConLeche.ruleFireBudget
+ConLeche.ruleSlot?
 ConLeche.ruleTele
 
 # User rewrite rules' registration and rule sets (Kernel/CoreDefs, Kernel/Env, Kernel/FEnv), once per

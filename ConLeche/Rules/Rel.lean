@@ -178,8 +178,9 @@ inductive Red (env : Env) : Nat → Expr → Expr → Prop where
   its telescope applied to `args` under the full-grade certificate,
   rewrites a term `e` that matches the left side to the right side, both
   instantiated at `args`.  The match (`MatchRel`, `ruleMatchM`) relates `e`
-  to the instance `l` of the left side position by position: equal, or
-  reduced first (the retry on `whnf`).  The term has a constant head, so a ∀
+  to the instance `l` of the left side position by position: equal,
+  reduced first (the retry on `whnf`), or, at a repeated variable,
+  definitionally equal.  The term has a constant head, so a ∀
   or a sort never rewrites (`Red.rigid`), every argument is a subterm of the
   instance's application tree (where a first-order matcher finds it), and
   the right side has no free-variable leaf the instance lacks.  The theorem
@@ -805,12 +806,17 @@ inductive MatchRel (env : Env) : Nat → List Expr → Expr → Expr → Prop wh
 
 /-- **A rule's match, an argument position** (`ruleMatchM`'s argument arm):
 the position's spine matches, or it matches after a reduction of the term's
-argument (the retry on `whnf`, a `Nat` literal read as its constructor form). -/
+argument (the retry on `whnf`, a `Nat` literal read as its constructor form),
+or, at a repeated pattern variable (`ruleBindVar`), the instance's subterm is
+definitionally equal to the term's and is a subterm of the application tree of
+an instance subterm produced before the position (the variable's binding). -/
 inductive MatchArg (env : Env) : Nat → List Expr → Expr → Expr → Prop where
   | spine {d : Nat} {P : List Expr} {a a' : Expr} :
       MatchRel env d P a a' → MatchArg env d P a a'
   | red {d : Nat} {P : List Expr} {a a'' a' : Expr} :
       Red env d a a'' → MatchRel env d P a'' a' → MatchArg env d P a a'
+  | defeq {d : Nat} {P : List Expr} {a a' : Expr} :
+      DefEq env d a' a → (∃ q ∈ P, a' ∈ appSubterms q) → MatchArg env d P a a'
 
 /-- **Pairwise definitional equality** (`defEqList`, `Kernel/Core.lean`). -/
 inductive DefEqList (env : Env) : Nat → List Expr → List Expr → Prop where

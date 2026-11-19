@@ -14,8 +14,8 @@ architecture differs from the fragment's on the features they share.
 field of a structure value. For every inductive type with one
 constructor and no index the checker stores #src("ConLeche/Kernel/Install.lean", 69, 76)[a
 projection table], the fields' types read off the constructor. The
-real checker #src("ConLeche/Rules/Rel.lean", 204, 219)[reduces a projection of a
-constructor application to that field] and #src("ConLeche/Rules/Rel.lean", 706, 714)[infers its type from
+real checker #src("ConLeche/Rules/Rel.lean", 205, 220)[reduces a projection of a
+constructor application to that field] and #src("ConLeche/Rules/Rel.lean", 707, 715)[infers its type from
 the table]\; in the model a structure value is the tagged tuple of
 @sec:ext-eta and a projection reads a component, which
 #src("ConLeche/Model/Inductives/BlockStageTables.lean", 10, 12)[the
@@ -77,14 +77,14 @@ real checker never unfolds a theorem or an opaque: #src("ConLeche/Rules/Rel.lean
 unfolds].]
 
 #left-out[Structure η and unit-likeness][The checker has
-#src("ConLeche/Rules/Rel.lean", 487, 490)[structure η] and
-#src("ConLeche/Rules/Rel.lean", 550, 550)[unit-likeness] as Lean has them;
+#src("ConLeche/Rules/Rel.lean", 488, 491)[structure η] and
+#src("ConLeche/Rules/Rel.lean", 551, 551)[unit-likeness] as Lean has them;
 @sec:ext-eta and @sec:ext-unit derive both from extensionality.]
 
 #left-out[Recursors on stuck proofs of `A ∧ B`][The checker never
 unfolds a theorem, while the official kernel does. Some elaborated
 terms rely on that, with a case split on a stuck proof `h` of `A ∧ B`.
-There the recursor #src("ConLeche/Rules/Rel.lean", 328, 352)[fires on `And.intro h.1 h.2`],
+There the recursor #src("ConLeche/Rules/Rel.lean", 329, 353)[fires on `And.intro h.1 h.2`],
 the constructor applied to `h`'s two projections, built from `h`'s
 type.]
 
@@ -108,7 +108,7 @@ context. The real checker keeps no context at all. When it opens a binder it
 substitutes a free variable that carries its own type,
 #src("ConLeche/Kernel/Expr.lean", 435, 437)[`fvar idx type`], identified by the depth at which it was opened\; so a variable is never
 looked up, the relations are indexed by the opening depth in place of a
-context, and two free variables are #src("ConLeche/Rules/Rel.lean", 400, 401)[compared by depth alone]. Stored types are closed
+context, and two free variables are #src("ConLeche/Rules/Rel.lean", 401, 402)[compared by depth alone]. Stored types are closed
 terms, and `Denotes`, the relation the main theorem is stated over
 (below), reads them with de Bruijn indices under binders, with no
 opening at all.
@@ -128,10 +128,10 @@ denotation on the terms themselves.
 
 *Six relations, and a mode index.* Beside reduction,
 definitional equality and inference the real description has three
-more: #src("ConLeche/Rules/Rel.lean", 784, 793)[the certification of an argument spine against
+more: #src("ConLeche/Rules/Rel.lean", 785, 794)[the certification of an argument spine against
 a binder telescope] (the certified case of $iota$),
-#src("ConLeche/Rules/Rel.lean", 815, 820)[pairwise definitional equality], and
-#src("ConLeche/Rules/Rel.lean", 577, 616)[the congruence of two lambda telescopes]
+#src("ConLeche/Rules/Rel.lean", 821, 826)[pairwise definitional equality], and
+#src("ConLeche/Rules/Rel.lean", 578, 617)[the congruence of two lambda telescopes]
 (@sec:tax). A rule with a premise about a list or a telescope needs a
 relation of its own in a mutual block; the paper inlines them into the
 rules that use them. Inference also carries a

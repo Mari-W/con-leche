@@ -6,12 +6,17 @@
        LEAN_PATH=.:<rr-dev>/lib/lean leanexport RrMatch -- <theorem> > <fixture>.ndjson
        LEAN_PATH=.:<rr-dev>/lib/lean leanexport RrMatch -- nlDiffTgt nl_diff > nl_diff.ndjson
        python3 -I scripts/rewrite-fixtures/mk.py match nl_diff.ndjson tests/e2e
+       LEAN_PATH=.:<rr-dev>/lib/lean leanexport RrMatch -- nl_retry > nl_retry.ndjson
+       python3 -I scripts/rewrite-fixtures/mk.py nonlinear nl_retry.ndjson tests/e2e
 
    `lit_zero`, `lit_succ`, `whnf_delta` and `whnf_iota` need a pattern position matched up to
    whnf: a raw literal against `Nat.zero`/`Nat.succ m`, a δ step and an ι step on the argument.
    `nl_syn` and `nl_defeq` need the non-linear rule `myEq_self`, its two arguments syntactically
    equal and definitionally equal.  `mk.py match` gives `nl_diff` the statement of `nlDiffTgt`,
-   whose two arguments differ, so the rule does not fire. -/
+   whose two arguments differ, so the rule does not fire.  `nl_retry` needs the non-linear rule
+   `myEq_succ`: its first position matches `k + 1` only after the retry on whnf, which binds `n`
+   to a subterm of the reduct, and the second occurrence meets `k`, definitionally equal to that
+   binding and not syntactically.  `mk.py nonlinear` also writes it with its rule list dropped. -/
 def myAdd : Nat → Nat → Nat
   | n, .zero => n
   | n, .succ m => .succ (myAdd n m)
@@ -54,3 +59,8 @@ def nlDiffTgt (k m : Nat) : Prop := myEq k m = true
 
 rewrite_rules myEq_self in
 theorem nl_diff (k _m : Nat) : myEq k k = true := rfl
+
+@[rewrite] theorem myEq_succ (n : Nat) : myEq (Nat.succ n) (Nat.succ n) = true := Nat.beq_refl _
+
+rewrite_rules myEq_succ in
+theorem nl_retry (k : Nat) : myEq (k + 1) (Nat.succ k) = true := rfl

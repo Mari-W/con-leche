@@ -656,6 +656,13 @@ theorem defeqStuck_atF (d : Nat) (a b : Expr) (F : Nat) :
   unfold defeqStuck
   atF_core3 (rw [stuckIrrel_atF])
 
+theorem ruleBindVar_atF (d n k : Nat) (st : List (Option Expr) × List (Option Level)) (e : Expr)
+    (F : Nat) :
+    (ruleBindVar (fueledFns mode eager env) d n k st e).val F =
+      ruleBindVar (pureFns mode eager env F) d n k st e := by
+  unfold ruleBindVar
+  atF_tac
+
 theorem ruleMatchM_atF (d n : Nat) (lps : List Name) (F : Nat) :
     ∀ (pat : Expr) (st : List (Option Expr) × List (Option Level)) (e : Expr),
       (ruleMatchM (fueledFns mode eager env) env d n lps pat st e).val F =
@@ -667,7 +674,7 @@ theorem ruleMatchM_atF (d n : Nat) (lps : List Name) (F : Nat) :
     cases e with
     | app f' a =>
       simp only [ruleMatchM, ruleArgStep, ruleOrRetry, ruleRetry]
-      atF_core3 (first | rw [ihf] | rw [ihp])
+      atF_core3 (first | rw [ihf] | rw [ihp] | rw [ruleBindVar_atF])
     | _ => simp only [ruleMatchM]; rfl
   | _ => intro st e; cases e <;> simp only [ruleMatchM] <;> rfl
 

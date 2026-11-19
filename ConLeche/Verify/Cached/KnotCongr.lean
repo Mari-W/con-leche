@@ -487,6 +487,12 @@ theorem ruleRetryI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe�
   funext depth a; rw [ruleRetryI.eq_def, ruleRetryI.eq_def]
   simp only [litToCtorIfNatI_congr hfe, h]
 
+/-- `ruleBindVarI` reads `fe` only through `defeqI`. -/
+theorem ruleBindVarI_congr (h : SlotsEq mode fe₁ fe₂ lv) :
+    ruleBindVarI mode fe₁ eager lv = ruleBindVarI mode fe₂ eager lv := by
+  funext depth n k st e; rw [ruleBindVarI.eq_def, ruleBindVarI.eq_def]
+  simp only [h]
+
 /-- `ruleMatchI` and `ruleArgI` read `fe` only through `find?`. -/
 theorem ruleMatchI_ruleArgI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv)
     (depth n : Nat) (lps : List Name) :
@@ -502,12 +508,12 @@ theorem ruleMatchI_ruleArgI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq
       rw [ruleMatchI.eq_def, ruleMatchI.eq_def]
       have hp : ruleArgI mode fe₁ eager lv depth n lps p = ruleArgI mode fe₂ eager lv depth n lps p := by
         funext st a; rw [ruleArgI.eq_def, ruleArgI.eq_def]
-        simp only [ihp, ruleRetryI_congr hfe h]
+        simp only [ihp, ruleRetryI_congr hfe h, ruleBindVarI_congr h]
       cases e <;> simp only [ihf, hp]
     | _ => funext st e; rw [ruleMatchI.eq_def, ruleMatchI.eq_def]; try (cases e <;> rfl)
   refine ⟨hm, ?_⟩
   funext st a; rw [ruleArgI.eq_def, ruleArgI.eq_def]
-  simp only [hm, ruleRetryI_congr hfe h]
+  simp only [hm, ruleRetryI_congr hfe h, ruleBindVarI_congr h]
 
 theorem ruleMatchI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv) :
     ruleMatchI mode fe₁ eager lv = ruleMatchI mode fe₂ eager lv := by

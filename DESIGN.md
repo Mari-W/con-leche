@@ -116214,3 +116214,67 @@ and `lake test` are warning-free (`_tmp/r9/final-build3.log`, `_tmp/r9/final-tes
 `sorryAx` link moved to the `checkDeclC` lines it cites (`ParsedC.lean#L359-L360`). In the
 whitepaper seven citations moved, and the `Red.delta_soundU` one now points at the gated lemma,
 whose proof goes through `Red.delta_soundU_raw`.
+
+## Non-linear rules (2026-11-19, rewrite-rules, item 2 step 2)
+
+A rule's left side may use a pattern variable more than once, as in the C++ kernel (lean4
+`match_rewrite_pattern`'s variable case, and `check_rule_fn`, which no longer rejects a repeated
+variable). The first occurrence binds the variable. A later occurrence matches a syntactically
+equal subterm, and otherwise a definitionally equal one. The design of the step 1 record held.
+
+**The checker.** `ruleBindVar` (`Kernel/Core.lean`) is monadic. It reads the slot through the pure
+`ruleSlot?` (`Kernel/CoreDefs.lean`). A fresh slot binds the argument. A slot bound to `e'`
+matches the argument `e` where `e' = e`, and otherwise where `r.defeq depth e' e` answers `true`.
+The matched view holds `e'` at a repeated position, so the view stays the instance of the left
+side that `RuleGate` compares with `l`. `rulePat` drops its linearity test, and the registration
+now says "not a first-order pattern". The cached twin `ruleBindVarI` compares through `defeqI`.
+
+**The relation.** `MatchArg.defeq` relates the term's argument `a` to the instance's `a'` from
+`DefEq env d a' a` and `∃ q ∈ P, a' ∈ appSubterms q`. The second premise places the binding in the
+pool of instance subterms produced before the position. `Red.rewrite` is unchanged.
+
+**The model.** `MatchArg.defeq_sound` (`Model/Rules/MatchSound.lean`). `PoolOk` gives the pool
+term's frame, leaves and reading, and `appSubterms_pkg`, moved here from `RewriteSound.lean`,
+carries them to the binding. `DefEqSem` then gives the claim off the point. Step 1 threaded the
+pool for this, so nothing else in the model changed.
+
+**The bridge.** `ruleMatchM_bridge` takes the `isDefEq` bridge and carries `SlotsIn P st`: every
+binding lies in the application tree of a pool term. After a node, the bindings lie in the node's
+view or in the pool before it (`SlotsIn.app`).
+
+**Consumers.** `MatchPres` is now a one-place property. It holds of an application exactly when it
+holds of both parts, and the retry keeps it. `ruleMatchM_pres` threads `SlotsP Q st` beside the
+view. The relation from a term to its view, which step 1 used, fails at a repeated position:
+there the view holds a binding from an earlier position, whose leaves need not be the argument's.
+The leaves property became "the leaves lie in the start term's". The shift (`ruleMatchM_shift`)
+and the extension relation (`ruleMatchM_rel`) carry the slot invariant (`WScoped`, `Res`) for the
+comparison's own claims. `atF`, the pair projections and `KnotCongr` each have a lemma for the
+variable position. The cached simulation's `MatchWS` adds the slots' scope, and
+`ruleBindVarC_spec` covers the four arms by guarded equations (`ruleBindVar_none`, `_fresh`,
+`_same`, `_diff`). `Verify/EnvExt/Whnf.lean` now imports `InferLemmas` publicly, because `ResM`
+mentions `SlotsP`, and its imports of `Knot` and `Inductives/NestedRead` became implied (shake
+criterion run on the module, nothing beyond the noise floor).
+
+**Fixtures.** `rewrite_rule_nonlinear_syn` and `_defeq` flip from 1 to 0. `_diff` stays 1, now
+from the failed conversion and no longer from the registration. The new `rewrite_rule_nonlinear_retry`
+(`scripts/rewrite-fixtures/RrMatch.lean`, `mk.py nonlinear`, rr-dev 0) checks
+`myEq (k + 1) (Nat.succ k) = true` under `myEq_succ : myEq (succ n) (succ n) = true`. Its first
+position matches only after the retry on whnf, which binds `n` to a subterm of the reduct, and the
+second occurrence meets `k`, definitionally and not syntactically equal to it. It is accepted,
+and `_retry_norule`, its rule list dropped, is rejected.
+
+Cost. `perf stat -e instructions:u` at `--jobs=1` against fe6a0be15, built fresh in a worktree
+(`_tmp/r10/perf-base.txt`, `_tmp/r10/perf-new.txt`, `_tmp/r10/perf-table.txt`). Streams without
+rules cost -0.01% to +0.04%. The older rule fixtures cost -0.01% to +0.02%.
+`rewrite_rule_priority_loop` costs +0.47% (1.695 G to 1.703 G), about 120 instructions per firing
+for the monadic variable step, and `rewrite_rule_decl_budget` +0.34%. The non-linear fixtures have
+no comparable baseline, because fe6a0be15 rejects their registration. They now take 34.8 M to
+35.9 M.
+
+Gates. `lake build` and `lake test` warning-free (`_tmp/r10/build3.log`, `_tmp/r10/test3.log`),
+`tests/shake.sh` passes, 666 of 666 allowlisted and none demotable (`_tmp/r10/shake3.log`).
+`tests/arena.sh` exits 0 (`_tmp/r10/arena.log`), with plain-reach 677 reached (`ruleSlot?`
+allowlisted in place of `ruleBindVar`), e2e 645/645, olean gate 122/122, self-check 56 755
+declarations, axioms pinned, tutorial 90/92 as before, and the trusted and `--jobs` sweeps without
+divergence. Eleven OVERVIEW anchors and 29 whitepaper citations moved and were repointed, all
+pure moves. README needed none.

@@ -64,6 +64,42 @@ where both sides are graded and the term is not the point, the two are equal. -/
           WellDenoted V ρ ea → WellDenoted V ρ ea' → interp V ρ ea ≠ pt →
           interp V ρ ea' ≠ pt → interp V ρ ea = interp V ρ ea'
 
+/-- A subterm of the application tree inherits the leaves, the scoping
+and the reading of the whole. -/
+theorem appSubterms_pkg {d : Nat} :
+    ∀ (e : Expr) {x : Expr}, x ∈ ConLeche.appSubterms e →
+      (∀ y ∈ x.fvarLeaves, y ∈ e.fvarLeaves) ∧
+      (Expr.WScoped d e → Expr.WScoped d x) ∧
+      (e.looseBVarsBounded 0 = true → x.looseBVarsBounded 0 = true) ∧
+      (∀ {ea : Term}, denote m.acval env φ d e = some ea →
+        ∃ v, denote m.acval env φ d x = some v) := by
+  intro e
+  induction e with
+  | app f a ihf iha =>
+    intro x hx
+    simp only [ConLeche.appSubterms, List.mem_cons, List.mem_append] at hx
+    rcases hx with rfl | hx | hx
+    · exact ⟨fun _ h => h, id, id, fun h => ⟨_, h⟩⟩
+    · obtain ⟨hl, hw, hb, hd⟩ := ihf hx
+      refine ⟨fun y hy => ?_, fun h => hw ?_, fun h => hb ?_, fun h => ?_⟩
+      · rw [Expr.fvarLeaves]; exact List.mem_append_left _ (hl y hy)
+      · simp only [Expr.WScoped] at h; exact h.1
+      · simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at h; exact h.1
+      · obtain ⟨fa, aa, hfa, -, -⟩ := denote_app_inv h
+        exact hd hfa
+    · obtain ⟨hl, hw, hb, hd⟩ := iha hx
+      refine ⟨fun y hy => ?_, fun h => hw ?_, fun h => hb ?_, fun h => ?_⟩
+      · rw [Expr.fvarLeaves]; exact List.mem_append_right _ (hl y hy)
+      · simp only [Expr.WScoped] at h; exact h.2
+      · simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at h; exact h.2
+      · obtain ⟨fa, aa, -, haa, -⟩ := denote_app_inv h
+        exact hd haa
+  | _ =>
+    intro x hx
+    simp only [ConLeche.appSubterms, List.mem_singleton] at hx
+    subst hx
+    exact ⟨fun _ h => h, id, id, fun h => ⟨_, h⟩⟩
+
 theorem MatchRel.refl_sound {d : Nat} {P : List Expr} {e : Expr} :
     MatchRelSem m φ d P e e := by
   intro E Δa ea hf hsub _ _ hea
@@ -132,5 +168,22 @@ theorem MatchArg.red_sound {d : Nat} {P : List Expr} {a a'' a' : Expr}
   refine ⟨hf', hsub', ea', hea', fun ρ hρ hL hg hg' hne _ => ?_⟩
   obtain ⟨hg'', heq⟩ := hsr ρ hρ (hL.of_subset hsub) hg hne
   exact heq.trans (hsm ρ hρ hL hg'' hg' (heq ▸ hne))
+
+/-- A repeated pattern variable: the instance's subterm is the variable's binding, a subterm of the
+application tree of a pool term, so it is framed, inside the whole term's leaves and read, and
+the definitional equality gives the claim. -/
+theorem MatchArg.defeq_sound {d : Nat} {P : List Expr} {a a' : Expr}
+    (hd : DefEqSem m φ d a' a) (hp : ∃ q ∈ P, a' ∈ ConLeche.appSubterms q) :
+    MatchArgSem m φ d P a a' := by
+  intro E Δa ea hf hsub hC hP hea
+  obtain ⟨q, hq, hx⟩ := hp
+  obtain ⟨hfq, hsq, qa, hqa⟩ := hP q hq
+  obtain ⟨hl, hw, hb, hden⟩ := appSubterms_pkg (m := m) (φ := φ) (d := d) q hx
+  obtain ⟨ea', hea'⟩ := hden hqa
+  have hf' : Frame d a' := ⟨hw hfq.1, hb hfq.2.1, fun y hy => hfq.2.2 y (hl y hy)⟩
+  have hsub' : LeavesSub a' E := fun y hy => hsq y (hl y hy)
+  refine ⟨hf', hsub', ea', hea', fun ρ hρ hL hg hg' hne hne' => ?_⟩
+  exact (hd hf' hf (hC.of_subset hsub') (hC.of_subset hsub) hea' hea ρ hρ (hL.of_subset hsub')
+    (hL.of_subset hsub) hg' hg hne' hne).symm
 
 end ConLeche.Model.Rules

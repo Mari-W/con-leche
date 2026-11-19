@@ -50,6 +50,19 @@ if sys.argv[1] == "match":
     stmt_patch(sys.argv[2], f"{sys.argv[3]}/rewrite_rule_nonlinear_diff.ndjson", [("nl_diff", "nlDiffTgt")])
     sys.exit(0)
 
+if sys.argv[1] == "nonlinear":
+    # RrMatch.lean: a non-linear rule whose binding comes from a retried position, and the same
+    # theorem with no rule in force
+    src, out = sys.argv[2:4]
+    open(f"{out}/rewrite_rule_nonlinear_retry.ndjson", "w").write(open(src).read())
+    recs = [json.loads(l) for l in open(src).read().splitlines()]
+    for r in recs:
+        if "thm" in r: r["thm"].pop("rewrites", None)
+    J = lambda r: json.dumps(r, separators=(",", ":"))
+    open(f"{out}/rewrite_rule_nonlinear_retry_norule.ndjson", "w").write(
+        "\n".join(J(r) for r in recs) + "\n")
+    sys.exit(0)
+
 if sys.argv[1] == "order":
     # RrOrder.lean: the reduction order (δ first, the rules where the unfolding gets stuck)
     swap, stuck, cat, out = sys.argv[2:6]

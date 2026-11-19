@@ -1667,24 +1667,31 @@ private abbrev shiftSt (p : Nat) (st : List (Option Expr) × List (Option Level)
     List (Option Expr) × List (Option Level) :=
   (st.1.map (Option.map (shiftFrom p)), st.2)
 
-/-- A variable position at a shifted term binds the shifted subterm. -/
-private theorem ruleBindVar_shiftFrom {p n k : Nat}
-    (st : List (Option Expr) × List (Option Level)) (a : Expr) :
-    ruleBindVar n k (shiftSt p st) (shiftFrom p a) =
-      (ruleBindVar n k st a).map fun sx => (shiftSt p sx.1, shiftFrom p sx.2) := by
+/-- A variable position at a shifted term binds the shifted subterm; a repeated variable's
+comparison commutes with the shift (`ih.defeq`, the bindings scoped). -/
+private theorem ruleBindVar_shiftFrom (ih : ShiftClaims mode eager env fuel) {p d n k : Nat}
+    (hpd : p ≤ d) (st : List (Option Expr) × List (Option Level)) {a : Expr}
+    (hst : SlotsP (WScoped d) st) (hw : WScoped d a) :
+    ruleBindVar (pureFns mode eager env fuel) (d + 1) n k (shiftSt p st) (shiftFrom p a) =
+      (ruleBindVar (pureFns mode eager env fuel) d n k st a).map
+        (Option.map fun sx => (shiftSt p sx.1, shiftFrom p sx.2)) := by
   obtain ⟨sl, lv⟩ := st
-  simp only [ruleBindVar, shiftSt]
+  unfold ruleBindVar ruleSlot?
+  simp only [shiftSt]
   by_cases hk : k < n
-  · rw [ite_eq_left hk, ite_eq_left hk, getD_map_optShift]
-    cases sl.getD (n - 1 - k) none with
-    | none => simp [List.map_set]
+  · simp only [hk, ↓reduceIte, getD_map_optShift]
+    cases hs : sl.getD (n - 1 - k) none with
+    | none => simp [pure, Except.pure, Except.map, List.map_set]
     | some e' =>
       simp only [Option.map_some]
+      have hw' : WScoped d e' := hst e' (some_mem_of_getD_none hs)
       by_cases he : e' = a
-      · subst he; simp
+      · subst he; simp only [↓reduceIte]; rfl
       · have : ¬ shiftFrom p e' = shiftFrom p a := fun h => he (shiftFrom_injective h)
-        simp [he, this]
-  · rw [ite_eq_right hk, ite_eq_right hk]; rfl
+        simp only [he, this, ↓reduceIte]
+        refine bind_rel_eq _ (ih.defeq hpd hw' hw) fun b _ => ?_
+        cases b <;> rfl
+  · simp only [hk, ↓reduceIte]; rfl
 
 /-- The retry commutes with the shift. -/
 private theorem ruleRetry_shift (ih : ShiftClaims mode eager env fuel) {p d : Nat} (hpd : p ≤ d)
@@ -1714,7 +1721,8 @@ private theorem ruleRetry_WScoped (henv : EnvWF env) {d : Nat} {a a' : Expr}
 /-- **The match on a shifted term** binds the shifted subterms and gives the shifted matched view. -/
 private theorem ruleMatchM_shift (henv : EnvWF env) (ih : ShiftClaims mode eager env fuel)
     {p d n : Nat} (hpd : p ≤ d) {lps : List Name} :
-    ∀ (pat : Expr) (st : List (Option Expr) × List (Option Level)) {e : Expr}, WScoped d e →
+    ∀ (pat : Expr) (st : List (Option Expr) × List (Option Level)) {e : Expr},
+      SlotsP (WScoped d) st → WScoped d e →
       ruleMatchM (pureFns mode eager env fuel) env (d + 1) n lps pat (shiftSt p st)
           (shiftFrom p e) =
         (ruleMatchM (pureFns mode eager env fuel) env d n lps pat st e).map
@@ -1722,38 +1730,41 @@ private theorem ruleMatchM_shift (henv : EnvWF env) (ih : ShiftClaims mode eager
   intro pat
   induction pat with
   | app f q ihf ihq =>
-    intro st e hw
+    intro st e hst hw
     cases e with
     | app f' a =>
       simp only [WScoped] at hw
       simp only [shiftFrom, ruleMatchM]
       refine bind_rel (Option.map fun sx => (shiftSt p sx.1, shiftFrom p sx.2)) _
-        (ihf st hw.1) fun o _ => ?_
+        (ihf st hst hw.1) fun o ho => ?_
       cases o with
       | none => rfl
       | some sf =>
         obtain ⟨st₁, f₁⟩ := sf
+        have hst₁ : SlotsP (WScoped d) st₁ :=
+          (ruleMatchM_pres (MatchPres.wscoped fun h hw => whnf_WScoped henv fuel h hw) f hst
+            hw.1 ho).2
         simp only [Option.map_some]
         refine bind_rel (Option.map fun sx => (shiftSt p sx.1, shiftFrom p sx.2)) _ ?_
           fun o' _ => ?_
         · unfold ruleArgStep
           split
-          · rw [ruleBindVar_shiftFrom]; rfl
+          · exact ruleBindVar_shiftFrom ih hpd st₁ hst₁ hw.2
           · unfold ruleOrRetry
             refine bind_rel (Option.map fun sx => (shiftSt p sx.1, shiftFrom p sx.2)) _
-              (ihq st₁ hw.2) fun o _ => ?_
+              (ihq st₁ hst₁ hw.2) fun o _ => ?_
             cases o with
             | some x => rfl
             | none =>
               refine bind_rel (shiftFrom p) _ (ruleRetry_shift ih hpd hw.2) fun a' ha' => ?_
-              exact ihq st₁ (ruleRetry_WScoped henv ha' hw.2)
+              exact ihq st₁ hst₁ (ruleRetry_WScoped henv ha' hw.2)
         · cases o' with
           | none => rfl
           | some sa => rfl
     | fvar i ty => simp only [shiftFrom]; split <;> rfl
     | _ => rfl
   | const c ls =>
-    intro st e _
+    intro st e _ _
     obtain ⟨sl, lv⟩ := st
     cases e with
     | const c' ls' =>
@@ -1764,7 +1775,7 @@ private theorem ruleMatchM_shift (henv : EnvWF env) (ih : ShiftClaims mode eager
     | fvar i ty => simp only [shiftFrom]; split <;> rfl
     | _ => rfl
   | _ =>
-    intro st e _
+    intro st e _ _
     cases e with
     | fvar i ty => simp only [shiftFrom]; split <;> rfl
     | _ => rfl
@@ -1791,7 +1802,8 @@ private theorem ruleArgsM_shift (henv : EnvWF env) (ih : ShiftClaims mode eager 
   split
   · rename_i _ _ _ l₀ _ _
     have hm := ruleMatchM_shift (n := (ruleTele cv.type).1) (lps := cv.levelParams) henv ih hpd l₀
-      (List.replicate (ruleTele cv.type).1 none, List.replicate cv.levelParams.length none) hw
+      (List.replicate (ruleTele cv.type).1 none, List.replicate cv.levelParams.length none)
+      (SlotsP.replicate _ _ _) hw
     rw [show shiftSt p (List.replicate (ruleTele cv.type).1 (none : Option Expr),
         List.replicate cv.levelParams.length (none : Option Level)) =
         (List.replicate (ruleTele cv.type).1 none, List.replicate cv.levelParams.length none)

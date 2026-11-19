@@ -3536,13 +3536,20 @@
 0 rewrite_rule_match_delta.ndjson
 0 rewrite_rule_match_iota.ndjson
 # a non-linear rule `myEq_self : myEq n n = true` (RrMatch.lean, rr-dev 0), at syntactically equal
-# and at definitionally equal arguments (`k`, `id k`).  Today the registration rejects a non-linear
-# left side.  Target 0.
-1 rewrite_rule_nonlinear_syn.ndjson
-1 rewrite_rule_nonlinear_defeq.ndjson
+# and at definitionally equal arguments (`k`, `id k`).  A repeated variable matches a syntactically
+# equal subterm, and otherwise a definitionally equal one (`ruleBindVar`).  Before non-linear rules
+# the registration rejected the left side (1).
+0 rewrite_rule_nonlinear_syn.ndjson
+0 rewrite_rule_nonlinear_defeq.ndjson
 # the same rule at two different variables (`mk.py match` patches the statement): the rule does not
-# fire.  Today the registration rejects it; target 1, from the failed conversion.
+# fire, and the conversion fails.  Before non-linear rules the registration rejected it.
 1 rewrite_rule_nonlinear_diff.ndjson
+# a non-linear rule `myEq_succ : myEq (succ n) (succ n) = true` at `myEq (k + 1) (succ k)` (RrMatch.lean,
+# rr-dev 0): the first position matches only after its retry on whnf, which binds `n` to a subterm
+# of the reduct, and the second occurrence meets `k`, definitionally equal to it.  `_norule` is the
+# same theorem with its rule list dropped (`mk.py nonlinear`), rejected by the failed conversion.
+0 rewrite_rule_nonlinear_retry.ndjson
+1 rewrite_rule_nonlinear_retry_norule.ndjson
 # the reduction order (scripts/rewrite-fixtures/RrOrder.lean, rr-dev 0): δ first, and a rule on a
 # definition only where its unfolding gets stuck (official `whnf` and `is_def_eq_core`'s rules last).
 # `swap (1, 2) = (2, 1)` under `swap_loop : swap (a, b) = swap (swap (b, a))`: δ gives a pair, a

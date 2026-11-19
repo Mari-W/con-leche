@@ -1,10 +1,8 @@
 module
 
 public import ConLeche.Verify.EnvExt.Rel
-public import ConLeche.Verify.Knot
-import ConLeche.Verify.InferLemmas
+public import ConLeche.Verify.InferLemmas
 import ConLeche.Verify.IotaReduct
-import ConLeche.Verify.Inductives.NestedRead
 
 /-!
 # A run does not see an extension of the environment: head normalization and inference (task #480)
@@ -549,48 +547,69 @@ theorem ruleRetry_rel {a : Expr} (ha : Res env₁ a) :
   rw [litToCtorIfNat_ext hx hw]
   exact Rel.ok (res_litToCtorIfNat hw)
 
-/-- What a rule's match hands on: the matched view resolves. -/
+/-- What a rule's match hands on: the matched view and the slots' bindings resolve. -/
 abbrev ResM (env : Env) (o : Option ((List (Option Expr) × List (Option Level)) × Expr)) : Prop :=
-  ∀ st x, o = some (st, x) → Res env x
+  ∀ st x, o = some (st, x) → Res env x ∧ SlotsP (Res env) st
+
+omit hx in
+/-- A variable position: a repeated variable's comparison runs on resolved terms. -/
+theorem ruleBindVar_rel (n k : Nat) (st : List (Option Expr) × List (Option Level)) {a : Expr}
+    (hst : SlotsP (Res env₁) st) (ha : Res env₁ a) :
+    Rel (ResM env₁) (ruleBindVar r₂ d n k st a) (ruleBindVar r₁ d n k st a) := by
+  unfold ruleBindVar
+  rcases hs : ruleSlot? n k st.1 with _ | (_ | e')
+  · exact Rel.ok fun _ _ h => nomatch h
+  · refine Rel.ok fun st' x h => ?_
+    simp only [Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, rfl⟩ := h
+    exact ⟨ha, hst.set ha _⟩
+  · have he' : Res env₁ e' := hst e' (ruleSlot?_mem hs)
+    have hok : ResM env₁ (some (st, e')) := fun st' x h => by
+      simp only [Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      exact ⟨he', hst⟩
+    refine Rel.ite (fun _ => Rel.ok hok) fun _ => Rel.bind (K.defeq d he' ha) fun v _ => ?_
+    exact Rel.iteB v (fun _ => Rel.ok hok) fun _ => Rel.ok fun _ _ h => nomatch h
 
 theorem ruleMatchM_rel (n : Nat) (lps : List Name) :
-    ∀ (pat : Expr) (st : List (Option Expr) × List (Option Level)) {e : Expr}, Res env₁ e →
+    ∀ (pat : Expr) (st : List (Option Expr) × List (Option Level)) {e : Expr},
+      SlotsP (Res env₁) st → Res env₁ e →
       Rel (ResM env₁) (ruleMatchM r₂ env₂ d n lps pat st e) (ruleMatchM r₁ env₁ d n lps pat st e) := by
   intro pat
   induction pat with
   | app f p ihf ihp =>
-    intro st e he
+    intro st e hst he
     cases e with
     | app f' a =>
       obtain ⟨hf', ha⟩ := res_app.mp he
       simp only [ruleMatchM]
-      refine Rel.bind (ihf st hf') fun o ho => ?_
+      refine Rel.bind (ihf st hst hf') fun o ho => ?_
       cases o with
       | none => exact Rel.ok fun _ _ h => nomatch h
       | some sf =>
         obtain ⟨st₁, f₁⟩ := sf
-        have hf₁ := ho _ _ rfl
+        obtain ⟨hf₁, hst₁⟩ := ho _ _ rfl
         refine Rel.bind (Q := ResM env₁) ?_ fun o' ho' => ?_
         · unfold ruleArgStep
           split
-          · refine Rel.ok fun st' x h => ?_
-            rw [ruleBindVar_eq h]; exact ha
+          · exact ruleBindVar_rel K d n _ st₁ hst₁ ha
           · unfold ruleOrRetry
-            refine Rel.bind (ihp st₁ ha) fun o ho => ?_
+            refine Rel.bind (ihp st₁ hst₁ ha) fun o ho => ?_
             cases o with
             | some y => exact Rel.ok ho
-            | none => exact Rel.bind (ruleRetry_rel K d hx ha) fun a' ha' => ihp st₁ ha'
+            | none => exact Rel.bind (ruleRetry_rel K d hx ha) fun a' ha' => ihp st₁ hst₁ ha'
         · cases o' with
           | none => exact Rel.ok fun _ _ h => nomatch h
           | some sa =>
             obtain ⟨st₂, a₁⟩ := sa
             refine Rel.ok fun st' x h => ?_
             simp only [Option.some.injEq, Prod.mk.injEq] at h
-            obtain ⟨-, rfl⟩ := h
-            exact res_app.mpr ⟨hf₁, ho' _ _ rfl⟩
+            obtain ⟨rfl, rfl⟩ := h
+            obtain ⟨ha₁, hst₂⟩ := ho' _ _ rfl
+            exact ⟨res_app.mpr ⟨hf₁, ha₁⟩, hst₂⟩
     | _ => exact Rel.ok fun _ _ h => nomatch h
   | const c ls =>
-    intro st e he
+    intro st e hst he
     obtain ⟨sl, lv⟩ := st
     cases e with
     | const c' ls' =>
@@ -599,10 +618,11 @@ theorem ruleMatchM_rel (n : Nat) (lps : List Name) :
       split at h
       · obtain ⟨lv', -, h⟩ := Option.map_eq_some_iff.mp h
         simp only [Prod.mk.injEq] at h
-        rw [← h.2]; exact he
+        obtain ⟨rfl, rfl⟩ := h
+        exact ⟨he, hst⟩
       · exact nomatch h
     | _ => exact Rel.ok fun _ _ h => nomatch h
-  | _ => intro st e he; exact Rel.ok fun _ _ h => nomatch h
+  | _ => intro st e _ he; exact Rel.ok fun _ _ h => nomatch h
 
 /-- What the match's arguments hand on: the matched view resolves. -/
 abbrev ResA (env : Env) (o : Option (List Expr × List Level × Expr)) : Prop :=
@@ -612,7 +632,7 @@ theorem ruleArgsM_rel (cv : ConstantVal) {e : Expr} (he : Res env₁ e) :
     Rel (ResA env₁) (ruleArgsM r₂ env₂ d cv e) (ruleArgsM r₁ env₁ d cv e) := by
   unfold ruleArgsM
   split
-  · refine Rel.bind (ruleMatchM_rel K d hx _ _ _ _ he) fun o ho => ?_
+  · refine Rel.bind (ruleMatchM_rel K d hx _ _ _ _ (SlotsP.replicate _ _ _) he) fun o ho => ?_
     cases o with
     | none => exact Rel.ok fun _ _ _ h => nomatch h
     | some x =>
@@ -622,7 +642,7 @@ theorem ruleArgsM_rel (cv : ConstantVal) {e : Expr} (he : Res env₁ e) :
       · refine Rel.ok fun args us x h => ?_
         simp only [Option.some.injEq, Prod.mk.injEq] at h
         obtain ⟨-, -, rfl⟩ := h
-        exact ho _ _ rfl
+        exact (ho _ _ rfl).1
       · exact Rel.ok fun _ _ _ h => nomatch h
   · exact Rel.ok fun _ _ _ h => nomatch h
 

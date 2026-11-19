@@ -46,42 +46,6 @@ variable {V : Type w} [SetTheory V] {env : Env} {m : EnvModel V env}
 theorem self_mem_appSubterms (e : Expr) : e ∈ ConLeche.appSubterms e := by
   cases e <;> simp [ConLeche.appSubterms]
 
-/-- A subterm of the application tree inherits the leaves, the scoping
-and the reading of the whole. -/
-theorem appSubterms_pkg {d : Nat} :
-    ∀ (e : Expr) {x : Expr}, x ∈ ConLeche.appSubterms e →
-      (∀ y ∈ x.fvarLeaves, y ∈ e.fvarLeaves) ∧
-      (Expr.WScoped d e → Expr.WScoped d x) ∧
-      (e.looseBVarsBounded 0 = true → x.looseBVarsBounded 0 = true) ∧
-      (∀ {ea : Term}, denote m.acval env φ d e = some ea →
-        ∃ v, denote m.acval env φ d x = some v) := by
-  intro e
-  induction e with
-  | app f a ihf iha =>
-    intro x hx
-    simp only [ConLeche.appSubterms, List.mem_cons, List.mem_append] at hx
-    rcases hx with rfl | hx | hx
-    · exact ⟨fun _ h => h, id, id, fun h => ⟨_, h⟩⟩
-    · obtain ⟨hl, hw, hb, hd⟩ := ihf hx
-      refine ⟨fun y hy => ?_, fun h => hw ?_, fun h => hb ?_, fun h => ?_⟩
-      · rw [Expr.fvarLeaves]; exact List.mem_append_left _ (hl y hy)
-      · simp only [Expr.WScoped] at h; exact h.1
-      · simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at h; exact h.1
-      · obtain ⟨fa, aa, hfa, -, -⟩ := denote_app_inv h
-        exact hd hfa
-    · obtain ⟨hl, hw, hb, hd⟩ := iha hx
-      refine ⟨fun y hy => ?_, fun h => hw ?_, fun h => hb ?_, fun h => ?_⟩
-      · rw [Expr.fvarLeaves]; exact List.mem_append_right _ (hl y hy)
-      · simp only [Expr.WScoped] at h; exact h.2
-      · simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at h; exact h.2
-      · obtain ⟨fa, aa, -, haa, -⟩ := denote_app_inv h
-        exact hd haa
-  | _ =>
-    intro x hx
-    simp only [ConLeche.appSubterms, List.mem_singleton] at hx
-    subst hx
-    exact ⟨fun _ h => h, id, id, fun h => ⟨_, h⟩⟩
-
 /-- A subterm of the application tree is framed and in context where
 the whole is. -/
 theorem appSubterms_frame {d : Nat} {Δa : List Term} {e x : Expr}

@@ -283,13 +283,13 @@
    366  theorem checkDecls_envWF {maxNatSize : Nat} {ds : Array Declaration} {env' : Env}
    367      (h : checkDecls .verified pins maxNatSize ds = .ok env') : EnvWF env' := by
 
-== ConLeche/Verify/Cached/KnotCongr.lean#L863-L868
-   863  theorem knotI_congr (hfe : fe₁.find? = fe₂.find?) (htb : fe₁.findTable? = fe₂.findTable?)
-   864      (hru : fe₁.rulesFor = fe₂.rulesFor)
-   865      (hbk : fe₁.base.blk = fe₂.base.blk) :
-   866      whnfCoreI mode fe₁ = whnfCoreI mode fe₂ ∧ whnfI mode fe₁ = whnfI mode fe₂ ∧
-   867        inferI mode fe₁ = inferI mode fe₂ ∧ defeqI mode fe₁ = defeqI mode fe₂ ∧
-   868        defeqEI mode fe₁ = defeqEI mode fe₂ ∧ ensureSortI mode fe₁ = ensureSortI mode fe₂ := by
+== ConLeche/Verify/Cached/KnotCongr.lean#L869-L874
+   869  theorem knotI_congr (hfe : fe₁.find? = fe₂.find?) (htb : fe₁.findTable? = fe₂.findTable?)
+   870      (hru : fe₁.rulesFor = fe₂.rulesFor)
+   871      (hbk : fe₁.base.blk = fe₂.base.blk) :
+   872      whnfCoreI mode fe₁ = whnfCoreI mode fe₂ ∧ whnfI mode fe₁ = whnfI mode fe₂ ∧
+   873        inferI mode fe₁ = inferI mode fe₂ ∧ defeqI mode fe₁ = defeqI mode fe₂ ∧
+   874        defeqEI mode fe₁ = defeqEI mode fe₂ ∧ ensureSortI mode fe₁ = ensureSortI mode fe₂ := by
 
 == ConLeche/Kernel/TypeChecker.lean#L29-L54
     29  def whnfCore (env : Env) (fuel depth : Nat) (e : Expr) (cheap : Bool := false) :
@@ -319,13 +319,13 @@
     53  def ensureSortCore (env : Env) (fuel depth : Nat) (e : Expr) : CheckM Level :=
     54    ensureSort (pureFns mode eager env fuel) env depth e
 
-== ConLeche/Kernel/Core.lean#L2107-L2112
-  2107        whnf := fun _ _ => throw (.internal "fuel exhausted: whnf")
-  2108        infer := fun _ _ => throw (.internal "fuel exhausted: infer")
-  2109        defeq := fun _ _ _ => throw (.internal "fuel exhausted: defeq")
-  2110        defeqE := fun _ _ _ => throw (.internal "fuel exhausted: defeq")
-  2111        inferIO := fun _ _ => throw (.internal "fuel exhausted: infer") }
-  2112    | fuel + 1 =>
+== ConLeche/Kernel/Core.lean#L2123-L2128
+  2123        whnf := fun _ _ => throw (.internal "fuel exhausted: whnf")
+  2124        infer := fun _ _ => throw (.internal "fuel exhausted: infer")
+  2125        defeq := fun _ _ _ => throw (.internal "fuel exhausted: defeq")
+  2126        defeqE := fun _ _ _ => throw (.internal "fuel exhausted: defeq")
+  2127        inferIO := fun _ _ => throw (.internal "fuel exhausted: infer") }
+  2128    | fuel + 1 =>
 
 == ConLeche/Model/Fold.lean#L478-L485
    478  theorem no_proof_of_False_pure (V : Type w) [SetTheory V]
@@ -368,56 +368,56 @@
 == ConLeche/Kernel/Env.lean#L55
     55  inductive CheckMode where
 
-== ConLeche/Kernel/Core.lean#L1340
-  1340  def whnfBody (r : CoreFns m) (env : Env) : Nat → Expr → m Expr :=
+== ConLeche/Kernel/Core.lean#L1356
+  1356  def whnfBody (r : CoreFns m) (env : Env) : Nat → Expr → m Expr :=
 
-== ConLeche/Kernel/Core.lean#L1614
-  1614  def defeqSpine (r : CoreFns m) (env : Env) (depth : Nat) (a b : Expr) :
+== ConLeche/Kernel/Core.lean#L1630
+  1630  def defeqSpine (r : CoreFns m) (env : Env) (depth : Nat) (a b : Expr) :
 
-== ConLeche/Kernel/Core.lean#L2074-L2092
-  2074  def defeqBody (eager : Bool) (r : CoreFns m) (env : Env) : Nat → Expr → Expr → m Bool :=
-  2075    fun depth a b => do
-  2076      if a == b then pure true else
-  2077      match ctorTargetFor env eager a b with
-  2078      | some c =>
-  2079        let w ← r.whnf depth a
-  2080        match ctorHeadAgainst env c w with
-  2081        | some true => defeqLazy mode eager r env depth w b
-  2082        | some false => pure false
-  2083        | none => defeqLazy mode eager r env depth a b
-  2084      | none =>
-  2085      match ctorTargetFor env eager b a with
-  2086      | some c =>
-  2087        let w ← r.whnf depth b
-  2088        match ctorHeadAgainst env c w with
-  2089        | some true => defeqLazy mode eager r env depth a w
-  2090        | some false => pure false
-  2091        | none => defeqLazy mode eager r env depth a b
-  2092      | none => defeqLazy mode eager r env depth a b
+== ConLeche/Kernel/Core.lean#L2090-L2108
+  2090  def defeqBody (eager : Bool) (r : CoreFns m) (env : Env) : Nat → Expr → Expr → m Bool :=
+  2091    fun depth a b => do
+  2092      if a == b then pure true else
+  2093      match ctorTargetFor env eager a b with
+  2094      | some c =>
+  2095        let w ← r.whnf depth a
+  2096        match ctorHeadAgainst env c w with
+  2097        | some true => defeqLazy mode eager r env depth w b
+  2098        | some false => pure false
+  2099        | none => defeqLazy mode eager r env depth a b
+  2100      | none =>
+  2101      match ctorTargetFor env eager b a with
+  2102      | some c =>
+  2103        let w ← r.whnf depth b
+  2104        match ctorHeadAgainst env c w with
+  2105        | some true => defeqLazy mode eager r env depth a w
+  2106        | some false => pure false
+  2107        | none => defeqLazy mode eager r env depth a b
+  2108      | none => defeqLazy mode eager r env depth a b
 
-== ConLeche/Kernel/Core.lean#L1979-L1988
-  1979  def rulesLast (r : CoreFns m) (env : Env) (depth : Nat) (oa ob : Option Expr) (a b : Expr) :
-  1980      m Bool := do
-  1981    let ra ← originFire r env depth oa a
-  1982    let rb ← originFire r env depth ob b
-  1983    match ra, rb with
-  1984    | none, none => pure false
-  1985    | some (_, a₂), none => r.defeq depth a₂ b
-  1986    | none, some (_, b₂) => r.defeq depth a b₂
-  1987    | some (_, a₂), some (_, b₂) => r.defeq depth a₂ b₂
-  1988  
+== ConLeche/Kernel/Core.lean#L1995-L2004
+  1995  def rulesLast (r : CoreFns m) (env : Env) (depth : Nat) (oa ob : Option Expr) (a b : Expr) :
+  1996      m Bool := do
+  1997    let ra ← originFire r env depth oa a
+  1998    let rb ← originFire r env depth ob b
+  1999    match ra, rb with
+  2000    | none, none => pure false
+  2001    | some (_, a₂), none => r.defeq depth a₂ b
+  2002    | none, some (_, b₂) => r.defeq depth a b₂
+  2003    | some (_, a₂), some (_, b₂) => r.defeq depth a₂ b₂
+  2004  
 
-== ConLeche/Kernel/Core.lean#L1524
-  1524  def inferBodyIO (r : CoreFns m) (env : Env) : Nat → Expr → m Expr :=
+== ConLeche/Kernel/Core.lean#L1540
+  1540  def inferBodyIO (r : CoreFns m) (env : Env) : Nat → Expr → m Expr :=
 
-== ConLeche/Kernel/Core.lean#L1636
-  1636  def defeqBindersInner (r : CoreFns m) (lam : Bool) (depth : Nat) (b₁ b₂ : Expr) : m Bool := do
+== ConLeche/Kernel/Core.lean#L1652
+  1652  def defeqBindersInner (r : CoreFns m) (lam : Bool) (depth : Nat) (b₁ b₂ : Expr) : m Bool := do
 
 == ConLeche/Verify/Cached/BridgeC.lean#L351
    351  theorem checkDeclStepC_run {env : Env} (henv : EnvWF env) {pd : Declaration}
 
-== ConLeche/Kernel/Core.lean#L2152
-  2152  @[irreducible, noinline] def checkFuel : Nat := 4611686018427387904  -- 2^62
+== ConLeche/Kernel/Core.lean#L2168
+  2168  @[irreducible, noinline] def checkFuel : Nat := 4611686018427387904  -- 2^62
 
 == ConLeche/Kernel/Exclusive.lean#L6-L42
      6  # `withExclusive`: the reference-count read behind the walk memo
@@ -825,31 +825,31 @@
    108  inductive Red (env : Env) : Nat → Expr → Expr → Prop where
    109    /-- Every `pure e` exit: the value clauses of `whnfCoreBody`
 
-== ConLeche/Rules/Rel.lean#L359-L382
-   359  checker only ever compares terms that are well-formed *together* — a
-   360  fact the rules never state, because well-formedness (scoping, the
-   361  readability of the terms, the grading of the reading) is semantic
-   362  and may not enter this inductive.  Every rule respects one syntactic
-   363  discipline instead: **the subject of each `DefEq` premise is either a
-   364  subterm of the conclusion or is produced by an existence-form `Red` /
-   365  `Infer` premise** (a reduct, an inferred type), so the soundness proof
-   366  (`ConLeche/Model/Rules/Sound.lean`) always has the premise's terms in
-   367  hand.  `trans` is the unique rule that would break it: its middle
-   368  term comes from nowhere, and with it two rules that are each sound
-   369  alone meet — `fvar` compares free variables by index only (their
-   370  types are not compared, as the checker does not), while
-   371  `proofFast` *reads* a head's stored data to decide "definitely a
-   372  proof" — and derive `DefEq env d (.fvar i ty) (.fvar i' ty')` for
-   373  every `i`, `i'`, which no model satisfies.  The recursive-structure rules
-   374  (`redL`, `natSucc`, `eta`, `structUnit`) are therefore not a
-   375  proof-engineering convenience but what keeps the relation sound; the
-   376  one chaining that is sound, "reduce, then continue", is `redL`, and
-   377  its right-hand and δ variants are derived in `Derived.lean`. -/
-   378  inductive DefEq (env : Env) : Nat → Expr → Expr → Prop where
-   379    /-- The syntactic fast paths (`defeqBody`, `quickDefEq`),
-   380    the literal leaf (`:1582`), a same-index `fvar` pair is `fvar`
-   381    below. -/
-   382    | refl {d : Nat} {a : Expr} : DefEq env d a a
+== ConLeche/Rules/Rel.lean#L360-L383
+   360  checker only ever compares terms that are well-formed *together* — a
+   361  fact the rules never state, because well-formedness (scoping, the
+   362  readability of the terms, the grading of the reading) is semantic
+   363  and may not enter this inductive.  Every rule respects one syntactic
+   364  discipline instead: **the subject of each `DefEq` premise is either a
+   365  subterm of the conclusion or is produced by an existence-form `Red` /
+   366  `Infer` premise** (a reduct, an inferred type), so the soundness proof
+   367  (`ConLeche/Model/Rules/Sound.lean`) always has the premise's terms in
+   368  hand.  `trans` is the unique rule that would break it: its middle
+   369  term comes from nowhere, and with it two rules that are each sound
+   370  alone meet — `fvar` compares free variables by index only (their
+   371  types are not compared, as the checker does not), while
+   372  `proofFast` *reads* a head's stored data to decide "definitely a
+   373  proof" — and derive `DefEq env d (.fvar i ty) (.fvar i' ty')` for
+   374  every `i`, `i'`, which no model satisfies.  The recursive-structure rules
+   375  (`redL`, `natSucc`, `eta`, `structUnit`) are therefore not a
+   376  proof-engineering convenience but what keeps the relation sound; the
+   377  one chaining that is sound, "reduce, then continue", is `redL`, and
+   378  its right-hand and δ variants are derived in `Derived.lean`. -/
+   379  inductive DefEq (env : Env) : Nat → Expr → Expr → Prop where
+   380    /-- The syntactic fast paths (`defeqBody`, `quickDefEq`),
+   381    the literal leaf (`:1582`), a same-index `fvar` pair is `fvar`
+   382    below. -/
+   383    | refl {d : Nat} {a : Expr} : DefEq env d a a
 
 == ConLeche/Verify/Rules/Bridge.lean#L29-L32
     29  theorem bridgeAt (env : Env) :
@@ -1327,9 +1327,9 @@
     37  record installs nothing and any use of it declines
     38  (`sorryAxName`, `ConLeche/Kernel/Basis/Names.lean`).
 
-== ConLeche/Kernel/Core.lean#L1390-L1391
-  1390    match env.find? entry.structName with
-  1391    | some (.indInfo cvT caps) => do
+== ConLeche/Kernel/Core.lean#L1406-L1407
+  1406    match env.find? entry.structName with
+  1407    | some (.indInfo cvT caps) => do
 
 >>> README.md
 

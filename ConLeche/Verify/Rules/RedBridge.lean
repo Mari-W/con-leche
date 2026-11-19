@@ -348,17 +348,50 @@ theorem reduceProjCore_bridge (hw : WhnfBridge .verified eager env fuel)
     (.proj hfp hfn hi hlen hus hc
       (peelPis_isSome_instantiateLevelParams _ _ _ harity))
 
-/-- **A rule's match is `MatchRel`**: the spine position by position, an argument equal, or
-matched after its retry (`whnf` through the bridge, then the literal conversion). -/
-theorem ruleMatchM_bridge (hw : WhnfBridge μ eager env fuel) {d n : Nat} {lps : List Name} :
+/-- **The pool invariant** of a rule's match: every binding of the binder slots is a subterm of
+the application tree of a pool term. -/
+@[expose] def SlotsIn (P : List Expr) (st : List (Option Expr) × List (Option Level)) : Prop :=
+  ∀ x, some x ∈ st.1 → ∃ q ∈ P, x ∈ appSubterms q
+
+theorem SlotsIn.replicate (P : List Expr) (n : Nat) (lv : List (Option Level)) :
+    SlotsIn P (List.replicate n none, lv) := fun _ hx =>
+  nomatch List.eq_of_mem_replicate (show _ ∈ List.replicate n none from hx)
+
+theorem SlotsIn.cons {P : List Expr} {q : Expr} {st : List (Option Expr) × List (Option Level)}
+    (h : SlotsIn P st) : SlotsIn (q :: P) st := fun x hx =>
+  let ⟨q', hq', hx'⟩ := h x hx
+  ⟨q', List.mem_cons_of_mem _ hq', hx'⟩
+
+/-- The pool after an application position: the bindings in the function's view, the argument's
+view or the pool before lie in the application's view or the pool before. -/
+theorem SlotsIn.app {P : List Expr} {f₁ a₁ : Expr} {st : List (Option Expr) × List (Option Level)}
+    (h : SlotsIn (a₁ :: f₁ :: P) st) : SlotsIn (.app f₁ a₁ :: P) st := fun x hx => by
+  obtain ⟨q, hq, hxq⟩ := h x hx
+  simp only [List.mem_cons] at hq
+  rcases hq with rfl | rfl | hq
+  · exact ⟨_, List.mem_cons_self, by
+      simp only [appSubterms, List.mem_cons, List.mem_append]; exact Or.inr (Or.inr hxq)⟩
+  · exact ⟨_, List.mem_cons_self, by
+      simp only [appSubterms, List.mem_cons, List.mem_append]; exact Or.inr (Or.inl hxq)⟩
+  · exact ⟨q, List.mem_cons_of_mem _ hq, hxq⟩
+
+theorem mem_appSubterms_self (e : Expr) : e ∈ appSubterms e := by
+  cases e <;> simp [appSubterms]
+
+/-- **A rule's match is `MatchRel`**: the spine position by position, an argument equal, matched
+after its retry (`whnf` through the bridge, then the literal conversion), or, at a repeated
+variable, definitionally equal to its binding (through the `isDefEq` bridge), which the pool
+invariant places in the application tree of an earlier view. -/
+theorem ruleMatchM_bridge (hw : WhnfBridge μ eager env fuel) (hd : DefEqBridge μ eager env fuel)
+    {d n : Nat} {lps : List Name} :
     ∀ (pat : Expr) (P : List Expr) {st st' : List (Option Expr) × List (Option Level)}
-      {e e₁ : Expr},
+      {e e₁ : Expr}, SlotsIn P st →
       ruleMatchM (pureFns μ eager env fuel) env d n lps pat st e = .ok (some (st', e₁)) →
-      MatchRel env d P e e₁ := by
+      MatchRel env d P e e₁ ∧ SlotsIn (e₁ :: P) st' := by
   intro pat
   induction pat with
   | app f p ihf ihp =>
-    intro P st st' e e₁ h
+    intro P st st' e e₁ hst h
     cases e with
     | app f' a =>
       simp only [ruleMatchM] at h
@@ -373,42 +406,52 @@ theorem ruleMatchM_bridge (hw : WhnfBridge μ eager env fuel) {d n : Nat} {lps :
         | some sa =>
           obtain ⟨st₂, a₁⟩ := sa
           simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq, Prod.mk.injEq] at h
-          obtain ⟨-, rfl⟩ := h
-          refine .app (ihf P ho) ?_
+          obtain ⟨rfl, rfl⟩ := h
+          obtain ⟨hmf, hst₁⟩ := ihf P hst ho
+          suffices hA : MatchArg env d (f₁ :: P) a a₁ ∧ SlotsIn (a₁ :: f₁ :: P) st₂ from
+            ⟨.app hmf hA.1, hA.2.app⟩
           unfold ruleArgStep at ho'
           split at ho'
-          · simp only [pure, Except.pure, Except.ok.injEq] at ho'
-            rw [ruleBindVar_eq ho']
-            exact .spine .refl
+          · rcases ruleBindVar_inv ho' with ⟨rfl, rfl⟩ | ⟨rfl, hmem, hor⟩
+            · refine ⟨.spine .refl, fun x hx => ?_⟩
+              rcases List.mem_or_eq_of_mem_set hx with hx | hx
+              · exact hst₁.cons x hx
+              · exact ⟨a₁, List.mem_cons_self, (Option.some.inj hx) ▸ mem_appSubterms_self _⟩
+            · refine ⟨?_, hst₁.cons⟩
+              rcases hor with rfl | hdq
+              · exact .spine .refl
+              · exact .defeq (hd hdq) (hst₁ _ hmem)
           · unfold ruleOrRetry at ho'
             obtain ⟨o, ho, h⟩ := bindM_ok ho'
             cases o with
             | some x =>
               simp only [pure, Except.pure, Except.ok.injEq] at h
               obtain rfl := Option.some.inj h
-              exact .spine (ihp _ ho)
+              obtain ⟨hm, hs⟩ := ihp _ hst₁ ho
+              exact ⟨.spine hm, hs⟩
             | none =>
               obtain ⟨a', ha', h⟩ := bindM_ok h
               unfold ruleRetry at ha'
               obtain ⟨w, hwh, ha'⟩ := bindM_ok ha'
               simp only [pure, Except.pure, Except.ok.injEq] at ha'
               subst ha'
-              exact .red (.trans (hw hwh) (.litToCtorIfNat w)) (ihp _ h)
+              obtain ⟨hm, hs⟩ := ihp _ hst₁ h
+              exact ⟨.red (.trans (hw hwh) (.litToCtorIfNat w)) hm, hs⟩
     | _ => simp [ruleMatchM, pure, Except.pure] at h
   | const c ls =>
-    intro P st st' e e₁ h
+    intro P st st' e e₁ hst h
     obtain ⟨sl, lv⟩ := st
     cases e with
     | const c' ls' =>
       simp only [ruleMatchM, pure, Except.pure, Except.ok.injEq] at h
       split at h
-      · rename_i hc
-        obtain ⟨lv', -, h⟩ := Option.map_eq_some_iff.mp h
+      · obtain ⟨lv', -, h⟩ := Option.map_eq_some_iff.mp h
         simp only [Prod.mk.injEq] at h
-        rw [← h.2]; exact .refl
+        obtain ⟨rfl, rfl⟩ := h
+        exact ⟨.refl, hst.cons⟩
       · exact nomatch h
     | _ => simp [ruleMatchM, pure, Except.pure] at h
-  | _ => intro P st st' e e₁ h; simp [ruleMatchM, pure, Except.pure] at h
+  | _ => intro P st st' e e₁ _ h; simp [ruleMatchM, pure, Except.pure] at h
 
 /-- A firing rewrite rule is `Red.rewrite`: `rewriteAttempt_inv` hands every premise, the
 certificates and the match through the bridges, and `rewriteStep_mem` the rule's place in the
@@ -423,7 +466,8 @@ theorem rewriteStep_bridge (hw : WhnfBridge μ eager env fuel) (hd : DefEqBridge
   obtain ⟨c', ls', hfn', hmem⟩ := rewriteStep_mem h
   obtain ⟨l₀, st', hm'⟩ := ruleArgsM_inv hm
   exact .rewrite hf hlen (iotaCertsFull_bridge hd hi hcert) hres hfn'
-    (ruleMatchM_bridge hw l₀ [] hm') hsub hleaf hmem
+    (ruleMatchM_bridge hw hd l₀ [] (SlotsIn.replicate _ _ _) hm').1
+    hsub hleaf hmem
 
 /-- ι-then-rules ⇒ `Red.iota` or `Red.rewrite`. -/
 theorem iotaThenRule_bridge (hw : WhnfBridge .verified eager env fuel)

@@ -307,6 +307,7 @@ theorem matchArg_sound (hin : RulesInputs V m φ) :
     ∀ {d : Nat} {P : List Expr} {e e' : Expr}, MatchArg env d P e e' → MatchArgSem m φ d P e e'
   | _, _, _, _, .spine h => MatchArg.spine_sound (matchRel_sound hin h)
   | _, _, _, _, .red hr hm => MatchArg.red_sound (red_sound hin hr) (matchRel_sound hin hm)
+  | _, _, _, _, .defeq hd hp => MatchArg.defeq_sound (defeq_sound hin hd) hp
 
 theorem defEqList_sound (hin : RulesInputs V m φ) :
     ∀ {d : Nat} {as bs : List Expr},

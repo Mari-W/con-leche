@@ -311,82 +311,140 @@ theorem bindM_ok {α β : Type} {x : CheckM α} {f : α → CheckM β} {b : β}
   | error e => rw [hx] at h; exact nomatch h
   | ok a => rw [hx] at h; exact ⟨a, rfl, h⟩
 
-/-- **What a rule's match keeps**: a relation that is reflexive, transitive, a congruence for
-application and holds from a term to its retry (`ruleRetry`) holds from the term to its matched
-view. -/
-structure MatchPres (r : CoreFns CheckM) (env : Env) (d : Nat) (Q : Expr → Expr → Prop) : Prop where
-  refl : ∀ x, Q x x
-  app : ∀ {f f₁ a a₁}, Q f f₁ → Q a a₁ → Q (.app f a) (.app f₁ a₁)
-  trans : ∀ {a b c}, Q a b → Q b c → Q a c
-  retry : ∀ {a w}, r.whnf d a = .ok w → Q a (litToCtorIfNat env w)
+/-- **What a rule's match keeps**: a property of terms that holds of an application exactly when
+it holds of both parts, and that a term's retry (`ruleRetry`) keeps, holds of the matched view and
+of every binding of the slots where it holds of the term and of the bindings before. -/
+structure MatchPres (r : CoreFns CheckM) (env : Env) (d : Nat) (Q : Expr → Prop) : Prop where
+  app : ∀ {f a}, Q (.app f a) ↔ Q f ∧ Q a
+  retry : ∀ {a w}, r.whnf d a = .ok w → Q a → Q (litToCtorIfNat env w)
 
-theorem ruleBindVar_eq {n k : Nat} {st st' : List (Option Expr) × List (Option Level)}
-    {a a₁ : Expr} (h : ruleBindVar n k st a = some (st', a₁)) : a₁ = a := by
-  obtain ⟨sl, lv⟩ := st
-  simp only [ruleBindVar] at h
-  by_cases hk : k < n
-  · rw [ite_eq_left hk] at h
-    cases hs : sl.getD (n - 1 - k) none with
-    | none =>
-      rw [hs] at h; simp only [Option.some.injEq, Prod.mk.injEq] at h; exact h.2.symm
-    | some e' =>
-      rw [hs] at h; dsimp only at h
-      split at h
-      · simp only [Option.some.injEq, Prod.mk.injEq] at h; exact h.2.symm
-      · exact nomatch h
-  · rw [ite_eq_right hk] at h; exact nomatch h
+/-- **The slot invariant** of a rule's match: every binding of the binder slots has `Q`. -/
+@[expose] def SlotsP (Q : Expr → Prop) (st : List (Option Expr) × List (Option Level)) : Prop :=
+  ∀ x, some x ∈ st.1 → Q x
 
-theorem ruleArgStep_pres {r : CoreFns CheckM} {env : Env} {d n : Nat} {Q : Expr → Expr → Prop}
+theorem SlotsP.set {Q : Expr → Prop} {st : List (Option Expr) × List (Option Level)} {a : Expr}
+    (h : SlotsP Q st) (ha : Q a) (i : Nat) : SlotsP Q (st.1.set i (some a), st.2) := by
+  intro x hx
+  rcases List.mem_or_eq_of_mem_set hx with hx | hx
+  · exact h x hx
+  · exact (Option.some.inj hx) ▸ ha
+
+theorem SlotsP.lv {Q : Expr → Prop} {sl : List (Option Expr)} {lv lv' : List (Option Level)}
+    (h : SlotsP Q (sl, lv)) : SlotsP Q (sl, lv') := h
+
+theorem SlotsP.replicate (Q : Expr → Prop) (n : Nat) (lv : List (Option Level)) :
+    SlotsP Q (List.replicate n none, lv) := by
+  intro x hx
+  exact nomatch (List.eq_of_mem_replicate hx)
+
+theorem some_mem_of_getD_none {l : List (Option Expr)} {i : Nat} {x : Expr}
+    (h : l.getD i none = some x) : some x ∈ l := by
+  rw [List.getD_eq_getElem?_getD] at h
+  cases hh : l[i]? with
+  | none => rw [hh] at h; exact nomatch h
+  | some y =>
+    rw [hh] at h
+    exact (show y = some x from h) ▸ List.mem_of_getElem? hh
+
+theorem ruleSlot?_mem {n k : Nat} {sl : List (Option Expr)} {e' : Expr}
+    (h : ruleSlot? n k sl = some (some e')) : some e' ∈ sl := by
+  unfold ruleSlot? at h
+  split at h
+  · exact some_mem_of_getD_none (Option.some.inj h)
+  · exact nomatch h
+
+/-- **A variable position, read back**: a fresh binding of the argument, or a binding already in
+the slots, syntactically or definitionally equal to the argument, the state unchanged. -/
+theorem ruleBindVar_inv {r : CoreFns CheckM} {d n k : Nat}
+    {st st' : List (Option Expr) × List (Option Level)} {a a₁ : Expr}
+    (h : ruleBindVar r d n k st a = .ok (some (st', a₁))) :
+    (st' = (st.1.set (n - 1 - k) (some a), st.2) ∧ a₁ = a) ∨
+      (st' = st ∧ some a₁ ∈ st.1 ∧ (a₁ = a ∨ r.defeq d a₁ a = .ok true)) := by
+  unfold ruleBindVar at h
+  split at h
+  · exact nomatch h
+  · simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq, Prod.mk.injEq] at h
+    exact Or.inl ⟨h.1.symm, h.2.symm⟩
+  · rename_i e' hs
+    have hmem : some e' ∈ st.1 := ruleSlot?_mem hs
+    split at h
+    · rename_i heq
+      simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      exact Or.inr ⟨rfl, hmem, Or.inl heq⟩
+    · obtain ⟨b, hb, h⟩ := bindM_ok h
+      cases b with
+      | false => simp [pure, Except.pure] at h
+      | true =>
+        simp only [↓reduceIte, pure, Except.pure, Except.ok.injEq, Option.some.injEq,
+          Prod.mk.injEq] at h
+        obtain ⟨rfl, rfl⟩ := h
+        exact Or.inr ⟨rfl, hmem, Or.inr hb⟩
+
+/-- A variable position keeps the slot invariant, and its matched view has the property. -/
+theorem ruleBindVar_pres {r : CoreFns CheckM} {d n k : Nat} {Q : Expr → Prop}
+    {st st' : List (Option Expr) × List (Option Level)} {a a₁ : Expr}
+    (hst : SlotsP Q st) (ha : Q a) (h : ruleBindVar r d n k st a = .ok (some (st', a₁))) :
+    Q a₁ ∧ SlotsP Q st' := by
+  rcases ruleBindVar_inv h with ⟨rfl, rfl⟩ | ⟨rfl, hmem, -⟩
+  · exact ⟨ha, hst.set ha _⟩
+  · exact ⟨hst _ hmem, hst⟩
+
+theorem ruleArgStep_pres {r : CoreFns CheckM} {env : Env} {d n : Nat} {Q : Expr → Prop}
     (hQ : MatchPres r env d Q)
     {k : Expr → CheckM (Option ((List (Option Expr) × List (Option Level)) × Expr))}
-    (hk : ∀ {x st' x₁}, k x = .ok (some (st', x₁)) → Q x x₁)
     {p a a₁ : Expr} {st st' : List (Option Expr) × List (Option Level)}
-    (h : ruleArgStep r env d n k p st a = .ok (some (st', a₁))) : Q a a₁ := by
+    (hk : ∀ {x st' x₁}, Q x → k x = .ok (some (st', x₁)) → Q x₁ ∧ SlotsP Q st')
+    (hst : SlotsP Q st) (ha : Q a)
+    (h : ruleArgStep r env d n k p st a = .ok (some (st', a₁))) : Q a₁ ∧ SlotsP Q st' := by
   unfold ruleArgStep at h
   split at h
-  · simp only [pure, Except.pure, Except.ok.injEq] at h
-    rw [ruleBindVar_eq h]; exact hQ.refl a
+  · exact ruleBindVar_pres hst ha h
   · unfold ruleOrRetry at h
     obtain ⟨o, ho, h⟩ := bindM_ok h
     cases o with
     | some x =>
       simp only [pure, Except.pure, Except.ok.injEq] at h
-      obtain rfl := Option.some.inj h; exact hk ho
+      obtain rfl := Option.some.inj h; exact hk ha ho
     | none =>
       obtain ⟨a', ha', h⟩ := bindM_ok h
       unfold ruleRetry at ha'
       obtain ⟨w, hw, ha'⟩ := bindM_ok ha'
       simp only [pure, Except.pure, Except.ok.injEq] at ha'
       subst ha'
-      exact hQ.trans (hQ.retry hw) (hk h)
+      exact hk (hQ.retry hw ha) h
 
 theorem ruleMatchM_pres {r : CoreFns CheckM} {env : Env} {d n : Nat} {lps : List Name}
-    {Q : Expr → Expr → Prop} (hQ : MatchPres r env d Q) :
+    {Q : Expr → Prop} (hQ : MatchPres r env d Q) :
     ∀ (pat : Expr) {st st' : List (Option Expr) × List (Option Level)} {e e₁ : Expr},
-      ruleMatchM r env d n lps pat st e = .ok (some (st', e₁)) → Q e e₁ := by
+      SlotsP Q st → Q e →
+      ruleMatchM r env d n lps pat st e = .ok (some (st', e₁)) → Q e₁ ∧ SlotsP Q st' := by
   intro pat
   induction pat with
   | app f p ihf ihp =>
-    intro st st' e e₁ h
+    intro st st' e e₁ hst he h
     cases e with
     | app f' a =>
+      obtain ⟨hf', ha⟩ := hQ.app.mp he
       simp only [ruleMatchM] at h
       obtain ⟨o, ho, h⟩ := bindM_ok h
       cases o with
       | none => simp [pure, Except.pure] at h
       | some sf =>
         obtain ⟨st₁, f₁⟩ := sf
+        obtain ⟨hf₁, hst₁⟩ := ihf hst hf' ho
         obtain ⟨o', ho', h⟩ := bindM_ok h
         cases o' with
         | none => simp [pure, Except.pure] at h
         | some sa =>
           obtain ⟨st₂, a₁⟩ := sa
           simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq, Prod.mk.injEq] at h
-          obtain ⟨-, rfl⟩ := h
-          exact hQ.app (ihf ho) (ruleArgStep_pres hQ (fun hx => ihp hx) ho')
+          obtain ⟨rfl, rfl⟩ := h
+          obtain ⟨ha₁, hst₂⟩ := ruleArgStep_pres hQ (fun hx h => ihp hst₁ hx h) hst₁ ha ho'
+          exact ⟨hQ.app.mpr ⟨hf₁, ha₁⟩, hst₂⟩
     | _ => simp [ruleMatchM, pure, Except.pure] at h
   | const c ls =>
-    intro st st' e e₁ h
+    intro st st' e e₁ hst he h
     obtain ⟨sl, lv⟩ := st
     cases e with
     | const c' ls' =>
@@ -394,10 +452,11 @@ theorem ruleMatchM_pres {r : CoreFns CheckM} {env : Env} {d n : Nat} {lps : List
       split at h
       · obtain ⟨lv', -, h⟩ := Option.map_eq_some_iff.mp h
         simp only [Prod.mk.injEq] at h
-        rw [← h.2]; exact hQ.refl _
+        obtain ⟨rfl, rfl⟩ := h
+        exact ⟨he, hst⟩
       · exact nomatch h
     | _ => simp [ruleMatchM, pure, Except.pure] at h
-  | _ => intro st st' e e₁ h; simp [ruleMatchM, pure, Except.pure] at h
+  | _ => intro st st' e e₁ _ _ h; simp [ruleMatchM, pure, Except.pure] at h
 
 /-- The match's arguments and levels, with the matched view of the term. -/
 theorem ruleArgsM_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {cv : ConstantVal}
@@ -422,11 +481,11 @@ theorem ruleArgsM_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {cv : ConstantV
   · simp [pure, Except.pure] at h
 
 theorem ruleArgsM_pres {r : CoreFns CheckM} {env : Env} {d : Nat} {cv : ConstantVal}
-    {e e₁ : Expr} {args : List Expr} {us : List Level} {Q : Expr → Expr → Prop}
-    (hQ : MatchPres r env d Q) (h : ruleArgsM r env d cv e = .ok (some (args, us, e₁))) :
-    Q e e₁ := by
+    {e e₁ : Expr} {args : List Expr} {us : List Level} {Q : Expr → Prop}
+    (hQ : MatchPres r env d Q) (h : ruleArgsM r env d cv e = .ok (some (args, us, e₁)))
+    (he : Q e) : Q e₁ := by
   obtain ⟨l₀, st', hm⟩ := ruleArgsM_inv h
-  exact ruleMatchM_pres hQ l₀ hm
+  exact (ruleMatchM_pres hQ l₀ (SlotsP.replicate Q _ _) he hm).1
 
 /-- **Inversion for a rule firing**: the firing's checks, read back, at the matched view `e₁`
 of the term. -/
@@ -3158,9 +3217,8 @@ theorem appSubterms_WScoped {d : Nat} (e : Expr) :
 /-- A rule's match keeps well-scopedness where the retry's `whnf` does. -/
 theorem MatchPres.wscoped {env : Env} {r : CoreFns CheckM} {d : Nat}
     (hwh : ∀ {a w : Expr}, r.whnf d a = .ok w → WScoped d a → WScoped d w) :
-    MatchPres r env d (fun a b => WScoped d a → WScoped d b) :=
-  ⟨fun _ => id, fun hf ha h => by simp only [WScoped] at h ⊢; exact ⟨hf h.1, ha h.2⟩,
-    fun hab hbc h => hbc (hab h), fun hw h => litToCtorIfNat_WScoped (hwh hw h)⟩
+    MatchPres r env d (WScoped d) :=
+  ⟨by intro f a; simp only [WScoped], fun hw h => litToCtorIfNat_WScoped (hwh hw h)⟩
 
 /-- **A rule's right side is scoped where the term it rewrites is**: the theorem's type is
 closed, the arguments are subterms of the term. -/

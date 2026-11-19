@@ -524,6 +524,12 @@ theorem reduceNat_snd_proj (d : Nat) (e : Expr) :
   unfold reduceNat
   snd_tac
 
+theorem ruleBindVar_fst_proj (d n k : Nat) (st : List (Option Expr) × List (Option Level))
+    (e : Expr) :
+    (ruleBindVar (pairFns r₁ r₂ h) d n k st e).val.1 = ruleBindVar r₁ d n k st e := by
+  unfold ruleBindVar
+  fst_tac
+
 theorem ruleMatchM_fst_proj (d n : Nat) (lps : List Name) :
     ∀ (pat : Expr) (st : List (Option Expr) × List (Option Level)) (e : Expr),
       (ruleMatchM (pairFns r₁ r₂ h) env d n lps pat st e).val.1 =
@@ -539,11 +545,18 @@ theorem ruleMatchM_fst_proj (d n : Nat) (lps : List Name) :
         | rfl
         | (rw [ihf])
         | (rw [ihp])
+        | (rw [ruleBindVar_fst_proj])
         | ((rw [PairM.fst_bind]; congr 1 <;> try rfl) <;> try funext _)
         | (dsimp only [])
         | split)
     | _ => simp only [ruleMatchM]; rfl
   | _ => intro st e; cases e <;> simp only [ruleMatchM] <;> rfl
+
+theorem ruleBindVar_snd_proj (d n k : Nat) (st : List (Option Expr) × List (Option Level))
+    (e : Expr) :
+    (ruleBindVar (pairFns r₁ r₂ h) d n k st e).val.2 = ruleBindVar r₂ d n k st e := by
+  unfold ruleBindVar
+  snd_tac
 
 theorem ruleMatchM_snd_proj (d n : Nat) (lps : List Name) :
     ∀ (pat : Expr) (st : List (Option Expr) × List (Option Level)) (e : Expr),
@@ -560,6 +573,7 @@ theorem ruleMatchM_snd_proj (d n : Nat) (lps : List Name) :
         | rfl
         | (rw [ihf])
         | (rw [ihp])
+        | (rw [ruleBindVar_snd_proj])
         | ((rw [PairM.snd_bind]; congr 1 <;> try rfl) <;> try funext _)
         | (dsimp only [])
         | split)

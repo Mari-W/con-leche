@@ -392,28 +392,73 @@ theorem rewriteStep_notconst {m : Type → Type} [Monad m] [MonadExceptOf CheckE
 @[conleche_grind =] theorem RuleWS.some_eq (d : Nat) (t : Name) (e : Expr) :
     RuleWS d (some (t, e)) = Expr.WScoped d e := rfl
 
-/-- A rule match's scope side condition: the matched view is well-scoped. -/
+/-- A rule match's scope side condition: the matched view and the slots' bindings are
+well-scoped. -/
 @[expose] def MatchWS (d : Nat) :
     Option ((List (Option Expr) × List (Option Level)) × Expr) → Prop
   | none => True
-  | some (_, x) => Expr.WScoped d x
+  | some (st, x) => Expr.WScoped d x ∧ SlotsP (Expr.WScoped d) st
 
 @[conleche_grind =] theorem MatchWS.none_eq (d : Nat) : MatchWS d none = True := rfl
 
 @[conleche_grind =] theorem MatchWS.some_eq (d : Nat) (st : List (Option Expr) × List (Option Level))
-    (x : Expr) : MatchWS d (some (st, x)) = Expr.WScoped d x := rfl
+    (x : Expr) : MatchWS d (some (st, x)) = (Expr.WScoped d x ∧ SlotsP (Expr.WScoped d) st) := rfl
 
-/-- A variable position's matched view is the argument. -/
-theorem MatchWS.bindVar {d n k : Nat} {st : List (Option Expr) × List (Option Level)} {a : Expr}
-    (h : Expr.WScoped d a) : MatchWS d (ruleBindVar n k st a) := by
-  cases ho : ruleBindVar n k st a with
-  | none => trivial
-  | some sx =>
-    obtain ⟨st', x⟩ := sx
-    rw [MatchWS.some_eq, ruleBindVar_eq ho]; exact h
-grind_pattern [conleche_grind] MatchWS.bindVar => MatchWS d (ruleBindVar n k st a)
-grind_pattern [conleche_grind] ruleBindVar_eq => ruleBindVar n k st a, some (st', a₁) where
-  guard ruleBindVar n k st a = some (st', a₁)
+grind_pattern [conleche_grind] SlotsP.set => SlotsP Q (st.1.set i (some a), st.2)
+grind_pattern [conleche_grind] SlotsP.replicate => SlotsP Q (List.replicate n none, lv)
+grind_pattern [conleche_grind] SlotsP.lv => SlotsP Q (sl, lv'), SlotsP Q (sl, lv)
+
+/-! A variable position's four arms, one guarded equation each, on both sides. -/
+
+theorem ruleBindVar_none {m : Type → Type} [Monad m] {r : CoreFns m} {d n k : Nat}
+    {st : List (Option Expr) × List (Option Level)} {e : Expr} (h : ruleSlot? n k st.1 = none) :
+    ruleBindVar r d n k st e = pure none := by
+  unfold ruleBindVar; rw [h]
+grind_pattern [conleche_grind] ruleBindVar_none => ruleBindVar r d n k st e where
+  guard ruleSlot? n k st.1 = none
+
+theorem ruleBindVar_fresh {m : Type → Type} [Monad m] {r : CoreFns m} {d n k : Nat}
+    {st : List (Option Expr) × List (Option Level)} {e : Expr}
+    (h : ruleSlot? n k st.1 = some none) :
+    ruleBindVar r d n k st e = pure (some ((st.1.set (n - 1 - k) (some e), st.2), e)) := by
+  unfold ruleBindVar; rw [h]
+grind_pattern [conleche_grind] ruleBindVar_fresh => ruleBindVar r d n k st e where
+  guard ruleSlot? n k st.1 = some none
+
+theorem ruleBindVar_same {m : Type → Type} [Monad m] {r : CoreFns m} {d n k : Nat}
+    {st : List (Option Expr) × List (Option Level)} {e e' : Expr}
+    (h : ruleSlot? n k st.1 = some (some e')) (he : e' = e) :
+    ruleBindVar r d n k st e = pure (some (st, e')) := by
+  unfold ruleBindVar; rw [h]; exact ite_eq_left he
+grind_pattern [conleche_grind] ruleBindVar_same => ruleBindVar r d n k st e, some (some e') where
+  guard ruleSlot? n k st.1 = some (some e')
+  guard e' = e
+
+theorem ruleBindVar_diff {m : Type → Type} [Monad m] {r : CoreFns m} {d n k : Nat}
+    {st : List (Option Expr) × List (Option Level)} {e e' : Expr}
+    (h : ruleSlot? n k st.1 = some (some e')) (he : ¬e' = e) :
+    ruleBindVar r d n k st e =
+      (r.defeq d e' e >>= fun b => if b = true then pure (some (st, e')) else pure none) := by
+  unfold ruleBindVar; rw [h]; exact ite_eq_right he
+grind_pattern [conleche_grind] ruleBindVar_diff => ruleBindVar r d n k st e, some (some e') where
+  guard ruleSlot? n k st.1 = some (some e')
+  guard ¬e' = e
+
+/-- A variable position simulates its specification: a repeated variable's comparison through
+`ih.defeq_spec`, its binding scoped by the slot invariant. -/
+theorem ruleBindVarC_spec (ih : SSimC mode eager env f) {d n k : Nat}
+    (st : List (Option Expr) × List (Option Level)) {e : Expr} {s₀ : CState}
+    (hs : CSOK mode eager env s₀) (hst : SlotsP (Expr.WScoped d) st) (hw : Expr.WScoped d e) :
+    ⦃fun s => s = s₀⦄ ruleBindVarI mode (mkFEnv env) eager f d n k st e
+    ⦃fun o s' => CSOK mode eager env s' ∧
+      Runs (ruleBindVar (fueledFns mode eager env) d n k st e) o ∧ MatchWS d o; ⊤⦄ := by
+  rcases hq : ruleSlot? n k st.1 with _ | (_ | e')
+  · sym only [conleche_grind] => vcgen [ruleBindVarI.eq_def] <;> finish
+  · sym only [conleche_grind] => vcgen [ruleBindVarI.eq_def] <;> finish
+  · have hw' : Expr.WScoped d e' := hst e' (ruleSlot?_mem hq)
+    by_cases he : e' = e
+    · sym only [conleche_grind] => vcgen [ruleBindVarI.eq_def] <;> finish
+    · sym only [conleche_grind] => vcgen [ruleBindVarI.eq_def, ih.defeq_spec] <;> finish
 
 /-- The match's arguments' scope side condition: the matched view is well-scoped. -/
 @[expose] def ArgsWS (d : Nat) : Option (List Expr × List Level × Expr) → Prop
@@ -431,7 +476,7 @@ theorem ruleArgStep_var {m : Type → Type} [Monad m] [MonadExceptOf CheckError 
     {r : CoreFns m} {d n j : Nat}
     {k : Expr → m (Option ((List (Option Expr) × List (Option Level)) × Expr))} {p a : Expr}
     {st : List (Option Expr) × List (Option Level)} (h : p.bvarIdx? = some j) :
-    ruleArgStep r env d n k p st a = pure (ruleBindVar n j st a) := by
+    ruleArgStep r env d n k p st a = ruleBindVar r d n j st a := by
   unfold ruleArgStep; rw [h]
 grind_pattern [conleche_grind] ruleArgStep_var => ruleArgStep r env d n k p st a, some j where
   guard p.bvarIdx? = some j
@@ -460,18 +505,18 @@ theorem ruleRetryC_spec (ih : SSimC mode eager env f) {d : Nat} {a : Expr} {s₀
 /-- The argument step simulates its specification, given the match's at the same pattern. -/
 theorem ruleArgC_spec (ih : SSimC mode eager env f) {d n : Nat} {lps : List Name} {p : Expr}
     (hm : ∀ (st : List (Option Expr) × List (Option Level)) {e : Expr} {s₀ : CState},
-      CSOK mode eager env s₀ → Expr.WScoped d e →
+      CSOK mode eager env s₀ → SlotsP (Expr.WScoped d) st → Expr.WScoped d e →
       ⦃fun s => s = s₀⦄ ruleMatchI mode (mkFEnv env) eager f d n lps p st e
       ⦃fun o s' => CSOK mode eager env s' ∧
         Runs (ruleMatchM (fueledFns mode eager env) env d n lps p st e) o ∧ MatchWS d o; ⊤⦄)
     (st : List (Option Expr) × List (Option Level)) {a : Expr} {s₀ : CState}
-    (hs : CSOK mode eager env s₀) (hw : Expr.WScoped d a) :
+    (hs : CSOK mode eager env s₀) (hst : SlotsP (Expr.WScoped d) st) (hw : Expr.WScoped d a) :
     ⦃fun s => s = s₀⦄ ruleArgI mode (mkFEnv env) eager f d n lps p st a
     ⦃fun o s' => CSOK mode eager env s' ∧
       Runs (ruleArgStep (fueledFns mode eager env) env d n
         (ruleMatchM (fueledFns mode eager env) env d n lps p st) p st a) o ∧ MatchWS d o; ⊤⦄ := by
   cases hq : p.bvarIdx? with
-  | some j => sym only [conleche_grind] => vcgen [ruleArgI.eq_def] <;> finish
+  | some j => sym only [conleche_grind] => vcgen [ruleArgI.eq_def, ruleBindVarC_spec ih] <;> finish
   | none =>
     sym only [conleche_grind] =>
       vcgen [ruleArgI.eq_def, hm, ruleRetryC_spec ih] <;> finish
@@ -489,21 +534,21 @@ theorem ruleArgC_spec (ih : SSimC mode eager env f) {d n : Nat} {lps : List Name
 /-- A rule's match simulates its specification. -/
 theorem ruleMatchC_spec (ih : SSimC mode eager env f) {d n : Nat} {lps : List Name} :
     ∀ (pat : Expr) (st : List (Option Expr) × List (Option Level)) {e : Expr} {s₀ : CState},
-      CSOK mode eager env s₀ → Expr.WScoped d e →
+      CSOK mode eager env s₀ → SlotsP (Expr.WScoped d) st → Expr.WScoped d e →
       ⦃fun s => s = s₀⦄ ruleMatchI mode (mkFEnv env) eager f d n lps pat st e
       ⦃fun o s' => CSOK mode eager env s' ∧
         Runs (ruleMatchM (fueledFns mode eager env) env d n lps pat st e) o ∧ MatchWS d o; ⊤⦄ := by
   intro pat
   induction pat with
   | app g q ihg ihq =>
-    intro st e s₀ hs hw
+    intro st e s₀ hs hst hw
     cases e with
     | app g' a =>
       sym only [conleche_grind, ruleMatchM] =>
         vcgen [ruleMatchI.eq_def, ihg, ruleArgC_spec ih ihq] <;> finish
     | _ => sym only [conleche_grind, ruleMatchM] => vcgen [ruleMatchI.eq_def] <;> finish
   | const c ls =>
-    intro st e s₀ hs hw
+    intro st e s₀ hs hst hw
     cases e with
     | const c' ls' =>
       obtain ⟨sl, lv⟩ := st
@@ -511,7 +556,7 @@ theorem ruleMatchC_spec (ih : SSimC mode eager env f) {d n : Nat} {lps : List Na
         sym only [conleche_grind, ruleMatchM, Option.map_none, Option.map_some] =>
           vcgen [ruleMatchI.eq_def] <;> finish
     | _ => sym only [conleche_grind, ruleMatchM] => vcgen [ruleMatchI.eq_def] <;> finish
-  | _ => intro st e s₀ hs hw; sym only [conleche_grind, ruleMatchM] => vcgen [ruleMatchI.eq_def] <;> finish
+  | _ => intro st e s₀ hs hst hw; sym only [conleche_grind, ruleMatchM] => vcgen [ruleMatchI.eq_def] <;> finish
 
 /-- The match's arguments simulate their specification. -/
 theorem ruleArgsC_spec (ih : SSimC mode eager env f) {d : Nat} (cv : ConstantVal) {e : Expr}

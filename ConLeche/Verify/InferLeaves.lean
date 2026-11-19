@@ -392,12 +392,9 @@ theorem rewriteStep_looseBVars {env : Env} (henv : EnvWF env) {r : CoreFns Check
     (hb : e.looseBVarsBounded 0 = true) : e₂.looseBVarsBounded 0 = true := by
   obtain ⟨cv, args, us, u, A, c, ls, e₁, hf, hm, hres, -, -, hsub, -⟩ :=
     rewriteAttempt_inv (rewriteStep_inv h)
-  have hQ : MatchPres r env d
-      (fun a b => a.looseBVarsBounded 0 = true → b.looseBVarsBounded 0 = true) :=
-    ⟨fun _ => id,
-      fun hf ha h => by
-        simp only [looseBVarsBounded, Bool.and_eq_true] at h ⊢; exact ⟨hf h.1, ha h.2⟩,
-      fun hab hbc h => hbc (hab h), fun hw h => litToCtorIfNat_looseBVars (hwh hw h)⟩
+  have hQ : MatchPres r env d (fun a => a.looseBVarsBounded 0 = true) :=
+    ⟨by intro f a; simp only [looseBVarsBounded, Bool.and_eq_true],
+      fun hw h => litToCtorIfNat_looseBVars (hwh hw h)⟩
   have hb₁ := ruleArgsM_pres hQ hm hb
   have hT : (cv.type.instantiateLevelParams cv.levelParams us).looseBVarsBounded 0 = true := by
     rw [looseBVarsBounded_instantiateLevelParams]
@@ -413,16 +410,10 @@ theorem rewriteStep_fvarLeaves {env : Env} {r : CoreFns CheckM} {d : Nat}
     ∀ l ∈ e₂.fvarLeaves, l ∈ e.fvarLeaves := by
   obtain ⟨_, _, _, _, _, _, _, e₁, -, hm, -, -, -, -, hleaf, -⟩ :=
     rewriteAttempt_inv (rewriteStep_inv h)
-  have hQ : MatchPres r env d (fun a b => ∀ l ∈ b.fvarLeaves, l ∈ a.fvarLeaves) :=
-    ⟨fun _ _ h => h,
-      fun hf ha l hl => by
-        simp only [fvarLeaves, List.mem_append] at hl ⊢
-        rcases hl with hl | hl
-        · exact Or.inl (hf l hl)
-        · exact Or.inr (ha l hl),
-      fun hab hbc l hl => hab l (hbc l hl),
-      fun hw l hl => hwh hw l (litToCtorIfNat_fvarLeaves l hl)⟩
-  exact fun l hl => ruleArgsM_pres hQ hm l (hleaf l hl)
+  have hQ : MatchPres r env d (fun a => ∀ l ∈ a.fvarLeaves, l ∈ e.fvarLeaves) :=
+    ⟨by intro f a; simp only [fvarLeaves, List.mem_append, or_imp, forall_and],
+      fun hw h l hl => h l (hwh hw l (litToCtorIfNat_fvarLeaves l hl))⟩
+  exact fun l hl => ruleArgsM_pres hQ hm (fun _ h => h) l (hleaf l hl)
 
 set_option maxRecDepth 2048 in
 set_option maxHeartbeats 1600000 in

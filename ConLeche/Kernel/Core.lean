@@ -1043,6 +1043,21 @@ def ruleOrRetry {α : Type} (r : CoreFns m) (env : Env) (depth : Nat) (k : Expr 
     let a' ← ruleRetry r env depth a
     k a'
 
+/-- **A pattern variable's position** (official `match_rewrite_pattern`'s variable case): the
+variable `k` of the `n` binders takes the subterm `e` it meets.  Already bound to `e'` (a
+non-linear left side), it matches where `e'` and `e` are syntactically equal, and otherwise where
+they are definitionally equal; the matched view holds `e'`. -/
+def ruleBindVar (r : CoreFns m) (depth n k : Nat)
+    (st : List (Option Expr) × List (Option Level)) (e : Expr) :
+    m (Option ((List (Option Expr) × List (Option Level)) × Expr)) :=
+  match ruleSlot? n k st.1 with
+  | none => pure none
+  | some none => pure (some ((st.1.set (n - 1 - k) (some e), st.2), e))
+  | some (some e') =>
+    if e' = e then pure (some (st, e'))
+    else do
+      if ← r.defeq depth e' e then pure (some (st, e')) else pure none
+
 /-- **An argument position of a rule's match** (official `match_rewrite_pattern`): a variable
 (`ruleBindVar`), or a pattern, matched by `k` and, if that fails, retried once on the argument's
 `whnf` (`ruleOrRetry`). -/
@@ -1051,13 +1066,14 @@ def ruleArgStep (r : CoreFns m) (env : Env) (depth n : Nat)
     (st : List (Option Expr) × List (Option Level)) (a : Expr) :
     m (Option ((List (Option Expr) × List (Option Level)) × Expr)) :=
   match p.bvarIdx? with
-  | some j => pure (ruleBindVar n j st a)
+  | some j => ruleBindVar r depth n j st a
   | none => ruleOrRetry r env depth k a
 
 /-- **The match of a rule's left side** under its `n` binders against a term (official
 `match_rewrite_app` and `match_rewrite_pattern`), from the binder slots (outermost first) and the
 level slots: the slots after the match and the matched view of the term, which has the reduct
-at every retried position (`MatchRel` relates the term to it).  The spine is matched
+at every retried position and the binding at every repeated variable (`MatchRel` relates the term
+to it).  The spine is matched
 syntactically, an argument position by `ruleArgStep`. -/
 def ruleMatchM (r : CoreFns m) (env : Env) (depth n : Nat) (lps : List Name) :
     Expr → List (Option Expr) × List (Option Level) → Expr →

@@ -790,7 +790,8 @@ def appSubterms : Expr → List Expr
 A rule is a stored theorem `∀ x₀ … x_{n-1}, @Eq A l r`.  The matcher reads
 the left side under its `n` binders (loose bound variables name them,
 innermost `0`) against a term (`ruleMatchM`, `Kernel/Core.lean`): a bound
-variable takes the subterm it meets (the same one at every occurrence), an
+variable takes the subterm it meets, and a later occurrence of it matches a
+subterm syntactically or definitionally equal to that one, an
 application matches an application, a constant matches a constant of the
 same name whose levels match the pattern's (a theorem level parameter takes
 the level it meets, consistently).  A failed argument position is retried
@@ -825,17 +826,10 @@ def Expr.bvarIdx? : Expr → Option Nat
   | .bvar k => some k
   | _ => none
 
-/-- **A pattern variable's position** (`ruleMatchM`'s argument arm): the variable `k` of the
-`n` binders takes the subterm it meets, or, already bound, compares it with its binding. -/
-def ruleBindVar (n k : Nat) :
-    List (Option Expr) × List (Option Level) → Expr →
-      Option ((List (Option Expr) × List (Option Level)) × Expr)
-  | (sl, lv), e =>
-    if k < n then
-      match sl.getD (n - 1 - k) none with
-      | some e' => if e' = e then some ((sl, lv), e) else none
-      | none => some ((sl.set (n - 1 - k) (some e), lv), e)
-    else none
+/-- **A pattern variable's slot** (`ruleBindVar`): `none` when `k` is no variable of the `n`
+binders, otherwise the slot's binding so far. -/
+def ruleSlot? (n k : Nat) (sl : List (Option Expr)) : Option (Option Expr) :=
+  if k < n then some (sl.getD (n - 1 - k) none) else none
 
 /-- Is `e` a constant? -/
 def Expr.isConstB : Expr → Bool
@@ -1231,16 +1225,16 @@ def ProjEntry.typeAt (entry : ProjEntry) (us : List Level) (targs : List Expr)
 A registration (`Declaration.rewriteDecl`) names a stored theorem and the head constant of its
 left side.  The check is the fragment and shape check the C++ kernel runs at
 `Kernel.Environment.addRewriteRule` (`notes/format.md`): the statement is `∀ xs, @Eq A l r`, the
-left side is the declared head constant applied to a linear first-order pattern, every variable
+left side is the declared head constant applied to a first-order pattern, every variable
 of the right side is one of the left side's, and the head is no pinned basis constant.  No proof
 reads it: `Red.rewrite` accepts any stored theorem, and each firing checks its own premises. -/
 
-/-- **A linear first-order pattern** over the `n` binders of a rule, its variables (the loose
-bound variables, innermost `0`) collected in `seen`, each at most once: a variable, or a
-constant applied to patterns.  `head` marks the function position of an application, where no
-variable may stand. -/
+/-- **A first-order pattern** over the `n` binders of a rule, its variables (the loose bound
+variables, innermost `0`) collected in `seen`: a variable, or a constant applied to patterns.  A
+variable may occur more than once (a non-linear left side, official `check_rule_fn`).  `head`
+marks the function position of an application, where no variable may stand. -/
 def rulePat (n : Nat) : Bool → List Nat → Expr → Option (List Nat)
-  | head, seen, .bvar k => if !head && k < n && !seen.contains k then some (k :: seen) else none
+  | head, seen, .bvar k => if !head && k < n then some (k :: seen) else none
   | _, seen, .const _ _ => some seen
   | _, seen, .app f a => (rulePat n true seen f).bind fun s => rulePat n false s a
   | _, _, _ => none
@@ -1266,7 +1260,7 @@ def abstractDeclError? (find? : Name → Option ConstantInfo) (abs : List (Name 
 
 /-- **What a rule's registration is told**, or `none` when it passes (the checks of the C++
 kernel's `addRewriteRule`): the theorem is stored, its statement is `∀ xs, @Eq A l r`, `l` is
-the declared head applied to a linear first-order pattern (no literal), every binder of `xs`
+the declared head applied to a first-order pattern (no literal), every binder of `xs`
 occurs in `l`, every variable of `r` is bound by `l`, every level parameter of `r` stands as a
 `.param` level of `l`, and the head is no pinned basis constant. -/
 def ruleDeclError? (find : Name → Option ConstantInfo) (thm head : Name) : Option CheckError :=
@@ -1287,7 +1281,7 @@ def ruleDeclError? (find : Name → Option ConstantInfo) (thm head : Name) : Opt
           else
             match rulePat n true [] l with
             | none =>
-              some (.invalid s!"rewrite rule {thm}: its left side is not a linear first-order pattern")
+              some (.invalid s!"rewrite rule {thm}: its left side is not a first-order pattern")
             | some vs =>
               if !(List.range n).all fun k => vs.contains k then
                 some (.invalid s!"rewrite rule {thm}: a variable of its statement does not occur in its left side")
