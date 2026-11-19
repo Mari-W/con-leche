@@ -602,18 +602,58 @@ theorem rewriteAttempt_snd_proj (d : Nat) (e : Expr) (t : Name) :
     | (dsimp only [])
     | split)
 
+theorem rewriteAt_fst_proj (d : Nat) (t : Name) :
+    ∀ e : Expr, (rewriteAt (pairFns r₁ r₂ h) env d t e).val.1 = rewriteAt r₁ env d t e
+  | .app f a => by
+    rw [rewriteAt, rewriteAt, PairM.fst_bind, rewriteAttempt_fst_proj]
+    congr 1
+    funext o
+    cases o with
+    | some e₂ => rfl
+    | none =>
+      dsimp only
+      rw [PairM.fst_bind, rewriteAt_fst_proj d t f]
+      congr 1
+      funext o'
+      cases o' <;> rfl
+  | .bvar _ | .sort _ | .const .. | .fvar .. | .forallE .. | .lam .. | .letE .. | .lit _
+  | .proj .. => by
+    rw [rewriteAt_nonApp _ _ _ _ (by intro _ _ hh; cases hh),
+      rewriteAt_nonApp _ _ _ _ (by intro _ _ hh; cases hh)]
+    exact rewriteAttempt_fst_proj d _ t
+
 theorem rewriteRules_fst_proj (d : Nat) (e : Expr) :
     ∀ ts : List Name,
       (rewriteRules (pairFns r₁ r₂ h) env d e ts).val.1 = rewriteRules r₁ env d e ts
   | [] => rfl
   | t :: ts => by
     unfold rewriteRules
-    rw [PairM.fst_bind, rewriteAttempt_fst_proj]
+    rw [PairM.fst_bind, rewriteAt_fst_proj]
     congr 1
     funext o
     cases o with
     | some e₂ => rfl
     | none => exact rewriteRules_fst_proj d e ts
+
+theorem rewriteAt_snd_proj (d : Nat) (t : Name) :
+    ∀ e : Expr, (rewriteAt (pairFns r₁ r₂ h) env d t e).val.2 = rewriteAt r₂ env d t e
+  | .app f a => by
+    rw [rewriteAt, rewriteAt, PairM.snd_bind, rewriteAttempt_snd_proj]
+    congr 1
+    funext o
+    cases o with
+    | some e₂ => rfl
+    | none =>
+      dsimp only
+      rw [PairM.snd_bind, rewriteAt_snd_proj d t f]
+      congr 1
+      funext o'
+      cases o' <;> rfl
+  | .bvar _ | .sort _ | .const .. | .fvar .. | .forallE .. | .lam .. | .letE .. | .lit _
+  | .proj .. => by
+    rw [rewriteAt_nonApp _ _ _ _ (by intro _ _ hh; cases hh),
+      rewriteAt_nonApp _ _ _ _ (by intro _ _ hh; cases hh)]
+    exact rewriteAttempt_snd_proj d _ t
 
 theorem rewriteRules_snd_proj (d : Nat) (e : Expr) :
     ∀ ts : List Name,
@@ -621,7 +661,7 @@ theorem rewriteRules_snd_proj (d : Nat) (e : Expr) :
   | [] => rfl
   | t :: ts => by
     unfold rewriteRules
-    rw [PairM.snd_bind, rewriteAttempt_snd_proj]
+    rw [PairM.snd_bind, rewriteAt_snd_proj]
     congr 1
     funext o
     cases o with
@@ -648,21 +688,61 @@ theorem rewriteStep_snd_proj (d : Nat) (stuck : Bool) (e : Expr) :
     · exact rewriteRules_snd_proj d e _
   · rfl
 
+theorem fireMore_fst_proj (d : Nat) :
+    ∀ (k : Nat) (e : Expr), (fireMore (pairFns r₁ r₂ h) env d k e).val.1 = fireMore r₁ env d k e
+  | 0, e => rfl
+  | k + 1, e => by
+    unfold fireMore
+    rw [PairM.fst_bind, rewriteStep_fst_proj]
+    congr 1
+    funext o
+    cases o with
+    | some te => exact fireMore_fst_proj d k te.2
+    | none => rfl
+
 theorem originFire_fst_proj (d : Nat) (o : Option Expr) (e : Expr) :
     (originFire (pairFns r₁ r₂ h) env d o e).val.1 = originFire r₁ env d o e := by
   unfold originFire
   split
   · split
-    · exact rewriteStep_fst_proj d true _
+    · rw [PairM.fst_bind, rewriteStep_fst_proj]
+      congr 1
+      funext o'
+      cases o' with
+      | some te =>
+        dsimp only
+        rw [PairM.fst_bind, fireMore_fst_proj]
+        rfl
+      | none => rfl
     · rfl
   · rfl
+
+theorem fireMore_snd_proj (d : Nat) :
+    ∀ (k : Nat) (e : Expr), (fireMore (pairFns r₁ r₂ h) env d k e).val.2 = fireMore r₂ env d k e
+  | 0, e => rfl
+  | k + 1, e => by
+    unfold fireMore
+    rw [PairM.snd_bind, rewriteStep_snd_proj]
+    congr 1
+    funext o
+    cases o with
+    | some te => exact fireMore_snd_proj d k te.2
+    | none => rfl
 
 theorem originFire_snd_proj (d : Nat) (o : Option Expr) (e : Expr) :
     (originFire (pairFns r₁ r₂ h) env d o e).val.2 = originFire r₂ env d o e := by
   unfold originFire
   split
   · split
-    · exact rewriteStep_snd_proj d true _
+    · rw [PairM.snd_bind, rewriteStep_snd_proj]
+      congr 1
+      funext o'
+      cases o' with
+      | some te =>
+        dsimp only
+        rw [PairM.snd_bind, fireMore_snd_proj]
+        rfl
+      | none => rfl
     · rfl
   · rfl
 
@@ -858,6 +938,7 @@ macro "fst_step2" : tactic =>
     | (rw [defEqList_fst])
     | (rw [reduceNat_fst_proj])
     | (rw [rewriteStep_fst_proj])
+    | (rw [fireMore_fst_proj])
     | (rw [originFire_fst_proj])
     | (rw [ensureSort_fst_proj])
     | (rw [proofIrrel_fst_proj])
@@ -888,6 +969,7 @@ macro "snd_step2" : tactic =>
     | (rw [defEqList_snd])
     | (rw [reduceNat_snd_proj])
     | (rw [rewriteStep_snd_proj])
+    | (rw [fireMore_snd_proj])
     | (rw [originFire_snd_proj])
     | (rw [ensureSort_snd_proj])
     | (rw [proofIrrel_snd_proj])
@@ -1235,6 +1317,7 @@ macro "fst_core3" x:tactic : tactic =>
     | (rw [defEqList_fst])
     | (rw [reduceNat_fst_proj])
     | (rw [rewriteStep_fst_proj])
+    | (rw [fireMore_fst_proj])
     | (rw [originFire_fst_proj])
     | (rw [ensureSort_fst_proj])
     | (rw [proofIrrel_fst_proj])
@@ -1273,6 +1356,7 @@ macro "snd_core3" x:tactic : tactic =>
     | (rw [defEqList_snd])
     | (rw [reduceNat_snd_proj])
     | (rw [rewriteStep_snd_proj])
+    | (rw [fireMore_snd_proj])
     | (rw [originFire_snd_proj])
     | (rw [ensureSort_snd_proj])
     | (rw [proofIrrel_snd_proj])
@@ -1320,11 +1404,32 @@ theorem iotaRec_snd_proj (d : Nat) (e : Expr) :
   unfold iotaRec
   snd_tac3
 
+theorem iotaAt_fst_proj (d : Nat) :
+    ∀ e : Expr, (iotaAt mode (pairFns r₁ r₂ h) env d e).val.1 =
+      iotaAt mode r₁ env d e
+  | .app f a => by
+    rw [iotaAt, iotaAt, PairM.fst_bind, iotaRec_fst_proj]
+    congr 1
+    funext o
+    cases o with
+    | some e'' => rfl
+    | none =>
+      dsimp only
+      rw [PairM.fst_bind, iotaAt_fst_proj d f]
+      congr 1
+      funext o'
+      cases o' <;> rfl
+  | .bvar _ | .sort _ | .const .. | .fvar .. | .forallE .. | .lam .. | .letE .. | .lit _
+  | .proj .. => by
+    rw [iotaAt_nonApp _ _ _ (by intro _ _ hh; cases hh),
+      iotaAt_nonApp _ _ _ (by intro _ _ hh; cases hh)]
+    exact iotaRec_fst_proj d _
+
 theorem iotaThenRule_fst_proj (d : Nat) (e : Expr) :
     (iotaThenRule mode (pairFns r₁ r₂ h) env d e).val.1 =
       iotaThenRule mode r₁ env d e := by
   unfold iotaThenRule
-  rw [PairM.fst_bind, iotaRec_fst_proj]
+  rw [PairM.fst_bind, iotaAt_fst_proj]
   congr 1
   funext o
   cases o with
@@ -1334,13 +1439,39 @@ theorem iotaThenRule_fst_proj (d : Nat) (e : Expr) :
     rw [PairM.fst_bind, rewriteStep_fst_proj]
     congr 1
     funext o'
-    cases o' <;> rfl
+    cases o' with
+    | some te =>
+      dsimp only
+      rw [PairM.fst_bind, fireMore_fst_proj]
+      rfl
+    | none => rfl
+
+theorem iotaAt_snd_proj (d : Nat) :
+    ∀ e : Expr, (iotaAt mode (pairFns r₁ r₂ h) env d e).val.2 =
+      iotaAt mode r₂ env d e
+  | .app f a => by
+    rw [iotaAt, iotaAt, PairM.snd_bind, iotaRec_snd_proj]
+    congr 1
+    funext o
+    cases o with
+    | some e'' => rfl
+    | none =>
+      dsimp only
+      rw [PairM.snd_bind, iotaAt_snd_proj d f]
+      congr 1
+      funext o'
+      cases o' <;> rfl
+  | .bvar _ | .sort _ | .const .. | .fvar .. | .forallE .. | .lam .. | .letE .. | .lit _
+  | .proj .. => by
+    rw [iotaAt_nonApp _ _ _ (by intro _ _ hh; cases hh),
+      iotaAt_nonApp _ _ _ (by intro _ _ hh; cases hh)]
+    exact iotaRec_snd_proj d _
 
 theorem iotaThenRule_snd_proj (d : Nat) (e : Expr) :
     (iotaThenRule mode (pairFns r₁ r₂ h) env d e).val.2 =
       iotaThenRule mode r₂ env d e := by
   unfold iotaThenRule
-  rw [PairM.snd_bind, iotaRec_snd_proj]
+  rw [PairM.snd_bind, iotaAt_snd_proj]
   congr 1
   funext o
   cases o with
@@ -1350,7 +1481,12 @@ theorem iotaThenRule_snd_proj (d : Nat) (e : Expr) :
     rw [PairM.snd_bind, rewriteStep_snd_proj]
     congr 1
     funext o'
-    cases o' <;> rfl
+    cases o' with
+    | some te =>
+      dsimp only
+      rw [PairM.snd_bind, fireMore_snd_proj]
+      rfl
+    | none => rfl
 
 theorem reduceProjCore_fst_proj (d : Nat) (sn : Name) (i : Nat) (e : Expr) :
     (reduceProjCore mode (pairFns r₁ r₂ h) env d sn i e).val.1 =
@@ -1496,6 +1632,7 @@ macro "fst_core4" x:tactic : tactic =>
     | (rw [defEqList_fst])
     | (rw [reduceNat_fst_proj])
     | (rw [rewriteStep_fst_proj])
+    | (rw [fireMore_fst_proj])
     | (rw [originFire_fst_proj])
     | (rw [ensureSort_fst_proj])
     | (rw [proofIrrel_fst_proj])
@@ -1561,6 +1698,7 @@ macro "snd_core4" x:tactic : tactic =>
     | (rw [defEqList_snd])
     | (rw [reduceNat_snd_proj])
     | (rw [rewriteStep_snd_proj])
+    | (rw [fireMore_snd_proj])
     | (rw [originFire_snd_proj])
     | (rw [ensureSort_snd_proj])
     | (rw [proofIrrel_snd_proj])

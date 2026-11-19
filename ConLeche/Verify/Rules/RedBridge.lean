@@ -456,18 +456,42 @@ theorem ruleMatchM_bridge (hw : WhnfBridge μ eager env fuel) (hd : DefEqBridge 
 /-- A firing rewrite rule is `Red.rewrite`: `rewriteAttempt_inv` hands every premise, the
 certificates and the match through the bridges, and `rewriteStep_mem` the rule's place in the
 table. -/
+theorem rewriteAttempt_bridge (hw : WhnfBridge μ eager env fuel)
+    (hd : DefEqBridge μ eager env fuel) (hi : InferBridge μ eager env fuel)
+    {d : Nat} {e e₂ : Expr} {t : Name} {c' : Name} {ls' : List Level}
+    (hfn' : e.getAppFn = .const c' ls') (hmem : t ∈ env.rulesFor c')
+    (h : rewriteAttempt (pureFns μ eager env fuel) env d e t = .ok (some e₂)) :
+    Red env d e e₂ := by
+  obtain ⟨cv, args, us, u, A, c, ls, e₁, l, hf, hm, hres, -, hlen, hsub, hleaf, hcert, hlf⟩ :=
+    rewriteAttempt_inv h
+  obtain ⟨l₀, st', hm'⟩ := ruleArgsM_inv hm
+  exact .rewrite hf hlen (iotaCertsFull_bridge hd hi hcert) hres hfn'
+    (ruleMatchM_bridge hw hd l₀ [] (SlotsIn.replicate _ _ _) hm').1
+    hlf hsub hleaf hmem
+
 theorem rewriteStep_bridge (hw : WhnfBridge μ eager env fuel) (hd : DefEqBridge μ eager env fuel)
     (hi : InferBridge μ eager env fuel)
     {d : Nat} {stuck : Bool} {e e₂ : Expr} {t : Name}
     (h : rewriteStep (pureFns μ eager env fuel) env d stuck e = .ok (some (t, e₂))) :
     Red env d e e₂ := by
-  obtain ⟨cv, args, us, u, A, c, ls, e₁, l, hf, hm, hres, -, hlen, hsub, hleaf, hcert, hlf⟩ :=
-    rewriteAttempt_inv (rewriteStep_inv h)
   obtain ⟨c', ls', hfn', hmem⟩ := rewriteStep_mem h
-  obtain ⟨l₀, st', hm'⟩ := ruleArgsM_inv hm
-  exact .rewrite hf hlen (iotaCertsFull_bridge hd hi hcert) hres hfn'
-    (ruleMatchM_bridge hw hd l₀ [] (SlotsIn.replicate _ _ _) hm').1
-    hlf hsub hleaf hmem
+  -- the firing at a prefix: every prefix of the spine has the spine's head
+  refine rewriteAt_ind (fun x y => x.getAppFn = .const c' ls' → Red env d x y)
+    (fun ha hx => rewriteAttempt_bridge hw hd hi hx hmem ha)
+    (fun hf hx => .appFn (hf hx)) e (rewriteStep_inv h) hfn'
+
+/-- The rules fired again are a `Red` chain. -/
+theorem fireMore_bridge (hw : WhnfBridge μ eager env fuel) (hd : DefEqBridge μ eager env fuel)
+    (hi : InferBridge μ eager env fuel) {d k : Nat} {e e' : Expr}
+    (h : fireMore (pureFns μ eager env fuel) env d k e = .ok e') : Red env d e e' :=
+  fireMore_ind (fun x y => Red env d x y) (fun _ => .refl)
+    (fun hrw hyz => .trans (rewriteStep_bridge hw hd hi hrw) hyz) h
+
+/-- A reduction of the head is a reduction of the spine. -/
+theorem Red.mkAppN_fn {d : Nat} : ∀ (args : List Expr) {f f' : Expr},
+    Red env d f f' → Red env d (Expr.mkAppN f args) (Expr.mkAppN f' args)
+  | [], _, _, h => h
+  | _ :: as, _, _, h => Red.mkAppN_fn as (.appFn h)
 
 /-- ι-then-rules ⇒ `Red.iota` or `Red.rewrite`. -/
 theorem iotaThenRule_bridge (hw : WhnfBridge .verified eager env fuel)
@@ -476,9 +500,10 @@ theorem iotaThenRule_bridge (hw : WhnfBridge .verified eager env fuel)
     {d : Nat} {e e'' : Expr}
     (h : iotaThenRule .verified (pureFns .verified eager env fuel) env d e = .ok (some e'')) :
     Red env d e e'' := by
-  rcases iotaThenRule_inv h with hι | ⟨-, t, hrw⟩
-  · exact iotaRec_bridge hw hd hi hio hι
-  · exact rewriteStep_bridge hw hd hi hrw
+  rcases iotaThenRule_inv h with hι | ⟨-, t, e₂, hrw, hfm⟩
+  · exact iotaAt_ind (fun x y => Red env d x y) (fun h' => iotaRec_bridge hw hd hi hio h')
+      (fun hf => .appFn hf) e hι
+  · exact .trans (rewriteStep_bridge hw hd hi hrw) (fireMore_bridge hw hd hi hfm)
 
 /-- **`whnfCore` at `fuel + 1`**: the eleven shapes (`whnf_app_inv`,
 `whnf_proj_inv`, `whnfCore_const_inv`, the five other leaves, `whnfCore_letE_inv`, the `.bvar`
@@ -493,21 +518,26 @@ theorem whnfCore_bridge_succ (hwc : WhnfCoreBridge .verified eager env fuel)
   | .lit _, h =>
     cases Except.ok.inj h; exact .refl
   | .const _ _, h =>
-    rcases whnfCore_const_inv h with ⟨t, e₂, hrw, hk⟩ | ⟨-, rfl⟩
-    · exact .trans (rewriteStep_bridge hw hd hi hrw) (hwc hk)
+    rcases whnfCore_const_inv h with ⟨t, e₂, e₃, hrw, hfm, hk⟩ | ⟨-, rfl⟩
+    · exact .trans (rewriteStep_bridge hw hd hi hrw) (.trans (fireMore_bridge hw hd hi hfm) (hwc hk))
     · exact .refl
   | .bvar _, h =>
     rw [whnfCore_succ] at h
     simp [whnfCoreBody, throw, throwThe, MonadExceptOf.throw] at h
   | .letE _ _ _, h => exact .trans .zeta (hwc (whnfCore_letE_inv h))
   | .app f a, h =>
-    obtain ⟨f', hf, hcase⟩ := whnf_app_inv h
-    have hRf : Red env d (.app f a) (.app f' a) := .appFn (hwc hf)
-    rcases hcase with ⟨ty, body, rfl, hbody⟩ | ⟨e'', hiota, hcont⟩ | rfl
-    · refine .trans hRf (.trans ?_ (hwc hbody))
-      exact .beta
-    · exact .trans hRf (.trans (iotaThenRule_bridge hw hd hi hio hiota) (hwc hcont))
-    · exact hRf
+    obtain ⟨v, hf, hcase⟩ := whnf_app_inv h
+    -- the spine's head reduced to `v`: the spine to `v` applied to the arguments
+    have hRf : Red env d (.app f a) (Expr.mkAppN v (Expr.app f a).getAppArgs) := by
+      have := Red.mkAppN_fn (Expr.app f a).getAppArgs (hwc hf)
+      rwa [Expr.mkAppN_getApp] at this
+    rcases hcase with ⟨ty, body, a₁, rest, rfl, hargs, hbody⟩ |
+      ⟨-, ⟨e'', hiota, hcont⟩ | ⟨-, rfl⟩⟩ | ⟨-, -, hk⟩
+    · rw [hargs] at hRf
+      exact .trans hRf (.trans (Red.mkAppN_fn rest .beta) (hwc hbody))
+    · exact .trans (iotaThenRule_bridge hw hd hi hio hiota) (hwc hcont)
+    · exact .refl
+    · exact .trans hRf (hwc hk)
   | .proj sn i pe, h =>
     obtain ⟨e₂, hst, hcase⟩ := whnf_proj_inv h
     have hR : Red env d (.proj sn i pe) (.proj sn i e₂) := by
@@ -524,8 +554,8 @@ theorem originFire_bridge (hw : WhnfBridge μ eager env fuel) (hd : DefEqBridge 
     (hi : InferBridge μ eager env fuel) {d : Nat} {o : Option Expr} {e₀ e e₂ : Expr} {t : Name}
     (h : originFire (pureFns μ eager env fuel) env d o e = .ok (some (t, e₂)))
     (ho : OriginP (Red env d e₀) o) : Red env d e₀ e₂ := by
-  obtain ⟨o', rfl, -, hrw⟩ := originFire_inv h
-  exact .trans (ho _ rfl) (rewriteStep_bridge hw hd hi hrw)
+  obtain ⟨o', e₃, rfl, -, hrw, hfm⟩ := originFire_inv h
+  exact .trans (ho _ rfl) (.trans (rewriteStep_bridge hw hd hi hrw) (fireMore_bridge hw hd hi hfm))
 
 /-- One `whnfStep` under a bridged continuation is a `Red` chain from the loop's input `e₀`
 (`whnfStep_inv`: `whnfCore`, then acceleration (a literal is final) or δ into `k`, the fixpoint,

@@ -684,13 +684,34 @@ theorem rewriteAttempt_atF (d : Nat) (e : Expr) (t : Name) (F : Nat) :
   unfold rewriteAttempt rewriteFire ruleArgsM
   atF_core3 (rw [ruleMatchM_atF])
 
+theorem rewriteAt_atF (d : Nat) (t : Name) (F : Nat) :
+    ∀ e : Expr, (rewriteAt (fueledFns mode eager env) env d t e).val F =
+      rewriteAt (pureFns mode eager env F) env d t e
+  | .app f a => by
+    rw [rewriteAt, rewriteAt, FueledM.atF_bind, rewriteAttempt_atF]
+    congr 1
+    funext o
+    cases o with
+    | some e₂ => rfl
+    | none =>
+      dsimp only
+      rw [FueledM.atF_bind, rewriteAt_atF d t F f]
+      congr 1
+      funext o'
+      cases o' <;> rfl
+  | .bvar _ | .sort _ | .const .. | .fvar .. | .forallE .. | .lam .. | .letE .. | .lit _
+  | .proj .. => by
+    rw [rewriteAt_nonApp _ _ _ _ (by intro _ _ hh; cases hh),
+      rewriteAt_nonApp _ _ _ _ (by intro _ _ hh; cases hh)]
+    exact rewriteAttempt_atF d _ t F
+
 theorem rewriteRules_atF (d : Nat) (e : Expr) (F : Nat) :
     ∀ ts : List Name, (rewriteRules (fueledFns mode eager env) env d e ts).val F =
       rewriteRules (pureFns mode eager env F) env d e ts
   | [] => rfl
   | t :: ts => by
     unfold rewriteRules
-    rw [FueledM.atF_bind, rewriteAttempt_atF]
+    rw [FueledM.atF_bind, rewriteAt_atF]
     congr 1
     funext o
     cases o with
@@ -707,21 +728,63 @@ theorem rewriteStep_atF (d : Nat) (stuck : Bool) (e : Expr) (F : Nat) :
     · exact rewriteRules_atF d e F _
   · rfl
 
+theorem fireMore_atF (d : Nat) (F : Nat) :
+    ∀ (k : Nat) (e : Expr), (fireMore (fueledFns mode eager env) env d k e).val F =
+      fireMore (pureFns mode eager env F) env d k e
+  | 0, e => rfl
+  | k + 1, e => by
+    unfold fireMore
+    rw [FueledM.atF_bind, rewriteStep_atF]
+    congr 1
+    funext o
+    cases o with
+    | some te => exact fireMore_atF d F k te.2
+    | none => rfl
+
 theorem originFire_atF (d : Nat) (o : Option Expr) (e : Expr) (F : Nat) :
     (originFire (fueledFns mode eager env) env d o e).val F =
       originFire (pureFns mode eager env F) env d o e := by
   unfold originFire
   split
   · split
-    · exact rewriteStep_atF d true _ F
+    · rw [FueledM.atF_bind, rewriteStep_atF]
+      congr 1
+      funext o'
+      cases o' with
+      | some te =>
+        dsimp only
+        rw [FueledM.atF_bind, fireMore_atF]
+        rfl
+      | none => rfl
     · rfl
   · rfl
+
+theorem iotaAt_atF (d : Nat) (F : Nat) :
+    ∀ e : Expr, (iotaAt mode (fueledFns mode eager env) env d e).val F =
+      iotaAt mode (pureFns mode eager env F) env d e
+  | .app f a => by
+    rw [iotaAt, iotaAt, FueledM.atF_bind, iotaRec_atF]
+    congr 1
+    funext o
+    cases o with
+    | some e'' => rfl
+    | none =>
+      dsimp only
+      rw [FueledM.atF_bind, iotaAt_atF d F f]
+      congr 1
+      funext o'
+      cases o' <;> rfl
+  | .bvar _ | .sort _ | .const .. | .fvar .. | .forallE .. | .lam .. | .letE .. | .lit _
+  | .proj .. => by
+    rw [iotaAt_nonApp _ _ _ (by intro _ _ hh; cases hh),
+      iotaAt_nonApp _ _ _ (by intro _ _ hh; cases hh)]
+    exact iotaRec_atF d _ F
 
 theorem iotaThenRule_atF (d : Nat) (e : Expr) (F : Nat) :
     (iotaThenRule mode (fueledFns mode eager env) env d e).val F =
       iotaThenRule mode (pureFns mode eager env F) env d e := by
   unfold iotaThenRule
-  rw [FueledM.atF_bind, iotaRec_atF]
+  rw [FueledM.atF_bind, iotaAt_atF]
   congr 1
   funext o
   cases o with
@@ -731,7 +794,12 @@ theorem iotaThenRule_atF (d : Nat) (e : Expr) (F : Nat) :
     rw [FueledM.atF_bind, rewriteStep_atF]
     congr 1
     funext o'
-    cases o' <;> rfl
+    cases o' with
+    | some te =>
+      dsimp only
+      rw [FueledM.atF_bind, fireMore_atF]
+      rfl
+    | none => rfl
 
 /-- The level-4 cascade, parameterized over one extra alternative so
 that the loop-body lemmas can feed in their continuation hypothesis
@@ -746,6 +814,7 @@ macro "atF_core4" x:tactic : tactic =>
     | (rw [defEqList_atF])
     | (rw [reduceNat_atF])
     | (rw [rewriteStep_atF])
+    | (rw [fireMore_atF])
     | (rw [originFire_atF])
     | (rw [ensureSort_atF])
     | (rw [checkProjGuard_atF])

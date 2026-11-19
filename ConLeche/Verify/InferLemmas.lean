@@ -33,51 +33,63 @@ open Expr
 
 /-! ## Inversion lemmas -/
 
+/-- An application's argument list is never empty. -/
+theorem getAppArgs_app_ne_nil (f a : Expr) : (Expr.app f a).getAppArgs ≠ [] := by
+  simp [Expr.getAppArgs]
+
 set_option linter.unusedSimpArgs false in
-/-- Inversion for `whnfCore` on applications: either a β step
-happened (uniform, no certificate), or an ι step (with the stuck-major
-machinery) or a rule firing (`iotaThenRule`), or the application is stuck. -/
+/-- Inversion for `whnfCore` on applications, taken as a whole spine: the spine head
+normalized to a λ and the spine's first argument met it (uniform β, no certificate), or it is
+its own head normal form and ι or a rule fired at the whole spine (`iotaThenRule`) or the spine
+is stuck, or it reduced to something else and head normalization went on at the spine
+re-assembled. -/
 theorem whnf_app_inv {env : Env} {fuel d : Nat} {f a e' : Expr} {c : Bool}
     (h : whnfCore mode eager env (fuel + 1) d (.app f a) c = .ok e') :
-    ∃ f', whnfCore mode eager env fuel d f c = .ok f' ∧
-      ((∃ ty body, f' = .lam ty body ∧
-          whnfCore mode eager env fuel d (body.instantiate1 a) c = .ok e') ∨
-        (∃ e'', iotaThenRule mode (pureFns mode eager env fuel) env d (.app f' a)
-            = .ok (some e'') ∧
-          whnfCore mode eager env fuel d e'' c = .ok e') ∨
-        e' = .app f' a) := by
+    ∃ v, whnfCore mode eager env fuel d (Expr.app f a).getAppFn c = .ok v ∧
+      ((∃ ty body a₁ rest, v = .lam ty body ∧ (Expr.app f a).getAppArgs = a₁ :: rest ∧
+          whnfCore mode eager env fuel d (Expr.mkAppN (body.instantiate1 a₁) rest) c = .ok e') ∨
+        (v = (Expr.app f a).getAppFn ∧
+          ((∃ e'', iotaThenRule mode (pureFns mode eager env fuel) env d (.app f a)
+              = .ok (some e'') ∧
+            whnfCore mode eager env fuel d e'' c = .ok e') ∨
+           (iotaThenRule mode (pureFns mode eager env fuel) env d (.app f a) = .ok none ∧
+            e' = .app f a))) ∨
+        ((∀ ty body, v ≠ .lam ty body) ∧ v ≠ (Expr.app f a).getAppFn ∧
+          whnfCore mode eager env fuel d (Expr.mkAppN v (Expr.app f a).getAppArgs) c
+            = .ok e')) := by
   rw [whnfCore_succ] at h
   simp only [whnfCoreBody, Bind.bind, Except.bind] at h
   simp only [whnfCore_def] at h
-  cases hwf : whnfCore mode eager env fuel d f c with
+  cases hwf : whnfCore mode eager env fuel d (Expr.app f a).getAppFn c with
   | error err => rw [hwf] at h; exact nomatch h
-  | ok f' =>
+  | ok v =>
   rw [hwf] at h
   dsimp only at h
-  refine ⟨f', rfl, ?_⟩
-  match f', h with
-  | .lam ty body, h => exact Or.inl ⟨ty, body, rfl, h⟩
-  | .sort u, h => ?_
-  | .fvar i t', h => ?_
-  | .const n' us, h => ?_
-  | .forallE t' b', h => ?_
-  | .bvar i, h => ?_
-  | .app f'' a'', h => ?_
-  | .letE t' v' b', h => ?_
-  | .lit l', h => ?_
-  | .proj s' i' e'', h => ?_
-  all_goals
-    try simp only [Bind.bind, Except.bind] at h
-    cases hio : iotaThenRule mode (pureFns mode eager env fuel) env d (.app _ a) with
-    | error err => rw [hio] at h; exact nomatch h
-    | ok o =>
-      rw [hio] at h
-      dsimp only at h
-      cases o with
-      | some e'' => exact Or.inr (Or.inl ⟨e'', rfl, h⟩)
-      | none =>
-        simp only [pure, Except.pure, Except.ok.injEq] at h
-        exact Or.inr (Or.inr h.symm)
+  refine ⟨v, rfl, ?_⟩
+  split at h
+  · rename_i ty body
+    refine Or.inl ⟨ty, body, ?_⟩
+    cases hargs : (Expr.app f a).getAppArgs with
+    | nil => exact absurd hargs (getAppArgs_app_ne_nil f a)
+    | cons a₁ rest =>
+      rw [hargs] at h
+      exact ⟨a₁, rest, rfl, rfl, h⟩
+  · rename_i hv
+    by_cases hvh : v = (Expr.app f a).getAppFn
+    · rw [ite_eq_left hvh] at h
+      refine Or.inr (Or.inl ⟨hvh, ?_⟩)
+      cases hio : iotaThenRule mode (pureFns mode eager env fuel) env d (.app f a) with
+      | error err => rw [hio] at h; exact nomatch h
+      | ok o =>
+        rw [hio] at h
+        dsimp only at h
+        cases o with
+        | some e'' => exact Or.inl ⟨e'', rfl, h⟩
+        | none =>
+          simp only [pure, Except.pure, Except.ok.injEq] at h
+          exact Or.inr ⟨rfl, h.symm⟩
+    · rw [ite_eq_right hvh] at h
+      exact Or.inr (Or.inr ⟨fun ty body hh => hv ty body hh, hvh, h⟩)
 
 /-- The `Eq` spine's parts are the spine's. -/
 theorem eqSpine?_eq_some {R A l rhs : Expr} {eqn : Name} {u : Level} :
@@ -575,10 +587,105 @@ theorem Expr.levelFormEq_rec {P : Expr → Expr → Prop} (hrefl : ∀ e, P e e)
     | _ => exact hother (by simp) (by simp) h
   | _ => intro b h; exact hother (by simp) (by simp) h
 
+/-- **A property of a firing, carried to the firing at a prefix**: a relation that every rule's
+firing at a term establishes, and that applying both sides to an argument keeps, holds of the
+firing at the prefix of the rule's arity. -/
+theorem rewriteAt_ind {r : CoreFns CheckM} {env : Env} {d : Nat} {t : Name}
+    (P : Expr → Expr → Prop)
+    (hat : ∀ {x y : Expr}, rewriteAttempt r env d x t = .ok (some y) → P x y)
+    (happ : ∀ {f a f₂ : Expr}, P f f₂ → P (.app f a) (.app f₂ a)) :
+    ∀ (e : Expr) {e₂ : Expr}, rewriteAt r env d t e = .ok (some e₂) → P e e₂
+  | .app f a, e₂, h => by
+    rw [rewriteAt] at h
+    simp only [bind, Except.bind] at h
+    split at h
+    · exact nomatch h
+    rename_i o ho
+    cases o with
+    | some x =>
+      simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq] at h
+      exact h ▸ hat ho
+    | none =>
+      dsimp only at h
+      split at h
+      · exact nomatch h
+      rename_i o' ho'
+      cases o' with
+      | some f₂ =>
+        simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq] at h
+        subst h
+        exact happ (rewriteAt_ind P hat happ f ho')
+      | none => simp [pure, Except.pure] at h
+  | .bvar _, _, h | .sort _, _, h | .const .., _, h | .fvar .., _, h | .forallE .., _, h
+  | .lam .., _, h | .letE .., _, h | .lit _, _, h | .proj .., _, h => by
+    rw [rewriteAt_nonApp _ _ _ _ (by intro _ _ hh; cases hh)] at h
+    exact hat h
+
+/-- **ι at a prefix keeps a property** that ι at a term establishes and that applying both sides
+to an argument keeps. -/
+theorem iotaAt_ind {r : CoreFns CheckM} {env : Env} {d : Nat}
+    (P : Expr → Expr → Prop)
+    (hat : ∀ {x y : Expr}, iotaRec mode r env d x = .ok (some y) → P x y)
+    (happ : ∀ {f a f₂ : Expr}, P f f₂ → P (.app f a) (.app f₂ a)) :
+    ∀ (e : Expr) {e₂ : Expr}, iotaAt mode r env d e = .ok (some e₂) → P e e₂
+  | .app f a, e₂, h => by
+    rw [iotaAt] at h
+    simp only [bind, Except.bind] at h
+    split at h
+    · exact nomatch h
+    rename_i o ho
+    cases o with
+    | some x =>
+      simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq] at h
+      exact h ▸ hat ho
+    | none =>
+      dsimp only at h
+      split at h
+      · exact nomatch h
+      rename_i o' ho'
+      cases o' with
+      | some f₂ =>
+        simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq] at h
+        subst h
+        exact happ (iotaAt_ind P hat happ f ho')
+      | none => simp [pure, Except.pure] at h
+  | .bvar _, _, h | .sort _, _, h | .const .., _, h | .fvar .., _, h | .forallE .., _, h
+  | .lam .., _, h | .letE .., _, h | .lit _, _, h | .proj .., _, h => by
+    rw [iotaAt_nonApp _ _ _ (by intro _ _ hh; cases hh)] at h
+    exact hat h
+
+/-- **The rules fired again keep a property** that every firing keeps. -/
+theorem fireMore_ind {r : CoreFns CheckM} {env : Env} {d : Nat} (Q : Expr → Expr → Prop)
+    (hrefl : ∀ x, Q x x)
+    (hstep : ∀ {x y z : Expr} {t : Name}, rewriteStep r env d false x = .ok (some (t, y)) →
+      Q y z → Q x z) :
+    ∀ {k : Nat} {e e' : Expr}, fireMore r env d k e = .ok e' → Q e e'
+  | 0, e, e', h => by
+    simp only [fireMore, pure, Except.pure, Except.ok.injEq] at h
+    exact h ▸ hrefl e
+  | k + 1, e, e', h => by
+    simp only [fireMore, bind, Except.bind] at h
+    split at h
+    · exact nomatch h
+    rename_i o ho
+    cases o with
+    | some te =>
+      obtain ⟨t, y⟩ := te
+      exact hstep ho (fireMore_ind Q hrefl hstep h)
+    | none =>
+      simp only [pure, Except.pure, Except.ok.injEq] at h
+      exact h ▸ hrefl e
+
+/-- **The rules fired again keep a unary property** that every firing keeps. -/
+theorem fireMore_pres {r : CoreFns CheckM} {env : Env} {d : Nat} (Q : Expr → Prop)
+    (hstep : ∀ {x y : Expr} {t : Name}, rewriteStep r env d false x = .ok (some (t, y)) →
+      Q x → Q y) {k : Nat} {e e' : Expr} (h : fireMore r env d k e = .ok e') (hq : Q e) : Q e' :=
+  fireMore_ind (fun x y => Q x → Q y) (fun _ h => h) (fun hr hyz hx => hyz (hstep hr hx)) h hq
+
 /-- Inversion for the rules in order: a firing is one of the rules', the first. -/
 theorem rewriteRules_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {e e₂ : Expr} {t : Name} :
     ∀ {ts : List Name}, rewriteRules r env d e ts = .ok (some (t, e₂)) →
-      t ∈ ts ∧ rewriteAttempt r env d e t = .ok (some e₂)
+      t ∈ ts ∧ rewriteAt r env d t e = .ok (some e₂)
   | [], h => by simp [rewriteRules, pure, Except.pure] at h
   | t' :: ts, h => by
     unfold rewriteRules at h
@@ -598,7 +705,7 @@ theorem rewriteRules_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {e e₂ : Ex
 /-- Inversion for the rewrite step. -/
 theorem rewriteStep_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {stuck : Bool} {e e₂ : Expr}
     {t : Name} (h : rewriteStep r env d stuck e = .ok (some (t, e₂))) :
-    rewriteAttempt r env d e t = .ok (some e₂) := by
+    rewriteAt r env d t e = .ok (some e₂) := by
   unfold rewriteStep at h
   split at h
   · split at h
@@ -621,9 +728,10 @@ theorem rewriteStep_mem {r : CoreFns CheckM} {env : Env} {d : Nat} {stuck : Bool
 /-- Inversion for ι-then-rules: the ι step fired, or it did not and a rule did. -/
 theorem iotaThenRule_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {e e'' : Expr}
     (h : iotaThenRule mode r env d e = .ok (some e'')) :
-    iotaRec mode r env d e = .ok (some e'') ∨
-      (iotaRec mode r env d e = .ok none ∧
-        ∃ t, rewriteStep r env d false e = .ok (some (t, e''))) := by
+    iotaAt mode r env d e = .ok (some e'') ∨
+      (iotaAt mode r env d e = .ok none ∧
+        ∃ t e₂, rewriteStep r env d false e = .ok (some (t, e₂)) ∧
+          fireMore r env d ruleFireBudget e₂ = .ok e'') := by
   unfold iotaThenRule at h
   simp only [bind, Except.bind] at h
   split at h
@@ -640,17 +748,22 @@ theorem iotaThenRule_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {e e'' : Exp
     rename_i ro hro
     cases ro with
     | some te =>
+      dsimp only at h
+      split at h
+      · exact nomatch h
+      rename_i e₃ he₃
       simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq] at h
-      exact .inr ⟨ho, te.1, by rw [hro, ← h]⟩
+      exact .inr ⟨ho, te.1, te.2, hro, h ▸ he₃⟩
     | none => simp [pure, Except.pure] at h
 
 /-- Inversion for `whnfCore` on a constant: a rule whose left side is the bare constant fired,
 or the constant is its own head normal form. -/
 theorem whnfCore_const_inv {env : Env} {fuel d : Nat} {n : Name} {us : List Level} {e' : Expr}
     {c : Bool} (h : whnfCore mode eager env (fuel + 1) d (.const n us) c = .ok e') :
-    (∃ t e₂, rewriteStep (pureFns mode eager env fuel) env d false (.const n us) =
+    (∃ t e₂ e₃, rewriteStep (pureFns mode eager env fuel) env d false (.const n us) =
           .ok (some (t, e₂)) ∧
-        whnfCore mode eager env fuel d e₂ c = .ok e') ∨
+        fireMore (pureFns mode eager env fuel) env d ruleFireBudget e₂ = .ok e₃ ∧
+        whnfCore mode eager env fuel d e₃ c = .ok e') ∨
       (rewriteStep (pureFns mode eager env fuel) env d false (.const n us) = .ok none ∧
         e' = .const n us) := by
   rw [whnfCore_succ] at h
@@ -659,7 +772,12 @@ theorem whnfCore_const_inv {env : Env} {fuel d : Nat} {n : Name} {us : List Leve
   · exact nomatch h
   rename_i ro hro
   cases ro with
-  | some te => exact .inl ⟨te.1, te.2, hro, h⟩
+  | some te =>
+    dsimp only at h
+    split at h
+    · exact nomatch h
+    rename_i e₃ he₃
+    exact .inl ⟨te.1, te.2, e₃, hro, he₃, h⟩
   | none =>
     simp only [pure, Except.pure, Except.ok.injEq] at h
     exact .inr ⟨hro, h.symm⟩
@@ -736,13 +854,28 @@ theorem whnfStep_inv {env : Env} {fuel d : Nat} {k : Option Expr → Expr → Ch
 step fired at the origin (with `stuck`). -/
 theorem originFire_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {o : Option Expr}
     {e e₂ : Expr} {t : Name} (h : originFire r env d o e = .ok (some (t, e₂))) :
-    ∃ o', o = some o' ∧ isStuckResult env e = true ∧
-      rewriteStep r env d true o' = .ok (some (t, e₂)) := by
+    ∃ o' e₁, o = some o' ∧ isStuckResult env e = true ∧
+      rewriteStep r env d true o' = .ok (some (t, e₁)) ∧
+      fireMore r env d ruleFireBudget e₁ = .ok e₂ := by
   unfold originFire at h
   split at h
   · rename_i o'
     split at h
-    · rename_i hs; exact ⟨o', rfl, hs, h⟩
+    · rename_i hs
+      simp only [bind, Except.bind] at h
+      split at h
+      · exact nomatch h
+      rename_i ro hro
+      cases ro with
+      | some te =>
+        dsimp only at h
+        split at h
+        · exact nomatch h
+        rename_i e₃ he₃
+        simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq, Prod.mk.injEq] at h
+        obtain ⟨rfl, rfl⟩ := h
+        exact ⟨o', te.2, rfl, hs, hro, he₃⟩
+      | none => simp [pure, Except.pure] at h
     · simp [pure, Except.pure] at h
   · simp [pure, Except.pure] at h
 
@@ -1087,6 +1220,51 @@ theorem Expr.getAppArgs_mkAppN : ∀ (args : List Expr) (f : Expr),
     rw [show Expr.mkAppN f (a :: as) = Expr.mkAppN (.app f a) as from rfl,
       Expr.getAppArgs_mkAppN as]
     simp [Expr.getAppArgs]
+
+/-- **A property that holds of an application exactly where it holds of both parts**
+(well-scopedness, the absence of an occurrence, …).  Head normalization takes an application as
+a whole spine; such a property passes from the spine to its head and arguments and back. -/
+@[expose] def AppClosed (P : Expr → Prop) : Prop := ∀ f a, P (.app f a) ↔ P f ∧ P a
+
+theorem AppClosed.getAppFn {P : Expr → Prop} (hP : AppClosed P) :
+    ∀ {e : Expr}, P e → P e.getAppFn := by
+  intro e
+  induction e with
+  | app f a ihf _ => intro h; exact ihf ((hP f a).mp h).1
+  | _ => intro h; exact h
+
+theorem AppClosed.getAppArgs {P : Expr → Prop} (hP : AppClosed P) :
+    ∀ {e : Expr}, P e → ∀ x ∈ e.getAppArgs, P x := by
+  intro e
+  induction e with
+  | app f a ihf _ =>
+    intro h x hx
+    simp only [Expr.getAppArgs, List.mem_append, List.mem_singleton] at hx
+    rcases hx with hx | hx
+    · exact ihf ((hP f a).mp h).1 x hx
+    · rw [hx]; exact ((hP f a).mp h).2
+  | _ => intro _ x hx; simp [Expr.getAppArgs] at hx
+
+theorem AppClosed.mkAppN {P : Expr → Prop} (hP : AppClosed P) :
+    ∀ {xs : List Expr} {f : Expr}, P f → (∀ x ∈ xs, P x) → P (Expr.mkAppN f xs) := by
+  intro xs
+  induction xs with
+  | nil => intro f hf _; exact hf
+  | cons x xs ih =>
+    intro f hf hxs
+    exact ih ((hP f x).mpr ⟨hf, hxs x List.mem_cons_self⟩)
+      (fun y hy => hxs y (List.mem_cons_of_mem _ hy))
+
+/-- **The β arm's term keeps an application-closed property**: the λ body at the spine's first
+argument, applied to the rest. -/
+theorem AppClosed.beta {P : Expr → Prop} (hP : AppClosed P) {e ty body a₁ : Expr}
+    {rest : List Expr} (hinst : P (.lam ty body) → P a₁ → P (body.instantiate1 a₁))
+    (hargs : e.getAppArgs = a₁ :: rest) (he : P e) (hv : P (.lam ty body)) :
+    P (Expr.mkAppN (body.instantiate1 a₁) rest) := by
+  have ha := hP.getAppArgs he
+  rw [hargs] at ha
+  exact hP.mkAppN (hinst hv (ha a₁ List.mem_cons_self))
+    (fun x hx => ha x (List.mem_cons_of_mem _ hx))
 
 /-- Inversion for a firing projection rule (`reduceProjCore`): the
 string-literal expansion step (`projLitToCtorFueled`), then a firing
@@ -3267,12 +3445,12 @@ theorem MatchPres.wscoped {env : Env} {r : CoreFns CheckM} {d : Nat}
 
 /-- **A rule's right side is scoped where the term it rewrites is**: the theorem's type is
 closed, the arguments are subterms of the term. -/
-theorem rewriteStep_WScoped {env : Env} (henv : EnvWF env) {r : CoreFns CheckM} {d : Nat}
+theorem rewriteAttempt_WScoped {env : Env} (henv : EnvWF env) {r : CoreFns CheckM} {d : Nat}
     (hwh : ∀ {a w : Expr}, r.whnf d a = .ok w → WScoped d a → WScoped d w)
-    {stuck : Bool} {e e₂ : Expr} {t : Name} (h : rewriteStep r env d stuck e = .ok (some (t, e₂)))
+    {e e₂ : Expr} {t : Name} (h : rewriteAttempt r env d e t = .ok (some e₂))
     (hw : WScoped d e) : WScoped d e₂ := by
   obtain ⟨cv, args, us, u, A, c, ls, e₁, _, hf, hm, hres, -, -, hsub, -⟩ :=
-    rewriteAttempt_inv (rewriteStep_inv h)
+    rewriteAttempt_inv h
   have hw₁ := ruleArgsM_pres (MatchPres.wscoped hwh) hm hw
   have hT : WScoped d (cv.type.instantiateLevelParams cv.levelParams us) :=
     WScoped.of_not_hasFvar (by
@@ -3280,6 +3458,25 @@ theorem rewriteStep_WScoped {env : Env} (henv : EnvWF env) {r : CoreFns CheckM} 
   have hR := piResidual_WScoped hres hT (fun x hx => appSubterms_WScoped e₁ (hsub x hx) hw₁)
   simp only [WScoped] at hR
   exact hR.2
+
+/-- The rewrite step keeps well-scopedness, at the prefix of the rule's arity. -/
+theorem rewriteStep_WScoped {env : Env} (henv : EnvWF env) {r : CoreFns CheckM} {d : Nat}
+    (hwh : ∀ {a w : Expr}, r.whnf d a = .ok w → WScoped d a → WScoped d w)
+    {stuck : Bool} {e e₂ : Expr} {t : Name} (h : rewriteStep r env d stuck e = .ok (some (t, e₂)))
+    (hw : WScoped d e) : WScoped d e₂ :=
+  rewriteAt_ind (fun x y => WScoped d x → WScoped d y)
+    (fun ha => rewriteAttempt_WScoped henv hwh ha)
+    (fun hf hw' => by simp only [WScoped] at hw' ⊢; exact ⟨hf hw'.1, hw'.2⟩) e
+    (rewriteStep_inv h) hw
+
+/-- The rules fired again keep well-scopedness. -/
+theorem fireMore_WScoped {env : Env} (henv : EnvWF env) {r : CoreFns CheckM} {d : Nat}
+    (hwh : ∀ {a w : Expr}, r.whnf d a = .ok w → WScoped d a → WScoped d w)
+    {k : Nat} {e e' : Expr} (h : fireMore r env d k e = .ok e') (hw : WScoped d e) :
+    WScoped d e' :=
+  fireMore_pres (WScoped d) (fun hrw hx => rewriteStep_WScoped henv hwh hrw hx) h hw
+
+theorem appClosed_WScoped (d : Nat) : AppClosed (WScoped d) := fun _ _ => by simp only [WScoped]
 
 set_option maxRecDepth 2048 in
 set_option maxHeartbeats 1600000 in
@@ -3315,8 +3512,9 @@ theorem whnfPres_WScoped {env : Env} (henv : EnvWF env) :
         simp only [whnfCoreBody, pure, Except.pure, Except.ok.injEq] at h
         exact h ▸ hw
       | const n ws =>
-        rcases whnfCore_const_inv h with ⟨t, e₂, hrw, hk⟩ | ⟨-, rfl⟩
-        · exact ihCore hk (rewriteStep_WScoped henv ihLoop hrw hw)
+        rcases whnfCore_const_inv h with ⟨t, e₂, e₃, hrw, hfm, hk⟩ | ⟨-, rfl⟩
+        · exact ihCore hk
+            (fireMore_WScoped henv ihLoop hfm (rewriteStep_WScoped henv ihLoop hrw hw))
         · exact hw
       | lit l =>
         rw [whnfCore_succ] at h
@@ -3330,28 +3528,29 @@ theorem whnfPres_WScoped {env : Env} (henv : EnvWF env) :
         simp only [WScoped] at hw
         exact ihCore (whnfCore_letE_inv h) (WScoped.instantiate1_gen hw.2.1 0 hw.2.2)
       | app f a =>
-        simp only [WScoped] at hw
-        obtain ⟨f', hwf, hcase⟩ := whnf_app_inv h
-        have hwf' : WScoped d f' := ihCore hwf hw.1
-        have hwapp : WScoped d (Expr.app f' a) := by
-          simp only [WScoped]
-          exact ⟨hwf', hw.2⟩
-        rcases hcase with ⟨ty, body, rfl, hbeta⟩ |
-          ⟨e'', hio', hwe''⟩ | rfl
-        · simp only [WScoped] at hwf'
-          exact ihCore hbeta (WScoped.instantiate1_gen hw.2 0 hwf'.2)
-        · rcases iotaThenRule_inv hio' with hio | ⟨-, t, hrw⟩
+        have hP := appClosed_WScoped d
+        obtain ⟨v, hwf, hcase⟩ := whnf_app_inv h
+        have hwv : WScoped d v := ihCore hwf (hP.getAppFn hw)
+        rcases hcase with ⟨ty, body, a₁, rest, rfl, hargs, hbeta⟩ |
+          ⟨-, ⟨e'', hio', hwe''⟩ | ⟨-, rfl⟩⟩ | ⟨-, -, hk⟩
+        · exact ihCore hbeta (hP.beta (fun hl ha => by
+            simp only [WScoped] at hl; exact WScoped.instantiate1_gen ha 0 hl.2) hargs hw hwv)
+        · rcases iotaThenRule_inv hio' with hio | ⟨-, t, e₂, hrw, hfm⟩
           rotate_left
-          · exact ihCore hwe'' (rewriteStep_WScoped henv ihLoop hrw hwapp)
-          -- iota step
+          · exact ihCore hwe''
+              (fireMore_WScoped henv ihLoop hfm (rewriteStep_WScoped henv ihLoop hrw hw))
+          -- iota step, at the prefix of the recursor's arity
+          refine ihCore hwe'' (iotaAt_ind (fun x y => WScoped d x → WScoped d y) ?_
+            (fun hf hw' => by simp only [WScoped] at hw' ⊢; exact ⟨hf hw'.1, hw'.2⟩) _ hio hw)
+          intro x y hio hwapp
           obtain ⟨c, us, cv, mI, rP, isK, rules, major, cj, usj,
             cvj, cnP, cnF, induct, r, hfn, hfc, hlen, -, hprep,
             hmfn, hfj,
             hrule,
             hml, hlev, hpeq, hmcerts, -, rfl⟩ :=
             iotaRec_inv hio
-          have hargs : ∀ x, x ∈ (Expr.app f' a).getAppArgs → WScoped d x :=
-            fun x hx => hwapp.getAppArgs x hx
+          have hargs : ∀ z, z ∈ x.getAppArgs → WScoped d z :=
+            fun z hz => hwapp.getAppArgs z hz
           have hrf : r.rhs.hasFvar = false := by
             obtain ⟨-, -, -, -, -, hrules⟩ := henv.consts _ (Env.find?_mem hfc)
             exact (hrules cv mI rP isK rules rfl r (List.mem_of_find?_eq_some hrule)).1
@@ -3368,14 +3567,13 @@ theorem whnfPres_WScoped {env : Env} (henv : EnvWF env) :
                 · exact hwe
                 · exact WScoped.of_wscopedB hwsc)
               (hargs _ (getD_mem (by omega)))
-          refine ihCore hwe'' ?_
           refine RecRule.iotaReduct_WScoped hrf ?_
-          intro x hx
-          rcases List.mem_append.mp hx with hx | hx
-          · exact hargs _ (List.mem_of_mem_take hx)
-          · exact hmajw.getAppArgs _ (List.mem_of_mem_drop hx)
-        · simp only [WScoped]
-          exact ⟨hwf', hw.2⟩
+          intro z hz
+          rcases List.mem_append.mp hz with hz | hz
+          · exact hargs _ (List.mem_of_mem_take hz)
+          · exact hmajw.getAppArgs _ (List.mem_of_mem_drop hz)
+        · exact hw
+        · exact ihCore hk (hP.mkAppN hwv (hP.getAppArgs hw))
       | proj sn i pe =>
         simp only [WScoped] at hw
         obtain ⟨e₂, hst, hcase⟩ := whnf_proj_inv h
@@ -3409,8 +3607,9 @@ theorem whnfPres_WScoped {env : Env} (henv : EnvWF env) :
               exact ihN hcont ho (by simp [WScoped])
           · exact ihN hcont (ho.note hwe₁) (unfoldDefinition_WScoped henv hu hwe₁)
           · exact hwe₁
-          · obtain ⟨o', rfl, -, hrw⟩ := originFire_inv hof
-            exact ihN hcont (OriginP.none _) (rewriteStep_WScoped henv ihLoop hrw (ho _ rfl))
+          · obtain ⟨o', e₃, rfl, -, hrw, hfm⟩ := originFire_inv hof
+            exact ihN hcont (OriginP.none _) (fireMore_WScoped henv ihLoop hfm
+              (rewriteStep_WScoped henv ihLoop hrw (ho _ rfl)))
       intro d e e' h hw
       exact hloop whnfLoopFuel h (OriginP.none _) hw
 

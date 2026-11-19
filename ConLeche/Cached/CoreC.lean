@@ -1225,12 +1225,25 @@ def rewriteAttemptI (eager : Bool) (lv : Nat) (depth : Nat) (e : Expr) (thm : Na
   | _ => pure none
 termination_by (lv, 28, 2, 0)
 
+/-- Twin of `rewriteAt`. -/
+def rewriteAtI (eager : Bool) (lv : Nat) (depth : Nat) (t : Name) :
+    Expr → CheckCM (Option Expr)
+  | .app f a => do
+    match ← rewriteAttemptI eager lv depth (.app f a) t with
+    | some e₂ => pure (some e₂)
+    | none =>
+      match ← rewriteAtI eager lv depth t f with
+      | some f₂ => pure (some (.app f₂ a))
+      | none => pure none
+  | e => rewriteAttemptI eager lv depth e t
+termination_by e => (lv, 28, 2, 1 + sizeOf e)
+
 /-- Twin of `rewriteRules`. -/
 def rewriteRulesI (eager : Bool) (lv : Nat) (depth : Nat) (e : Expr) :
     List Name → CheckCM (Option (Name × Expr))
   | [] => pure none
   | t :: ts => do
-    match ← rewriteAttemptI eager lv depth e t with
+    match ← rewriteAtI eager lv depth t e with
     | some e₂ => pure (some (t, e₂))
     | none => rewriteRulesI eager lv depth e ts
 termination_by ts => (lv, 28, 3, ts.length)
@@ -1245,15 +1258,38 @@ def rewriteStepI (eager : Bool) (lv : Nat) (depth : Nat) (stuck : Bool) (e : Exp
   | _ => pure none
 termination_by (lv, 28, 4, 0)
 
+/-- Twin of `fireMore`: every firing counts against the declaration's
+total (`tickRuleI`), and where the specification stops, a rule that would still fire is rejected
+(`ruleBudgetError`). -/
+def fireMoreI (eager : Bool) (lv : Nat) (depth : Nat) : Nat → Expr → CheckCM Expr
+  | 0, e => do
+    match ← rewriteStepI eager lv depth false e with
+    | some (t', _) => throw (ruleBudgetError t')
+    | none => pure e
+  | k + 1, e => do
+    match ← rewriteStepI eager lv depth false e with
+    | some (t', e₂) => do
+      tickRuleI t'
+      fireMoreI eager lv depth k e₂
+    | none => pure e
+termination_by k _ => (lv, 28, 4, k + 1)
+
 /-- Twin of `originFire`. -/
 def originFireI (eager : Bool) (lv : Nat) (depth : Nat) (o : Option Expr) (e : Expr) :
     CheckCM (Option (Name × Expr)) :=
   match o with
-  | some o' => if isStuckResultC fe e then rewriteStepI eager lv depth true o' else pure none
+  | some o' =>
+    if isStuckResultC fe e then do
+      match ← rewriteStepI eager lv depth true o' with
+      | some (t, e₂) => do
+        let e₃ ← fireMoreI eager lv depth ruleFireBudget e₂
+        pure (some (t, e₃))
+      | none => pure none
+    else pure none
   | none => pure none
 termination_by (lv, 28, 5, 0)
 
-/-- Peel loop of `whnfAppI`: `t` is the raw (unsubstituted) lambda body
+/-- Bulk β of `whnfCoreStepI`: `t` is the raw (unsubstituted) lambda body
 after the binders consumed so far, their arguments the spine range
 `args[s:i]` (innermost last), `args[i:]` the spine left.  The body is
 substituted once, when peeling stops, straight from the spine
@@ -1269,7 +1305,7 @@ def betaPeelI (eager : Bool) (lv : Nat) (depth : Nat)
   if _hi : i < args.size then
     match t with
     | .lam _ body =>
-        -- Task #342 S0: uniform β (see `whnfAppI`)
+        -- Task #342 S0: uniform β, no certificate, at every λ
         betaPeelI eager lv depth body s args (i + 1)
     | _ => do
       let e' ← pure (Expr.instantiateRevRange t args s i)
@@ -1279,61 +1315,25 @@ def betaPeelI (eager : Bool) (lv : Nat) (depth : Nat)
     pure (.cont e')
 termination_by (lv, 29, args.size - i, 0)
 
-/-- Bulk-beta argument loop (task #50): consume the application spine
-`args[i:]` against the whnf'd head `v`.  A lambda head enters the peel
-loop (first binder inline, which keeps the argument count decreasing);
-other heads try iota with one more argument and otherwise accumulate a
-stuck application — the per-level `whnfCoreBody` app clauses, with the
-chained per-argument `instantiate1` of the beta path replaced by one
-bulk substitution per peeled group (`ConLeche/Verify/BetaSpine.lean`
-proves the identification).  A fired ι hands the loop its reduct
-applied to the rest of the spine (`WhnfStep.cont`, task #342 R2): the
-loop, not a nested call, continues with it. -/
-def whnfAppI (eager : Bool) (lv : Nat) (depth : Nat)
-    (v : Expr) (args : Array Expr) (i : Nat) : CheckCM WhnfStep :=
-  if hi : i < args.size then
-    match v with
-    | .lam _ body =>
-        -- Task #342 S0: uniform β, no certificate, at every λ
-        betaPeelI eager lv depth body i args (i + 1)
-    | _ => do
-      let fa ← pure (Expr.app v args[i])
-      -- the ι step is tried only where it can fire: a stored recursor
-      -- at its own number of levels, applied to exactly `mI + 1`
-      -- arguments
-      match Expr.getAppFn fa with
-      | .const c us =>
-        match fe.find? c with
-        | some (.recInfo cv mI rP isK rules) =>
-          if iotaNumArgs fa 0 = mI + 1 ∧ us.length = cv.levelParams.length then do
-            match ← iotaRecI eager lv depth c us cv mI rP isK rules (getAppArgsArr fa) with
-            | some e'' => pure (.cont (mkAppRange e'' args (i + 1) args.size))
-            | none => whnfAppRuleI eager lv depth fa c args i
-          else whnfAppRuleI eager lv depth fa c args i
-        | _ => whnfAppRuleI eager lv depth fa c args i
-      | _ => whnfAppI eager lv depth fa args (i + 1)
-  else pure (.done v)
-termination_by (lv, 30, args.size - i, 1)
-
-/-- The rule arm of `whnfAppI` at the prefix `fa`, headed by the constant `c`, where ι did not
-fire: unless `c` unfolds (δ comes first, `rewriteStep`'s gate), the rules of `c`
-(`rewriteRulesI`); a firing hands the loop its reduct applied to the
-rest of the spine, marked as a firing (`WhnfStep.fire`), and otherwise the argument loop goes
-on. -/
-def whnfAppRuleI (eager : Bool) (lv : Nat) (depth : Nat)
-    (fa : Expr) (c : Name) (args : Array Expr) (i : Nat) : CheckCM WhnfStep := do
-  if unfoldableHeadC fe fa then whnfAppI eager lv depth fa args (i + 1) else
-  match ← rewriteRulesI eager lv depth fa (fe.rulesFor c) with
-  | some (t, e₂) => pure (.fire t (mkAppRange e₂ args (i + 1) args.size))
-  | none => whnfAppI eager lv depth fa args (i + 1)
-termination_by (lv, 30, args.size - (i + 1), 2)
+/-- The rule arm of a spine `e` whose head `h` is its own head normal form and where ι did not
+fire (official `reduce_recursor`'s `reduce_rewrite`): the rules of the head at the whole spine
+(`rewriteStepI`), each against the prefix of its own arity, and the rules fired again on the
+reduct (`fireMoreI`), marked as a firing (`WhnfStep.fire`); otherwise the input itself. -/
+def whnfStuckRuleI (eager : Bool) (lv : Nat) (depth : Nat) (h e : Expr) :
+    CheckCM WhnfStep := do
+  if noRulesC fe h then pure (.done e) else
+  match ← rewriteStepI eager lv depth false e with
+  | some (t, e₂) => do
+    let e₃ ← fireMoreI eager lv depth ruleFireBudget e₂
+    pure (.fire t e₃)
+  | none => pure (.done e)
+termination_by (lv, 30, 0, 1)
 
 /-- A spine `e` whose head `h` is its own head normal form and not a
-lambda (official `whnf_core`'s `f == f0` arm,
-`src/kernel/type_checker.cpp:525-536`): the ι step, tried once, at the
+lambda (official `whnf_core`'s `f == f0` arm, `reduce_recursor`): the ι step, tried once, at the
 one prefix where it can fire (a stored recursor at its own number of
 levels: the prefix of `mI + 1` arguments), on the spine's argument array,
-and otherwise the input itself, with nothing rebuilt.  The recursor's
+and otherwise the rules (`whnfStuckRuleI`).  The recursor's
 record is looked up here, once, and handed to the ι step. -/
 def whnfStuckI (eager : Bool) (lv : Nat) (depth : Nat) (h e : Expr) :
     CheckCM WhnfStep := do
@@ -1345,11 +1345,28 @@ def whnfStuckI (eager : Bool) (lv : Nat) (depth : Nat) (h e : Expr) :
         let args ← pure (getAppArgsArr e)
         match ← iotaRecI eager lv depth c us cv mI rP isK rules args with
         | some e'' => pure (.cont (mkAppRange e'' args (mI + 1) args.size))
-        | none => pure (.done e)
-      else pure (.done e)
-    | _ => pure (.done e)
-  | _ => pure (.done e)
-termination_by (lv, 30, 0, 0)
+        | none => whnfStuckRuleI eager lv depth h e
+      else whnfStuckRuleI eager lv depth h e
+    | _ => whnfStuckRuleI eager lv depth h e
+  | _ => whnfStuckRuleI eager lv depth h e
+termination_by (lv, 30, 0, 2)
+
+/-- The application step of `whnfCoreStepI` past the head's normalization: the spine `e`
+whose head `h` normalized to `v` (official `whnf_core`'s `App` case).  A λ meets every argument
+it has binders for, in one substitution (bulk β, task #50); a head that is its own head normal
+form gets ι and the rules at the whole spine (`whnfStuckI`, official `f == f0`); any other head
+continues the loop at the spine re-assembled. -/
+def whnfHeadI (eager : Bool) (lv : Nat) (depth : Nat) (v h e : Expr) : CheckCM WhnfStep :=
+  match v with
+  | .lam _ body => do
+    let args ← pure (getAppArgsArr e)
+    betaPeelI eager lv depth body 0 args 1
+  | _ =>
+    if v = h then whnfStuckI eager lv depth h e
+    else do
+      let args ← pure (getAppArgsArr e)
+      pure (.cont (mkAppRange v args 0 args.size))
+termination_by (lv, 30, 0, 3)
 
 /-- One head-normalization step of `whnfCoreBody` (beta, iota,
 projection), returning the head normal form or the term to continue
@@ -1369,20 +1386,18 @@ def whnfCoreStepI (eager : Bool) (lv : Nat) (cheap : Bool) (depth : Nat)
     | .const .. => do
       -- a rule whose left side is a bare constant
       match ← rewriteStepI eager lv depth false e with
-      | some (t, e₂) => pure (.fire t e₂)
+      | some (t, e₂) => do
+        let e₃ ← fireMoreI eager lv depth ruleFireBudget e₂
+        pure (.fire t e₃)
       | none => pure (.done e)
     | .app _ _ => do
-      -- `h` is the spine head, computed by the loop
-      -- a head that is its own head normal form and has no rule: the
-      -- spine is stuck but for ι, and is answered by itself
+      -- `h` is the spine head, computed by the loop.  A head that is its own head normal form
+      -- and has no rule: no head normalization, and the spine is stuck but for ι
       if isStuckHeadC h && noRulesC fe h then whnfStuckI eager lv depth h e
       else do
-        -- Bulk beta (task #50): normalize the spine head once and run
-        -- the argument loop over the whole spine, batching consecutive
-        -- lambda binders into one substitution.
-        let args ← pure (getAppArgsArr e)
+        -- official `whnf_core`'s `App` case: the head normalized, then the spine whole
         let v ← whnfCoreI eager lv cheap depth h
-        whnfAppI eager lv depth v args 0
+        whnfHeadI eager lv depth v h e
     | .proj sn i pe => do
       -- the scrutinee by `whnf`, or by the cheap `whnfCore` in the
       -- cheap mode; stuck: the input itself, scrutinee as it was (see

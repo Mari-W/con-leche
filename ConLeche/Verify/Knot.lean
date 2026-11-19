@@ -410,6 +410,22 @@ theorem defeqLazy_fold (env : Env) (fuel : Nat) :
     defeqLazy mode eager (pureFns mode eager env fuel) env = defeqLazyFueled mode eager env fuel :=
         rfl
 
+/-- `rewriteAt` at a term that is no application is the rule's match there. -/
+theorem rewriteAt_nonApp {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
+    (r : CoreFns m) (env : Env) (d : Nat) (t : Name) {e : Expr} (he : ∀ f a, e ≠ .app f a) :
+    rewriteAt r env d t e = rewriteAttempt r env d e t := by
+  cases e with
+  | app f a => exact absurd rfl (he f a)
+  | _ => rw [rewriteAt]; exact fun _ _ hh => nomatch hh
+
+/-- `iotaAt` at a term that is no application is the ι step there. -/
+theorem iotaAt_nonApp {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
+    (r : CoreFns m) (env : Env) (d : Nat) {e : Expr} (he : ∀ f a, e ≠ .app f a) :
+    iotaAt mode r env d e = iotaRec mode r env d e := by
+  cases e with
+  | app f a => exact absurd rfl (he f a)
+  | _ => rw [iotaAt]; exact fun _ _ hh => nomatch hh
+
 /-- **Every origin in `o` satisfies `P`** (the reduction loops' origin invariant, `noteOrigin`:
 an origin is a term the chain passed through). -/
 @[expose] def OriginP (P : Expr → Prop) (o : Option Expr) : Prop := ∀ o', o = some o' → P o'

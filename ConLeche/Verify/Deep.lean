@@ -2003,6 +2003,33 @@ private theorem rewriteAttempt_shift (henv : EnvWF env)
             · rw [ite_eq_right (mt hiff.mp hc), ite_eq_right hc]; rfl
     all_goals rfl
 
+/-- A rule at the prefix of its arity commutes with the shift. -/
+private theorem rewriteAt_shift (henv : EnvWF env)
+    (ih : ShiftClaims mode eager env fuel) {p d : Nat} (hpd : p ≤ d) (t : Name) :
+    ∀ {e : Expr}, WScoped d e →
+      rewriteAt (pureFns mode eager env fuel) env (d + 1) t (shiftFrom p e) =
+        (rewriteAt (pureFns mode eager env fuel) env d t e).map (Option.map (shiftFrom p))
+  | .app f a, hw => by
+    rw [shiftFrom_app, rewriteAt, rewriteAt, ← shiftFrom_app]
+    refine bind_rel (Option.map (shiftFrom p)) _ (rewriteAttempt_shift henv ih hpd hw t)
+      fun o _ => ?_
+    cases o with
+    | some e₂ => rfl
+    | none =>
+      have hwf : WScoped d f := by simp only [WScoped] at hw; exact hw.1
+      refine bind_rel (Option.map (shiftFrom p)) _ (rewriteAt_shift henv ih hpd t hwf)
+        fun o' _ => ?_
+      cases o' <;> rfl
+  | .bvar _, hw | .sort _, hw | .const .., hw | .forallE .., hw | .lam .., hw | .letE .., hw
+  | .lit _, hw | .proj .., hw => by
+    rw [rewriteAt_nonApp _ _ _ _ (by intro _ _ hh; cases hh),
+      rewriteAt_nonApp _ _ _ _ (by intro _ _ hh; cases hh)]
+    exact rewriteAttempt_shift henv ih hpd hw t
+  | .fvar i ty, hw => by
+    rw [rewriteAt_nonApp _ _ _ _ (by intro _ _ hh; rw [shiftFrom_fvar] at hh; cases hh),
+      rewriteAt_nonApp _ _ _ _ (by intro _ _ hh; cases hh)]
+    exact rewriteAttempt_shift henv ih hpd hw t
+
 private theorem rewriteRules_shift (henv : EnvWF env)
     (ih : ShiftClaims mode eager env fuel) {p d : Nat} (hpd : p ≤ d) {e : Expr}
     (hw : WScoped d e) :
@@ -2013,7 +2040,7 @@ private theorem rewriteRules_shift (henv : EnvWF env)
   | [] => rfl
   | t :: ts => by
     unfold rewriteRules
-    refine bind_rel (Option.map (shiftFrom p)) _ (rewriteAttempt_shift henv ih hpd hw t)
+    refine bind_rel (Option.map (shiftFrom p)) _ (rewriteAt_shift henv ih hpd t hw)
       fun o _ => ?_
     cases o with
     | some e₂ => rfl
@@ -2033,6 +2060,22 @@ private theorem rewriteStep_shift (henv : EnvWF env)
     exact ite_rel _ (fun _ => rfl) (fun _ => rewriteRules_shift henv ih hpd hw _)
   | fvar i ty => rw [shiftFrom_fvar]; rfl
   | _ => rfl
+
+/-- The rules fired again commute with the shift. -/
+private theorem fireMore_shift (henv : EnvWF env)
+    (ih : ShiftClaims mode eager env fuel) {p d : Nat} (hpd : p ≤ d) :
+    ∀ (k : Nat) {e : Expr}, WScoped d e →
+      fireMore (pureFns mode eager env fuel) env (d + 1) k (shiftFrom p e) =
+        (fireMore (pureFns mode eager env fuel) env d k e).map (shiftFrom p)
+  | 0, _, _ => rfl
+  | k + 1, e, hw => by
+    unfold fireMore
+    refine bind_rel _ _ (rewriteStep_shift henv ih hpd hw false) fun o ho => ?_
+    cases o with
+    | none => rfl
+    | some te =>
+      exact fireMore_shift henv ih hpd k
+        (rewriteStep_WScoped henv (fun h hw => whnf_WScoped henv fuel h hw) ho hw)
 
 /-- The stuck test only reads binder, sort and literal shapes and head constants. -/
 private theorem isStuckResult_shiftFrom {env : Env} (p : Nat) (e : Expr) :
@@ -2077,21 +2120,61 @@ private theorem originFire_shift (henv : EnvWF env)
   cases o with
   | none => rfl
   | some o =>
-    show (if isStuckResult env (shiftFrom p e) = true then
-        rewriteStep (pureFns mode eager env fuel) env (d + 1) true (shiftFrom p o)
-        else pure none) =
-      (if isStuckResult env e = true then rewriteStep (pureFns mode eager env fuel) env d true o
-        else pure none).map (Option.map fun te => (te.1, shiftFrom p te.2))
+    unfold originFire
+    dsimp only [Option.map]
     rw [isStuckResult_shiftFrom]
-    exact ite_rel _ (fun _ => rewriteStep_shift henv ih hpd (ho _ rfl) true) (fun _ => rfl)
+    refine ite_rel _ (fun _ => ?_) (fun _ => rfl)
+    refine bind_rel _ _ (rewriteStep_shift henv ih hpd (ho _ rfl) true) fun o' ho' => ?_
+    cases o' with
+    | none => rfl
+    | some te =>
+      dsimp only
+      refine bind_rel _ _ (fireMore_shift henv ih hpd _
+        (rewriteStep_WScoped henv (fun h hw => whnf_WScoped henv fuel h hw) ho' (ho _ rfl)))
+        fun _ _ => rfl
 
 /-- A rule's right side at an origin is scoped where the origin is. -/
 private theorem originFire_WScoped (henv : EnvWF env) {d : Nat} {o : Option Expr}
     {e e₂ : Expr} {t : Name}
     (h : originFire (pureFns mode eager env fuel) env d o e = .ok (some (t, e₂)))
     (ho : OriginP (WScoped d) o) : WScoped d e₂ := by
-  obtain ⟨o', rfl, -, hrw⟩ := originFire_inv h
-  exact rewriteStep_WScoped henv (fun h hx => whnf_WScoped henv fuel h hx) hrw (ho _ rfl)
+  obtain ⟨o', e₃, rfl, -, hrw, hfm⟩ := originFire_inv h
+  exact fireMore_WScoped henv (fun h hx => whnf_WScoped henv fuel h hx) hfm
+    (rewriteStep_WScoped henv (fun h hx => whnf_WScoped henv fuel h hx) hrw (ho _ rfl))
+
+/-- ι at the prefix of the recursor's arity commutes with the shift. -/
+private theorem iotaAt_shift (henv : EnvWF env)
+    (ih : ShiftClaims mode eager env fuel) {p d : Nat} (hpd : p ≤ d) :
+    ∀ {e : Expr}, WScoped d e →
+      iotaAt mode (pureFns mode eager env fuel) env (d + 1) (shiftFrom p e) =
+        (iotaAt mode (pureFns mode eager env fuel) env d e).map (Option.map (shiftFrom p))
+  | .app f a, hw => by
+    rw [shiftFrom_app, iotaAt, iotaAt, ← shiftFrom_app]
+    refine bind_rel (Option.map (shiftFrom p)) _ (iotaRec_shift henv ih hpd hw)
+      fun o _ => ?_
+    cases o with
+    | some e₂ => rfl
+    | none =>
+      have hwf : WScoped d f := by simp only [WScoped] at hw; exact hw.1
+      refine bind_rel (Option.map (shiftFrom p)) _ (iotaAt_shift henv ih hpd hwf)
+        fun o' _ => ?_
+      cases o' <;> rfl
+  | .bvar _, hw | .sort _, hw | .const .., hw | .forallE .., hw | .lam .., hw | .letE .., hw
+  | .lit _, hw | .proj .., hw => by
+    rw [iotaAt_nonApp _ _ _ (by intro _ _ hh; cases hh),
+      iotaAt_nonApp _ _ _ (by intro _ _ hh; cases hh)]
+    exact iotaRec_shift henv ih hpd hw
+  | .fvar i ty, hw => by
+    rw [iotaAt_nonApp _ _ _ (by intro _ _ hh; rw [shiftFrom_fvar] at hh; cases hh),
+      iotaAt_nonApp _ _ _ (by intro _ _ hh; cases hh)]
+    exact iotaRec_shift henv ih hpd hw
+
+/-- ι at a prefix keeps well-scopedness. -/
+private theorem iotaAt_WScoped (henv : EnvWF env) {d : Nat} {e e'' : Expr}
+    (h : iotaAt mode (pureFns mode eager env fuel) env d e = .ok (some e''))
+    (hw : WScoped d e) : WScoped d e'' :=
+  iotaAt_ind (fun x y => WScoped d x → WScoped d y) (fun hio hx => iotaRec_WScoped henv hio hx)
+    (fun hf hw' => by simp only [WScoped] at hw' ⊢; exact ⟨hf hw'.1, hw'.2⟩) e h hw
 
 /-- ι, then the rules, commutes with the shift. -/
 private theorem iotaThenRule_shift (henv : EnvWF env)
@@ -2101,16 +2184,29 @@ private theorem iotaThenRule_shift (henv : EnvWF env)
       (iotaThenRule mode (pureFns mode eager env fuel) env d e).map
         (Option.map (shiftFrom p)) := by
   unfold iotaThenRule
-  refine bind_rel _ _ (iotaRec_shift henv ih hpd hw) ?_
+  refine bind_rel _ _ (iotaAt_shift henv ih hpd hw) ?_
   intro o _
   cases o with
   | some e'' => rfl
   | none =>
     refine bind_rel _ _ (rewriteStep_shift henv ih hpd hw false) ?_
-    intro o' _
+    intro o' ho'
     cases o' with
-    | some te => rfl
+    | some te =>
+      dsimp only
+      refine bind_rel _ _ (fireMore_shift henv ih hpd _
+        (rewriteStep_WScoped henv (fun h hw => whnf_WScoped henv fuel h hw) ho' hw))
+        fun _ _ => rfl
     | none => rfl
+
+/-- What ι-then-rules fires at is scoped where the term is. -/
+private theorem iotaThenRule_WScoped (henv : EnvWF env) {d : Nat} {e e'' : Expr}
+    (h : iotaThenRule mode (pureFns mode eager env fuel) env d e = .ok (some e''))
+    (hw : WScoped d e) : WScoped d e'' := by
+  rcases iotaThenRule_inv h with ho | ⟨-, t, e₂, hrw, hfm⟩
+  · exact iotaAt_WScoped henv ho hw
+  · exact fireMore_WScoped henv (fun h hw => whnf_WScoped henv fuel h hw) hfm
+      (rewriteStep_WScoped henv (fun h hw => whnf_WScoped henv fuel h hw) hrw hw)
 
 /-! ## The body step lemmas -/
 
@@ -2137,7 +2233,11 @@ private theorem whnfCore_step (henv : EnvWF env)
     intro o ho
     cases o with
     | none => rfl
-    | some te => exact ih.whnfCore hpd (rewriteStep_WScoped henv (fun h hw => whnf_WScoped henv fuel h hw) ho hw)
+    | some te =>
+      dsimp only
+      have hw₂ := rewriteStep_WScoped henv (fun h hw => whnf_WScoped henv fuel h hw) ho hw
+      refine bind_rel _ _ (fireMore_shift henv ih hpd _ hw₂) fun e₃ he₃ => ?_
+      exact ih.whnfCore hpd (fireMore_WScoped henv (fun h hw => whnf_WScoped henv fuel h hw) he₃ hw₂)
   | .lit l => rfl
   | .letE ty v body =>
     -- ζ: the body at the value
@@ -2152,55 +2252,71 @@ private theorem whnfCore_step (henv : EnvWF env)
     simp only [whnfCore_def]
     exact h
   | .app f a =>
-    simp only [WScoped] at hw
+    have hP := appClosed_WScoped d
     rw [shiftFrom_app]
     simp only [whnfCoreBody]
-    refine bind_rel _ _ (ih.whnfCore hpd hw.1) ?_
-    intro f' hf'
-    have hwf' : WScoped d f' := whnfCore_WScoped henv fuel hf' hw.1
-    have hiota : ∀ (f'' : Expr), WScoped d f'' →
-        (iotaThenRule mode (pureFns mode eager env fuel) env (d + 1)
-            (.app (shiftFrom p f'') (shiftFrom p a)) >>= fun o =>
-          match o with
-          | some e'' => (pureFns mode eager env fuel).whnfCore c (d + 1) e''
-          | none => pure (.app (shiftFrom p f'') (shiftFrom p a))) =
-        ((iotaThenRule mode (pureFns mode eager env fuel) env d (.app f'' a) >>= fun o =>
-          match o with
-          | some e'' => (pureFns mode eager env fuel).whnfCore c d e''
-          | none => pure (.app f'' a)).map (shiftFrom p)) := by
-      intro f'' hwf''
-      have hwapp : WScoped d (Expr.app f'' a) := by
-        simp only [WScoped]; exact ⟨hwf'', hw.2⟩
-      refine bind_rel _ _ (iotaThenRule_shift henv ih hpd hwapp) ?_
-      intro o ho
-      cases o with
-      | none => rfl
-      | some e'' =>
-        rcases iotaThenRule_inv ho with ho' | ⟨-, t, hrw⟩
-        · exact ih.whnfCore hpd (iotaRec_WScoped henv ho' hwapp)
-        · exact ih.whnfCore hpd (rewriteStep_WScoped henv (fun h hw => whnf_WScoped henv fuel h hw) hrw hwapp)
-    cases f' with
+    rw [← shiftFrom_app, getAppFn_shiftFrom, getAppArgs_shiftFrom]
+    have hwh : WScoped d (Expr.app f a).getAppFn := hP.getAppFn hw
+    have hwa := hP.getAppArgs hw
+    refine bind_rel _ _ (ih.whnfCore hpd hwh) ?_
+    intro v hv
+    have hwv : WScoped d v := whnfCore_WScoped henv fuel hv hwh
+    -- a head that is not a λ: ι and the rules at the spine, or the spine re-assembled
+    have hne : (∀ ty b, v ≠ .lam ty b) →
+        (if shiftFrom p v = shiftFrom p (Expr.app f a).getAppFn then
+          (iotaThenRule mode (pureFns mode eager env fuel) env (d + 1)
+              (shiftFrom p (.app f a)) >>= fun o =>
+            match o with
+            | some e'' => (pureFns mode eager env fuel).whnfCore c (d + 1) e''
+            | none => pure (shiftFrom p (.app f a)))
+        else (pureFns mode eager env fuel).whnfCore c (d + 1)
+          (Expr.mkAppN (shiftFrom p v) ((Expr.app f a).getAppArgs.map (shiftFrom p)))) =
+        (if v = (Expr.app f a).getAppFn then
+          (iotaThenRule mode (pureFns mode eager env fuel) env d (.app f a) >>= fun o =>
+            match o with
+            | some e'' => (pureFns mode eager env fuel).whnfCore c d e''
+            | none => pure (.app f a))
+        else (pureFns mode eager env fuel).whnfCore c d
+          (Expr.mkAppN v (Expr.app f a).getAppArgs)).map (shiftFrom p) := by
+      intro _
+      by_cases hvh : v = (Expr.app f a).getAppFn
+      · rw [ite_eq_left (congrArg (shiftFrom p) hvh), ite_eq_left hvh]
+        refine bind_rel _ _ (iotaThenRule_shift henv ih hpd hw) ?_
+        intro o ho
+        cases o with
+        | none => rfl
+        | some e'' => exact ih.whnfCore hpd (iotaThenRule_WScoped henv ho hw)
+      · rw [ite_eq_right (fun h => hvh (shiftFrom_injective h)), ite_eq_right hvh]
+        have h := ih.whnfCore (c := c) hpd (hP.mkAppN hwv hwa)
+        rw [shiftFrom_mkAppN] at h
+        exact h
+    cases v with
     | lam ty₁ body₁ =>
-      simp only [WScoped] at hwf'
+      simp only [WScoped] at hwv
       dsimp only [shiftFrom]
-      -- uniform β: the reduct step, no certificate
-      have h := ih.whnfCore (c := c) hpd
-        (WScoped.instantiate1_gen hw.2 0 hwf'.2)
-      rw [shiftFrom_instantiate1_gen] at h
-      simp only [whnfCore_def]
-      exact h
-    | bvar i => exact hiota _ hwf'
+      -- uniform β at the spine's first argument: the reduct step, no certificate
+      cases hargs : (Expr.app f a).getAppArgs with
+      | nil => exact absurd hargs (getAppArgs_app_ne_nil f a)
+      | cons a₁ rest =>
+        rw [hargs] at hwa
+        have h := ih.whnfCore (c := c) hpd (hP.mkAppN
+          (WScoped.instantiate1_gen (hwa a₁ List.mem_cons_self) 0 hwv.2)
+          (fun x hx => hwa x (List.mem_cons_of_mem _ hx)))
+        rw [shiftFrom_mkAppN, shiftFrom_instantiate1_gen] at h
+        simp only [List.map_cons, whnfCore_def]
+        exact h
+    | bvar i => exact hne (fun _ _ hh => nomatch hh)
     | fvar idx ty =>
-      have h := hiota _ hwf'
+      have h := hne (fun _ _ hh => nomatch hh)
       simp only [shiftFrom_fvar] at h ⊢
       exact h
-    | sort u => exact hiota _ hwf'
-    | const n' us => exact hiota _ hwf'
-    | forallE ty' body' => exact hiota _ hwf'
-    | letE ty' v' body' => exact hiota _ hwf'
-    | lit l => exact hiota _ hwf'
-    | proj s' i' e' => exact hiota _ hwf'
-    | app f'' a'' => exact hiota _ hwf'
+    | sort u => exact hne (fun _ _ hh => nomatch hh)
+    | const n' us => exact hne (fun _ _ hh => nomatch hh)
+    | forallE ty' body' => exact hne (fun _ _ hh => nomatch hh)
+    | letE ty' v' body' => exact hne (fun _ _ hh => nomatch hh)
+    | lit l => exact hne (fun _ _ hh => nomatch hh)
+    | proj s' i' e' => exact hne (fun _ _ hh => nomatch hh)
+    | app f'' a'' => exact hne (fun _ _ hh => nomatch hh)
   | .proj sn i pe =>
     simp only [WScoped] at hw
     show whnfCoreBody mode (pureFns mode eager env fuel) env c (d + 1)

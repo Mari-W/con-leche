@@ -537,6 +537,16 @@ theorem rewriteAttemptI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mod
   funext depth e t; rw [rewriteAttemptI.eq_def, rewriteAttemptI.eq_def]
   simp only [hfe, rewriteFireI_congr hfe h, ruleArgsI_congr hfe h]
 
+/-- `rewriteAtI` reads `fe` only through `find?`. -/
+theorem rewriteAtI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv) :
+    rewriteAtI mode fe₁ eager lv = rewriteAtI mode fe₂ eager lv := by
+  funext depth t e
+  induction e with
+  | app f a ihf _ =>
+    rw [rewriteAtI.eq_def, rewriteAtI.eq_def]
+    simp only [rewriteAttemptI_congr hfe h, ihf]
+  | _ => rw [rewriteAtI.eq_def, rewriteAtI.eq_def]; simp only [rewriteAttemptI_congr hfe h]
+
 /-- `rewriteRulesI` reads `fe` only through `find?`. -/
 theorem rewriteRulesI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv) :
     rewriteRulesI mode fe₁ eager lv = rewriteRulesI mode fe₂ eager lv := by
@@ -545,7 +555,7 @@ theorem rewriteRulesI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode 
   | nil => rw [rewriteRulesI.eq_def, rewriteRulesI.eq_def]
   | cons t ts ih =>
     rw [rewriteRulesI.eq_def, rewriteRulesI.eq_def]
-    simp only [rewriteAttemptI_congr hfe h, ih]
+    simp only [rewriteAtI_congr hfe h, ih]
 
 /-- `rewriteStepI` reads `fe` through `find?` and the rule map. -/
 theorem rewriteStepI_congr (hfe : fe₁.find? = fe₂.find?) (hru : fe₁.rulesFor = fe₂.rulesFor)
@@ -555,49 +565,52 @@ theorem rewriteStepI_congr (hfe : fe₁.find? = fe₂.find?) (hru : fe₁.rulesF
   funext depth stuck e; rw [rewriteStepI.eq_def, rewriteStepI.eq_def]
   simp only [rewriteRulesI_congr hfe h, hru, unfoldableHeadC_congr hfe hbk]
 
+/-- `fireMoreI` reads `fe` through `find?` and the rule map. -/
+theorem fireMoreI_congr (hfe : fe₁.find? = fe₂.find?) (hru : fe₁.rulesFor = fe₂.rulesFor)
+    (hbk : fe₁.base.blk = fe₂.base.blk)
+    (h : SlotsEq mode fe₁ fe₂ lv) :
+    fireMoreI mode fe₁ eager lv = fireMoreI mode fe₂ eager lv := by
+  funext depth k
+  induction k with
+  | zero => funext e; rw [fireMoreI.eq_def, fireMoreI.eq_def]; simp only [rewriteStepI_congr hfe hru hbk h]
+  | succ k ih =>
+    funext e; rw [fireMoreI.eq_def, fireMoreI.eq_def]; simp only [rewriteStepI_congr hfe hru hbk h, ih]
+
 /-- `originFireI` reads `fe` through `find?` and the rule map. -/
 theorem originFireI_congr (hfe : fe₁.find? = fe₂.find?) (hru : fe₁.rulesFor = fe₂.rulesFor)
     (hbk : fe₁.base.blk = fe₂.base.blk)
     (h : SlotsEq mode fe₁ fe₂ lv) :
     originFireI mode fe₁ eager lv = originFireI mode fe₂ eager lv := by
   funext depth o e; rw [originFireI.eq_def, originFireI.eq_def]
-  simp only [rewriteStepI_congr hfe hru hbk h, isStuckResultC_congr hfe]
-
-/-- `whnfAppI` reads `fe` only through `find?`, `findTable?` and the rule map. -/
-theorem whnfAppI_congr (hfe : fe₁.find? = fe₂.find?)
-    (htb : fe₁.findTable? = fe₂.findTable?) (hru : fe₁.rulesFor = fe₂.rulesFor)
-    (hbk : fe₁.base.blk = fe₂.base.blk)
-    (h : SlotsEq mode fe₁ fe₂ lv) (depth : Nat) :
-    whnfAppI mode fe₁ eager lv depth = whnfAppI mode fe₂ eager lv depth := by
-  funext v args i
-  obtain ⟨n, hn⟩ : ∃ n, n = args.size - i := ⟨_, rfl⟩
-  induction n generalizing v i with
-  | zero =>
-    rw [whnfAppI.eq_def, whnfAppI.eq_def, dite_eq_right (by omega), dite_eq_right (by omega)]
-  | succ n ih =>
-    rw [whnfAppI.eq_def, whnfAppI.eq_def]
-    by_cases hi : i < args.size
-    · rw [dite_eq_left hi, dite_eq_left hi]
-      have hr : ∀ fa c, whnfAppRuleI mode fe₁ eager lv depth fa c args i =
-          whnfAppRuleI mode fe₂ eager lv depth fa c args i := by
-        intro fa c
-        rw [whnfAppRuleI.eq_def, whnfAppRuleI.eq_def]
-        simp only [rewriteRulesI_congr hfe h, hru, ih _ (i + 1) (by omega),
-          unfoldableHeadC_congr hfe hbk]
-      cases v <;> simp only [betaPeelI_congr hfe, hfe,
-        iotaRecI_congr hfe htb h, ih _ (i + 1) (by omega), hr]
-    · rw [dite_eq_right hi, dite_eq_right hi]
-
-/-- `whnfStuckI` reads `fe` only through `find?` and `findTable?`. -/
-theorem whnfStuckI_congr (hfe : fe₁.find? = fe₂.find?)
-    (htb : fe₁.findTable? = fe₂.findTable?) (h : SlotsEq mode fe₁ fe₂ lv) :
-    whnfStuckI mode fe₁ eager lv = whnfStuckI mode fe₂ eager lv := by
-  funext depth hd e; rw [whnfStuckI.eq_def, whnfStuckI.eq_def]
-  simp only [hfe, iotaRecI_congr hfe htb h]
+  simp only [rewriteStepI_congr hfe hru hbk h, isStuckResultC_congr hfe,
+    fireMoreI_congr hfe hru hbk h]
 
 /-- A head without rules reads the rule map. -/
 theorem noRulesC_congr (hru : fe₁.rulesFor = fe₂.rulesFor) : noRulesC fe₁ = noRulesC fe₂ := by
   funext e; cases e <;> simp only [noRulesC, hru]
+
+/-- `whnfStuckRuleI` reads `fe` through `find?` and the rule map. -/
+theorem whnfStuckRuleI_congr (hfe : fe₁.find? = fe₂.find?) (hru : fe₁.rulesFor = fe₂.rulesFor)
+    (hbk : fe₁.base.blk = fe₂.base.blk) (h : SlotsEq mode fe₁ fe₂ lv) :
+    whnfStuckRuleI mode fe₁ eager lv = whnfStuckRuleI mode fe₂ eager lv := by
+  funext depth hd e; rw [whnfStuckRuleI.eq_def, whnfStuckRuleI.eq_def]
+  simp only [noRulesC_congr hru, rewriteStepI_congr hfe hru hbk h, fireMoreI_congr hfe hru hbk h]
+
+/-- `whnfStuckI` reads `fe` only through `find?`, `findTable?` and the rule map. -/
+theorem whnfStuckI_congr (hfe : fe₁.find? = fe₂.find?)
+    (htb : fe₁.findTable? = fe₂.findTable?) (hru : fe₁.rulesFor = fe₂.rulesFor)
+    (hbk : fe₁.base.blk = fe₂.base.blk) (h : SlotsEq mode fe₁ fe₂ lv) :
+    whnfStuckI mode fe₁ eager lv = whnfStuckI mode fe₂ eager lv := by
+  funext depth hd e; rw [whnfStuckI.eq_def, whnfStuckI.eq_def]
+  simp only [hfe, iotaRecI_congr hfe htb h, whnfStuckRuleI_congr hfe hru hbk h]
+
+/-- `whnfHeadI` reads `fe` only through `find?`, `findTable?` and the rule map. -/
+theorem whnfHeadI_congr (hfe : fe₁.find? = fe₂.find?)
+    (htb : fe₁.findTable? = fe₂.findTable?) (hru : fe₁.rulesFor = fe₂.rulesFor)
+    (hbk : fe₁.base.blk = fe₂.base.blk) (h : SlotsEq mode fe₁ fe₂ lv) :
+    whnfHeadI mode fe₁ eager lv = whnfHeadI mode fe₂ eager lv := by
+  funext depth v hd e; rw [whnfHeadI.eq_def, whnfHeadI.eq_def]
+  simp only [betaPeelI_congr hfe, whnfStuckI_congr hfe htb hru hbk h]
 
 /-- `whnfCoreStepI` reads `fe` only through `find?`, `findTable?` and the rule map. -/
 theorem whnfCoreStepI_congr (hfe : fe₁.find? = fe₂.find?)
@@ -606,8 +619,9 @@ theorem whnfCoreStepI_congr (hfe : fe₁.find? = fe₂.find?)
     (h : SlotsEq mode fe₁ fe₂ lv) :
     whnfCoreStepI mode fe₁ eager lv = whnfCoreStepI mode fe₂ eager lv := by
   funext cheap depth hd e; rw [whnfCoreStepI.eq_def, whnfCoreStepI.eq_def]
-  simp only [whnfAppI_congr hfe htb hru hbk h, whnfStuckI_congr hfe htb h,
-    reduceProjCoreI_congr hfe htb h, rewriteStepI_congr hfe hru hbk h, noRulesC_congr hru, h]
+  simp only [whnfHeadI_congr hfe htb hru hbk h, whnfStuckI_congr hfe htb hru hbk h,
+    reduceProjCoreI_congr hfe htb h, rewriteStepI_congr hfe hru hbk h, noRulesC_congr hru, h,
+    fireMoreI_congr hfe hru hbk h]
 
 /-- `whnfCoreLoopI` reads `fe` only through `find?`, `findTable?` and the rule map. -/
 theorem whnfCoreLoopI_congr (hfe : fe₁.find? = fe₂.find?)

@@ -113,6 +113,28 @@ if sys.argv[1] == "abstract":
     put("abstract_block_before_def", recs[:di] + [early] + recs[di:ai] + recs[ai + 1:])
     sys.exit(0)
 
+if sys.argv[1] == "prio":
+    # RrPrio.lean: the order of a head's rules and the rules firing again on their reduct
+    src, out = sys.argv[2:4]
+    J = lambda r: json.dumps(r, separators=(",", ":"))
+    load = lambda f: [json.loads(l) for l in open(f).read().splitlines()]
+    for t in ["arity_hi", "arity_lo", "prio_name", "name_order", "refire", "iota_first", "prefix",
+              "exposure"]:
+        open(f"{out}/rewrite_rule_prio_{t}.ndjson", "w").write(open(f"{src}/{t}.ndjson").read())
+    def drop(t, rule, name):
+        # the theorem with `rule` dropped from its rule list
+        recs = load(f"{src}/{t}.ndjson")
+        names = {r["in"]: r for r in recs if "in" in r}
+        k = next(k for k, r in names.items() if r.get("str", {}).get("str") == rule)
+        for r in recs:
+            if "thm" in r and "rewrites" in r["thm"]: r["thm"]["rewrites"].remove(k)
+        open(f"{out}/rewrite_rule_prio_{name}.ndjson", "w").write("\n".join(J(r) for r in recs) + "\n")
+    drop("arity_hi", "fa_two", "arity_hi_short")
+    drop("prio_name", "pk_b", "prio_name_low")
+    drop("refire", "bx_tt", "refire_norule")
+    drop("prefix", "d_one", "prefix_norule")
+    sys.exit(0)
+
 if sys.argv[1] == "loop":
     # RrLoop.lean: a rule whose right side unfolds back to its left side, in a false conversion
     stmt_patch(sys.argv[2], f"{sys.argv[3]}/rewrite_rule_decl_budget.ndjson", [("loopBad", "loopTgt")])

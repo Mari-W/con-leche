@@ -116328,3 +116328,43 @@ the same term and share leaves, scoping and bound variables (`Expr.levelFormEq_r
 `H_mk : H.{l} n (Box.mk.{l} y) = n`; it flips from 1 to 0. `rewrite_rule_level_swap` meets
 `Box.mk.{max b a}` after binding `l := max a b`; the official kernel rejects it (checked through
 `addDecl` in an rr-dev `#eval`), and con-leche does too.
+
+## Whole application spines (2026-11-19, rewrite-rules, r14, firing order)
+
+**The deviation.** `whnfCoreBody` took an application one argument at a time. It head-normalized
+`f` in `f a`, tried ι and the rules at `f' a`, and only then looked at the next argument. The rules
+of a head therefore fired at the shortest prefix that matched, whatever their priority. The
+official kernel takes the spine whole (`whnf_core`'s `App` case). It normalizes the spine head and,
+where the head is its own normal form, runs `reduce_recursor` on the whole spine, so the rules of
+the head are tried in the table's order (priority, then theorem name) and each matches the prefix
+of its own arity (`reduce_rewrite_step`). r11 restricted the whole-spine arm to rule heads and kept
+the chained arm elsewhere. That broke at an exposure, where β at a prefix yields a rule head with
+arguments left over (`(fun x => fa x) 0 b`). The chained specification fires the arity-1 rule at
+`fa 0`, the official kernel the arity-2 rule at `fa 0 b`.
+
+**The decision.** The specification takes every spine whole. `whnfCoreBody`'s `.app` arm
+normalizes `getAppFn e`. A λ meets the first argument and head normalization goes on at
+`mkAppN (body.instantiate1 a₁) rest`. A head that normalized to something else goes on at
+`mkAppN v (getAppArgs e)`. A head that is its own normal form (`v = h`, official `f == f0`) gets
+`iotaThenRule` at the whole spine. ι runs at the prefix of the recursor's arity (`iotaAt`), and the
+rules run in the table's order, each at the prefix of its arity (`rewriteAt`), followed by the
+rules fired again on the reduct (`fireMore`, official `reduce_rewrite`'s loop). The bare-constant
+arm and the origin firing (`originFire`) fire again the same way. The cached step has the same
+shape. `whnfHeadI` takes the normalized head, `betaPeelI` peels every λ the spine has arguments for
+in one substitution, `whnfStuckI` runs ι at the target prefix and then `whnfStuckRuleI`. The
+per-prefix argument loop `whnfAppI` is gone, and a stuck spine is answered by itself instead of
+being rebuilt node by node.
+
+**Proofs.** Restricting or reordering reductions needs no model change. Every preservation proof of
+`whnfCore` (scoping, bound variables, leaves, member freedom, shift invariance, environment
+extension, the `Red` bridge) reads the new arm through `whnf_app_inv` and the generic
+`AppClosed` facts (`getAppFn`, `getAppArgs`, `mkAppN`, `beta`), with `iotaAt_ind`,
+`rewriteAt_ind` and `fireMore_ind` for the prefix recursions. `Verify/BetaSpine.lean` lost the
+snoc decomposition. A cached step followed by `whnfCore` is the body's arm followed by `whnfCore`
+at the same fuel (`whnfCoreBody_eq_step`, `whnfStuckW_run` through `iotaAt_target`), except at a
+λ head, where the bulk substitution is the body's one-binder β iterated (`peelTerm_sound`).
+
+**Fixtures.** `scripts/rewrite-fixtures/RrPrio.lean`, `mk.py prio`, 12 exports. `arity_hi`
+(priority beats arity), `refire` (the rules fire again before ι), `prefix` (an origin rule of
+arity 1 on a stuck unfolding of arity 2) and `exposure` flip from 1 to 0. The variants with the
+deciding rule dropped stay 1.

@@ -890,7 +890,7 @@ telescope at the full grade (`iotaCertsFull`) and compares the indices
 (`iotaIndexOk`).  The result is the rule's right-hand side's body under its
 `rP + nfields` λs (`lamBody`; the install checks that it has them, `RuleWF`), at the
 recursor's levels, with the non-index prefix and the constructor's fields substituted
-(`RecRule.iotaReduct`: lean4 PR #10565's peel, so no β-redex is built).  Over-application is handled by the outer app recursion. -/
+(`RecRule.iotaReduct`: lean4 PR #10565's peel, so no β-redex is built).  Over-application is handled by `iotaAt`. -/
 def iotaRec (r : CoreFns m) (env : Env) (depth : Nat) (e : Expr) :
     m (Option Expr) := do
   match e.getAppFn with
@@ -1136,12 +1136,28 @@ def rewriteAttempt (r : CoreFns m) (env : Env) (depth : Nat) (e : Expr) (thm : N
     | none => pure none
   | _ => pure none
 
+/-- **A rule against the prefix of its own arity** (official `reduce_rewrite_step`, which
+matches the rule's left side against the first `m_nargs` arguments and applies the reduct to the
+rest): the rule at the term, and otherwise at its function part, with the reduct applied to the
+argument.  A match against a spine of another length fails before it reaches an argument
+(`ruleMatchM` compares the spines from the head), so only the prefix of the rule's arity can
+fire. -/
+def rewriteAt (r : CoreFns m) (env : Env) (depth : Nat) (t : Name) : Expr → m (Option Expr)
+  | .app f a => do
+    match ← rewriteAttempt r env depth (.app f a) t with
+    | some e₂ => pure (some e₂)
+    | none =>
+      match ← rewriteAt r env depth t f with
+      | some f₂ => pure (some (.app f₂ a))
+      | none => pure none
+  | e => rewriteAttempt r env depth e t
+
 /-- The rules in order: the first that fires, with its theorem. -/
 def rewriteRules (r : CoreFns m) (env : Env) (depth : Nat) (e : Expr) :
     List Name → m (Option (Name × Expr))
   | [] => pure none
   | t :: ts => do
-    match ← rewriteAttempt r env depth e t with
+    match ← rewriteAt r env depth t e with
     | some e₂ => pure (some (t, e₂))
     | none => rewriteRules r env depth e ts
 
@@ -1156,26 +1172,6 @@ def rewriteStep (r : CoreFns m) (env : Env) (depth : Nat) (stuck : Bool) (e : Ex
     if !stuck && unfoldableHead env e then pure none
     else rewriteRules r env depth e (env.rulesFor c)
   | _ => pure none
-
-/-- **The rules at an origin** (official `whnf`'s and `is_def_eq_core`'s
-`reduce_rewrite(origin, true)`): when the unfolding that started at the origin `o`
-(`noteOrigin`) ended at the stuck term `e` (`isStuckResult`), the first rule of `o`'s head that
-fires there, with its theorem. -/
-def originFire (r : CoreFns m) (env : Env) (depth : Nat) (o : Option Expr) (e : Expr) :
-    m (Option (Name × Expr)) :=
-  match o with
-  | some o' => if isStuckResult env e then rewriteStep r env depth true o' else pure none
-  | none => pure none
-
-/-- **ι, then the user rewrite rules** (official `reduce_recursor`: ι, then `reduce_rewrite`):
-the reduct of the first that fires at the stuck application `e`. -/
-def iotaThenRule (r : CoreFns m) (env : Env) (depth : Nat) (e : Expr) : m (Option Expr) := do
-  match ← iotaRec mode r env depth e with
-  | some e'' => pure (some e'')
-  | none =>
-    match ← rewriteStep r env depth false e with
-    | some (_, e₂) => pure (some e₂)
-    | none => pure none
 
 /-- **How many rewrite rules one head-normalization loop may fire** (official: per outermost
 `whnf_core`/`whnf` call, `LEAN_REWRITE_FIRE_BUDGET`).  The cached loops (`whnfCoreLoopI`,
@@ -1199,6 +1195,62 @@ cached loop counts every firing in the declaration's state (`CState.ruleTotal`, 
 def ruleDeclBudgetError (t : Name) : CheckError :=
   .invalid s!"rewrite rule budget exhausted: {t} would fire past {ruleDeclBudget} firings in this declaration"
 
+/-- **The rules fired again on a reduct** (official `reduce_rewrite`, which iterates
+`reduce_rewrite_step` on its own reduct until no rule matches): at most `k` more firings, each
+by `rewriteStep` at a head that does not unfold.  The callers pass `ruleFireBudget`, and the
+cached twin rejects where the specification stops. -/
+def fireMore (r : CoreFns m) (env : Env) (depth : Nat) : Nat → Expr → m Expr
+  | 0, e => pure e
+  | k + 1, e => do
+    match ← rewriteStep r env depth false e with
+    | some (_, e₂) => fireMore r env depth k e₂
+    | none => pure e
+
+/-- **The rules at an origin** (official `whnf`'s and `is_def_eq_core`'s
+`reduce_rewrite(origin, true)`): when the unfolding that started at the origin `o`
+(`noteOrigin`) ended at the stuck term `e` (`isStuckResult`), the first rule of `o`'s head that
+fires there, with its theorem, and the rules fired again on its reduct (`fireMore`). -/
+def originFire (r : CoreFns m) (env : Env) (depth : Nat) (o : Option Expr) (e : Expr) :
+    m (Option (Name × Expr)) :=
+  match o with
+  | some o' =>
+    if isStuckResult env e then do
+      match ← rewriteStep r env depth true o' with
+      | some (t, e₂) => do
+        let e₃ ← fireMore r env depth ruleFireBudget e₂
+        pure (some (t, e₃))
+      | none => pure none
+    else pure none
+  | none => pure none
+
+/-- **ι at the prefix of the recursor's arity** (official `inductive_reduce_rec`, which reads
+the first `major_idx + 1` arguments and applies the reduct to the rest): ι at the term, and
+otherwise at its function part, with the reduct applied to the argument.  `iotaRec` fires only
+at a spine of exactly the recursor's arity and answers every other spine at once. -/
+def iotaAt (r : CoreFns m) (env : Env) (depth : Nat) : Expr → m (Option Expr)
+  | .app f a => do
+    match ← iotaRec mode r env depth (.app f a) with
+    | some e'' => pure (some e'')
+    | none =>
+      match ← iotaAt r env depth f with
+      | some f₂ => pure (some (.app f₂ a))
+      | none => pure none
+  | e => iotaRec mode r env depth e
+
+/-- **ι, then the user rewrite rules** (official `reduce_recursor`: ι, then `reduce_rewrite`), at
+the whole spine `e` whose head is its own head normal form: ι at the prefix of the recursor's
+arity (`iotaAt`), and otherwise the first rule that fires and the rules fired again on its reduct
+(`fireMore`). -/
+def iotaThenRule (r : CoreFns m) (env : Env) (depth : Nat) (e : Expr) : m (Option Expr) := do
+  match ← iotaAt mode r env depth e with
+  | some e'' => pure (some e'')
+  | none =>
+    match ← rewriteStep r env depth false e with
+    | some (_, e₂) => do
+      let e₃ ← fireMore r env depth ruleFireBudget e₂
+      pure (some e₃)
+    | none => pure none
+
 /-- The head-normalization body: beta (with the per-redex argument
 certificate, unconditional since the task-#100 de-gating), iota (with
 the stuck-major machinery), the native basis pair projection and the
@@ -1206,6 +1258,12 @@ user rewrite rules (`rewriteStep`, at a constant and after a failed ι,
 the position of official's hook in `reduce_recursor`) — but **no
 delta**; unfolding happens in the `whnf` loop.  Values (sorts, binders,
 literals, and constants no rule rewrites) return themselves.
+
+An application is taken as a whole spine, as official `whnf_core` takes it: the spine head is
+normalized, a λ head meets the spine's first argument, a head that reduced to something else
+continues at the spine re-assembled, and a head that is its own head normal form gets ι and the
+rules at the whole spine (`iotaThenRule`).  So the rules of a head compete across all arities
+in the table's order (priority, then theorem name), each at the prefix of its own arity.
 
 `cheap` is the official kernel's `cheap_proj` (`whnf_core(e,
 cheap_rec = false, cheap_proj)`): a projection's scrutinee is reduced
@@ -1224,18 +1282,31 @@ def whnfCoreBody (r : CoreFns m) (env : Env) : Bool → Nat → Expr → m Expr 
     | .const n us => do
       -- a rule whose left side is a bare constant (official `whnf_core`'s `Const` case)
       match ← rewriteStep r env depth false (.const n us) with
-      | some (_, e₂) => r.whnfCore cheap depth e₂
+      | some (_, e₂) => do
+        let e₃ ← fireMore r env depth ruleFireBudget e₂
+        r.whnfCore cheap depth e₃
       | none => pure (.const n us)
     | .lit l => pure (.lit l)
     | .app f a => do
-      match ← r.whnfCore cheap depth f with
-      | .lam _ body => do
-        -- Task #342 S0: uniform β, no certificate
-        r.whnfCore cheap depth (body.instantiate1 a)
-      | f' => do
-        match ← iotaThenRule mode r env depth (.app f' a) with
-        | some e'' => r.whnfCore cheap depth e''
-        | none => pure (.app f' a)
+      -- official `whnf_core`'s `App` case: the spine whole, its head normalized first
+      let h := Expr.getAppFn (.app f a)
+      match ← r.whnfCore cheap depth h with
+      | .lam _ body =>
+        -- Task #342 S0: uniform β, no certificate, at the spine's first argument (official
+        -- instantiates every λ it has arguments for at once)
+        match Expr.getAppArgs (.app f a) with
+        | a₁ :: rest => r.whnfCore cheap depth (Expr.mkAppN (body.instantiate1 a₁) rest)
+        | [] => pure (.app f a)
+      | v =>
+        if v = h then
+          -- official `f == f0`: ι, then the rules, at the whole spine (`reduce_recursor`)
+          match ← iotaThenRule mode r env depth (.app f a) with
+          | some e'' => r.whnfCore cheap depth e''
+          | none => pure (.app f a)
+        else
+          -- the head reduced: head normalization goes on at the spine re-assembled, so a
+          -- rule-headed term a reduction exposes meets its arguments whole
+          r.whnfCore cheap depth (Expr.mkAppN v (Expr.getAppArgs (.app f a)))
     | .proj sn i pe => do
       -- official `reduce_proj`: the scrutinee by `whnf`, or by the
       -- cheap `whnf_core` in the cheap mode; then `reduce_proj_core`.

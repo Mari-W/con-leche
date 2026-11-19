@@ -3570,6 +3570,33 @@
 # the global rule `cat_nil : cat xs [] = xs` in `cat xs [] = xs` by `rfl` (`mk.py order` patches
 # the statement): `cat xs []` unfolds to a recursor stuck on `xs`, and the rule fires.  Target 0.
 0 rewrite_rule_order_global.ndjson
+# the order of a head's rules (scripts/rewrite-fixtures/RrPrio.lean, rr-dev 0): highest priority
+# first, then by name, each rule against the prefix of its own arity, on the whole application
+# spine; abstract heads, so the rules fire at once.  `∀ b, fa 0 b = 0 + b` under
+# `fa_one : fa a = fun b => b` (priority 10) and `fa_two : fa a b = 0 + b` (2000): the arity-2
+# rule fires first.  With `fa_two` dropped (`_short`) the arity-1 rule fires and the sides differ.
+0 rewrite_rule_prio_arity_hi.ndjson
+1 rewrite_rule_prio_arity_hi_short.ndjson
+# the same with the priorities swapped, `∀ b, gb 0 b = b`: the arity-1 rule fires first.
+0 rewrite_rule_prio_arity_lo.ndjson
+# `pk_b : pk n = 0 + n` (2000) beats `pk_a : pk n = n` (10), first by name; with `pk_b` dropped
+# (`_low`) the sides differ.  At equal priorities the name decides (`name_order`).
+0 rewrite_rule_prio_prio_name.ndjson
+1 rewrite_rule_prio_prio_name_low.ndjson
+0 rewrite_rule_prio_name_order.ndjson
+# re-firing: `hh n` rewrites to `Bx.rec BxNat n n Bx.tt`, and the rules fire again on the reduct
+# before ι, so `bx_tt` gives `0 + n`; without `bx_tt`, ι gives `n`.  The redex written out takes ι
+# first (`iota_first`).
+0 rewrite_rule_prio_refire.ndjson
+1 rewrite_rule_prio_refire_norule.ndjson
+0 rewrite_rule_prio_iota_first.ndjson
+# `∀ n, d n 5 = 5` under `d_one : d n = fun m => m`: the unfolding of `d n 5` gets stuck on `n`,
+# and the arity-1 rule fires on the prefix `d n` of the remembered term.  Without the rule, 1.
+0 rewrite_rule_prio_prefix.ndjson
+1 rewrite_rule_prio_prefix_norule.ndjson
+# `∀ b, (fun x => fa x) 0 b = 0 + b`: β exposes `fa 0` with `b` left over, and head normalization
+# goes on at the whole spine `fa 0 b`, where `fa_two` (priority 2000) fires.
+0 rewrite_rule_prio_exposure.ndjson
 # abstract definitions (scripts/rewrite-fixtures/RrAbstract.lean, rr-dev leanchecker 0): `double` is
 # abstract after its `abstract_block`, so only its block's members unfold it.  The member
 # `double_two : double 2 = 4` by `rfl` unfolds it.  Target 0.
