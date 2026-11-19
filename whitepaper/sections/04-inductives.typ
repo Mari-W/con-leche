@@ -746,7 +746,7 @@ $R_j[arrow(p) := arrow(ell)]$ applied to the parameters, motive and
 minors from $arrow(a)$ and to the fields $arrow(f)$; con-leche
 substitutes those values into $R_j$'s body under its leading lambdas at once,
 the application's β steps
-(#src("ConLeche/Rules/Rel.lean", 224, 276)[the rule there]). Besides
+(#src("ConLeche/Rules/Rel.lean", 222, 274)[the rule there]). Besides
 finding $r$, $c_j$ and the rule in the environment, the fragment's
 rule has three _comparisons_ as premises:
 

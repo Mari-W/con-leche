@@ -394,7 +394,10 @@ theorem rewriteAttempt_looseBVars {env : Env} (henv : EnvWF env) {r : CoreFns Ch
     rewriteAttempt_inv h
   have hQ : MatchPres r env d (fun a => a.looseBVarsBounded 0 = true) :=
     ⟨by intro f a; simp only [looseBVarsBounded, Bool.and_eq_true],
-      fun hw h => litToCtorIfNat_looseBVars (hwh hw h)⟩
+      fun hw h => by
+        rcases litToCtor_cases env _ with h' | ⟨s, -, -, h'⟩
+        · rw [h']; exact litToCtorIfNat_looseBVars (hwh hw h)
+        · rw [h']; exact strLitToConstructor_looseBVars s 0⟩
   have hb₁ := ruleArgsM_pres hQ hm hb
   have hT : (cv.type.instantiateLevelParams cv.levelParams us).looseBVarsBounded 0 = true := by
     rw [looseBVarsBounded_instantiateLevelParams]
@@ -425,24 +428,33 @@ theorem fireMore_looseBVars {env : Env} (henv : EnvWF env) {r : CoreFns CheckM} 
     (fun hrw hx => rewriteStep_looseBVars henv hwh hrw hx) h hb
 
 /-- **A rule's right side has no leaf the term it rewrites lacks.** -/
-theorem rewriteAttempt_fvarLeaves {env : Env} {r : CoreFns CheckM} {d : Nat}
+theorem rewriteAttempt_fvarLeaves {env : Env} (henv : EnvWF env) {r : CoreFns CheckM} {d : Nat}
     (hwh : ∀ {a w : Expr}, r.whnf d a = .ok w → ∀ l ∈ w.fvarLeaves, l ∈ a.fvarLeaves)
     {e e₂ : Expr} {t : Name} (h : rewriteAttempt r env d e t = .ok (some e₂)) :
     ∀ l ∈ e₂.fvarLeaves, l ∈ e.fvarLeaves := by
-  obtain ⟨_, _, _, _, _, _, _, e₁, _, -, hm, -, -, -, -, hleaf, -⟩ :=
+  obtain ⟨cv, args, us, _, _, _, _, e₁, _, hf, hm, hres, -, -, hsub, -⟩ :=
     rewriteAttempt_inv h
+  have hT : (cv.type.instantiateLevelParams cv.levelParams us).hasFvar = false := by
+    rw [hasFvar_instantiateLevelParams]; exact (henv.consts _ (Env.find?_mem hf)).1
+  have hleaf : ∀ l ∈ e₂.fvarLeaves, l ∈ e₁.fvarLeaves := fun l hl => by
+    have := Expr.fvarLeaves_ruleRhs hres hT hsub l
+    simp only [fvarLeaves, List.mem_append] at this
+    exact this (.inr hl)
   have hQ : MatchPres r env d (fun a => ∀ l ∈ a.fvarLeaves, l ∈ e.fvarLeaves) :=
     ⟨by intro f a; simp only [fvarLeaves, List.mem_append, or_imp, forall_and],
-      fun hw h l hl => h l (hwh hw l (litToCtorIfNat_fvarLeaves l hl))⟩
+      fun hw h l hl => by
+        rcases litToCtor_cases env _ with h' | ⟨s, -, -, h'⟩
+        · rw [h'] at hl; exact h l (hwh hw l (litToCtorIfNat_fvarLeaves l hl))
+        · rw [h', strLitToConstructor_fvarLeaves] at hl; cases hl⟩
   exact fun l hl => ruleArgsM_pres hQ hm (fun _ h => h) l (hleaf l hl)
 
 /-- The rewrite step has no leaf the term lacks, at the prefix of the rule's arity. -/
-theorem rewriteStep_fvarLeaves {env : Env} {r : CoreFns CheckM} {d : Nat}
+theorem rewriteStep_fvarLeaves {env : Env} (henv : EnvWF env) {r : CoreFns CheckM} {d : Nat}
     (hwh : ∀ {a w : Expr}, r.whnf d a = .ok w → ∀ l ∈ w.fvarLeaves, l ∈ a.fvarLeaves)
     {stuck : Bool} {e e₂ : Expr} {t : Name} (h : rewriteStep r env d stuck e = .ok (some (t, e₂))) :
     ∀ l ∈ e₂.fvarLeaves, l ∈ e.fvarLeaves :=
   rewriteAt_ind (fun x y => ∀ l ∈ y.fvarLeaves, l ∈ x.fvarLeaves)
-    (fun ha => rewriteAttempt_fvarLeaves hwh ha)
+    (fun ha => rewriteAttempt_fvarLeaves henv hwh ha)
     (fun hf l hl => by
       simp only [fvarLeaves, List.mem_append] at hl ⊢
       rcases hl with hl | hl
@@ -451,12 +463,12 @@ theorem rewriteStep_fvarLeaves {env : Env} {r : CoreFns CheckM} {d : Nat}
     (rewriteStep_inv h)
 
 /-- The rules fired again have no leaf the term lacks. -/
-theorem fireMore_fvarLeaves {env : Env} {r : CoreFns CheckM} {d : Nat}
+theorem fireMore_fvarLeaves {env : Env} (henv : EnvWF env) {r : CoreFns CheckM} {d : Nat}
     (hwh : ∀ {a w : Expr}, r.whnf d a = .ok w → ∀ l ∈ w.fvarLeaves, l ∈ a.fvarLeaves)
     {k : Nat} {e e' : Expr} (h : fireMore r env d k e = .ok e') :
     ∀ l ∈ e'.fvarLeaves, l ∈ e.fvarLeaves :=
   fireMore_ind (fun x y => ∀ l ∈ y.fvarLeaves, l ∈ x.fvarLeaves) (fun _ _ h => h)
-    (fun hrw hyz l hl => rewriteStep_fvarLeaves hwh hrw l (hyz l hl)) h
+    (fun hrw hyz l hl => rewriteStep_fvarLeaves henv hwh hrw l (hyz l hl)) h
 
 /-- The leaf closure of a fixed term is application-closed. -/
 theorem appClosed_leavesIn (E : Expr) :
@@ -502,8 +514,8 @@ theorem whnfPres_fvarLeaves {env : Env} (henv : EnvWF env) :
         exact h ▸ fun l hl => hl
       | const n ws =>
         rcases whnfCore_const_inv h with ⟨t, e₂, e₃, hrw, hfm, hk⟩ | ⟨-, rfl⟩
-        · exact fun l hl => rewriteStep_fvarLeaves ihLoop hrw l
-            (fireMore_fvarLeaves ihLoop hfm l (ihCore hk l hl))
+        · exact fun l hl => rewriteStep_fvarLeaves henv ihLoop hrw l
+            (fireMore_fvarLeaves henv ihLoop hfm l (ihCore hk l hl))
         · exact fun l hl => hl
       | lit l0 =>
         rw [whnfCore_succ] at h
@@ -535,8 +547,8 @@ theorem whnfPres_fvarLeaves {env : Env} (henv : EnvWF env) :
           · exact ha l' hb
         · rcases iotaThenRule_inv hio' with hio | ⟨-, t, e₂, hrw, hfm⟩
           rotate_left
-          · exact rewriteStep_fvarLeaves ihLoop hrw l
-              (fireMore_fvarLeaves ihLoop hfm l (ihCore hwe'' l hl))
+          · exact rewriteStep_fvarLeaves henv ihLoop hrw l
+              (fireMore_fvarLeaves henv ihLoop hfm l (ihCore hwe'' l hl))
           -- iota step, at the prefix of the recursor's arity
           refine iotaAt_ind (fun x y => ∀ l ∈ y.fvarLeaves, l ∈ x.fvarLeaves) ?_
             (fun hf l hl => by
@@ -627,7 +639,7 @@ theorem whnfPres_fvarLeaves {env : Env} (henv : EnvWF env) :
           · obtain ⟨o', e₃, rfl, -, hrw, hfm⟩ := originFire_inv hof
             exact ihN Q hcont (OriginP.none _)
               (fun l hl => ho _ rfl l
-                (rewriteStep_fvarLeaves ihLoop hrw l (fireMore_fvarLeaves ihLoop hfm l hl))) l hl
+                (rewriteStep_fvarLeaves henv ihLoop hrw l (fireMore_fvarLeaves henv ihLoop hfm l hl))) l hl
       intro d e e' h l hl
       exact hloop whnfLoopFuel (· ∈ e.fvarLeaves) h (OriginP.none _) (fun l hl => hl) l hl
 

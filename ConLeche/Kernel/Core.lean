@@ -1027,10 +1027,10 @@ def reduceProjCore (r : CoreFns m) (env : Env) (depth : Nat) (sn : Name)
   | none => pure none
 
 /-- **The term a failed pattern position is retried on** (official `match_rewrite_pattern`):
-its `whnf`, a `Nat` literal read as its constructor form (`litToCtorIfNat`). -/
+its `whnf`, a literal read as its constructor form (`litToCtor`). -/
 def ruleRetry (r : CoreFns m) (env : Env) (depth : Nat) (e : Expr) : m Expr := do
   let w ← r.whnf depth e
-  pure (litToCtorIfNat env w)
+  pure (litToCtor env w)
 
 /-- **A failed match retried once** on the term's `ruleRetry` (official
 `match_rewrite_pattern`; the official kernel skips the retry when `whnf` returns the term itself,
@@ -1091,8 +1091,8 @@ def ruleMatchM (r : CoreFns m) (env : Env) (depth n : Nat) (lps : List Name) :
   | _, _, _ => pure none
 
 /-- **The arguments and levels at which a stored theorem's left side matches the term**, in
-binder order and in the order of the theorem's level parameters, with the matched view of the
-term. -/
+binder order and in the order of the theorem's level parameters (`ruleLevels`), with the
+matched view of the term. -/
 def ruleArgsM (r : CoreFns m) (env : Env) (depth : Nat) (cv : ConstantVal) (e : Expr) :
     m (Option (List Expr × List Level × Expr)) :=
   match (ruleTele cv.type).2 with
@@ -1101,7 +1101,7 @@ def ruleArgsM (r : CoreFns m) (env : Env) (depth : Nat) (cv : ConstantVal) (e : 
     match ← ruleMatchM r env depth n cv.levelParams l₀
         (List.replicate n none, List.replicate cv.levelParams.length none) e with
     | some ((sl, lv), e₁) =>
-      match sl.mapM id, lv.mapM id with
+      match sl.mapM id, ruleLevels cv.levelParams lv l₀ with
       | some args, some us => pure (some (args, us, e₁))
       | _, _ => pure none
     | none => pure none

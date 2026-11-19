@@ -63,6 +63,14 @@ def litToCtorIfNatI (fe : FEnv) (e : Expr) : CheckCM Expr := do
     else pure e
   | _ => pure e
 
+/-- Twin of `litToCtor`: the literal flags through the index. -/
+def litToCtorI (fe : FEnv) (e : Expr) : CheckCM Expr := do
+  match e with
+  | .lit (.strVal s) =>
+    if fe.strLit then pure (strLitToConstructor s)
+    else pure e
+  | _ => litToCtorIfNatI fe e
+
 /-! ### The certificate-family switch (the twin's retirement, 2026-09-06)
 
 The certificate families — the task-#76 skip list: work the
@@ -1136,7 +1144,7 @@ termination_by (lv, 28, 0, 0)
 /-- Twin of `ruleRetry`. -/
 def ruleRetryI (eager : Bool) (lv : Nat) (depth : Nat) (a : Expr) : CheckCM Expr := do
   let w ← whnfI eager lv depth a
-  litToCtorIfNatI fe w
+  litToCtorI fe w
 termination_by (lv, 28, 0, 0)
 
 /-- Twin of `ruleBindVar`: a repeated variable's binding compared through `defeqI`. -/
@@ -1193,7 +1201,7 @@ def ruleArgsI (eager : Bool) (lv : Nat) (depth : Nat) (cv : ConstantVal) (e : Ex
     match ← ruleMatchI eager lv depth n cv.levelParams l₀
         (List.replicate n none, List.replicate cv.levelParams.length none) e with
     | some ((sl, lvs), e₁) =>
-      match sl.mapM id, lvs.mapM id with
+      match sl.mapM id, ruleLevels cv.levelParams lvs l₀ with
       | some args, some us => pure (some (args, us, e₁))
       | _, _ => pure none
     | none => pure none

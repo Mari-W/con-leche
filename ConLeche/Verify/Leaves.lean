@@ -213,4 +213,48 @@ theorem fvarLeaves_abstract1_lt {D : Nat} :
   | const n us => intro k _ l hl; simp [abstract1, fvarLeaves] at hl
   | lit ll => intro k _ l hl; simp [abstract1, fvarLeaves] at hl
 
+/-- **Peeling a `∀`-telescope along arguments only introduces the arguments' leaves.** -/
+theorem fvarLeaves_piResidual {P : Nat × Expr → Prop} :
+    ∀ {as : List Expr} {t res : Expr}, ConLeche.piResidual t as = some res →
+      (∀ l ∈ t.fvarLeaves, P l) → (∀ x ∈ as, ∀ l ∈ x.fvarLeaves, P l) →
+      ∀ l ∈ res.fvarLeaves, P l
+  | [], t, res, h, ht, _ => by
+    simp only [ConLeche.piResidual, Option.some.injEq] at h
+    exact h ▸ ht
+  | a :: as, t, res, h, ht, has => by
+    match t, h with
+    | .forallE ty body, h =>
+      have h' : ConLeche.piResidual (body.instantiate1 a) as = some res := h
+      refine fvarLeaves_piResidual h' (fun l hl => ?_)
+        (fun x hx => has x (List.mem_cons_of_mem _ hx))
+      rcases fvarLeaves_instantiate1 body 0 hl with hb | hb
+      · exact ht l (by simp [fvarLeaves, hb])
+      · exact has a List.mem_cons_self l hb
+
+/-- A subterm of the application tree has no leaf the term lacks. -/
+theorem fvarLeaves_appSubterms (e : Expr) :
+    ∀ {x : Expr}, x ∈ ConLeche.appSubterms e → ∀ l ∈ x.fvarLeaves, l ∈ e.fvarLeaves := by
+  induction e with
+  | app f a ihf iha =>
+    intro x hx l hl
+    simp only [ConLeche.appSubterms, List.mem_cons, List.mem_append] at hx
+    rcases hx with rfl | hx | hx
+    · exact hl
+    · simp only [fvarLeaves, List.mem_append]; exact .inl (ihf hx l hl)
+    · simp only [fvarLeaves, List.mem_append]; exact .inr (iha hx l hl)
+  | _ =>
+    intro x hx l hl
+    simp only [ConLeche.appSubterms, List.mem_singleton] at hx
+    subst hx; exact hl
+
+/-- **A rule's right side has no leaf the matched view lacks**: the theorem's type is closed,
+and the arguments are subterms of the view's application tree. -/
+theorem fvarLeaves_ruleRhs {T e₁ R : Expr} {args : List Expr}
+    (hres : ConLeche.piResidual T args = some R) (hT : T.hasFvar = false)
+    (hsub : ∀ x ∈ args, x ∈ ConLeche.appSubterms e₁) :
+    ∀ l ∈ R.fvarLeaves, l ∈ e₁.fvarLeaves :=
+  fvarLeaves_piResidual hres
+    (fun l hl => by rw [fvarLeaves_eq_nil_of_not_hasFvar hT] at hl; cases hl)
+    (fun x hx l hl => fvarLeaves_appSubterms e₁ (hsub x hx) l hl)
+
 end ConLeche.Expr

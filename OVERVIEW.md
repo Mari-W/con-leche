@@ -537,7 +537,7 @@ Read from the outside in:
    ([theorem `checkDecls_envWF` in `ConLeche/Semantics/DeclWF.lean`](https://github.com/leanprover/con-leche/blob/master/ConLeche/Semantics/DeclWF.lean#L366-L367)).
    A job's check at a view is the fold's step because the cached core
    reads its environment through the lookups and the blocked set alone
-   ([theorem `knotI_congr` in `ConLeche/Verify/Cached/KnotCongr.lean`](https://github.com/leanprover/con-leche/blob/master/ConLeche/Verify/Cached/KnotCongr.lean#L883-L888)).
+   ([theorem `knotI_congr` in `ConLeche/Verify/Cached/KnotCongr.lean`](https://github.com/leanprover/con-leche/blob/master/ConLeche/Verify/Cached/KnotCongr.lean#L888-L893)).
 4. **The pure checker** (`ConLeche/Kernel/*`) is a fueled, memo-free
    presentation of the same algorithm: `whnfCore`, `whnf`, `inferType`,
    `isDefEq` (and inference at the infer-only grade) are defined by one mutual
@@ -905,7 +905,7 @@ none can be added: the relation is the checker's verdict on terms
 that are well-formed together, which no rule states, and every
 premise's subject is a subterm of the conclusion or the product of a
 reduction or an inference
-([the docstring of `DefEq` in `ConLeche/Rules/Rel.lean`](https://github.com/leanprover/con-leche/blob/master/ConLeche/Rules/Rel.lean#L363-L386)).
+([the docstring of `DefEq` in `ConLeche/Rules/Rel.lean`](https://github.com/leanprover/con-leche/blob/master/ConLeche/Rules/Rel.lean#L361-L384)).
 The proof then has three parts. The *bridge*: an accepting run of any
 kernel entry point, at any fuel, yields a derivation — one induction
 on fuel, over both values of the eager flag at once,
@@ -1208,7 +1208,7 @@ Three limits are verdicts. A declaration at a name a literal's meaning reads (`N
 `Nat.succ`, `String`, `String.ofList`, `List`, `List.nil`, `List.cons`, `Char`, `Char.ofNat`) has the
 shape that meaning reads or is declined at the declaration, whether or not the stream uses a
 literal; what is checked there is read at a literal's use only as the names being stored
-([function `litShapeOk` in `ConLeche/Kernel/CoreDefs.lean`](https://github.com/leanprover/con-leche/blob/master/ConLeche/Kernel/CoreDefs.lean#L464)).
+([function `litShapeOk` in `ConLeche/Kernel/CoreDefs.lean`](https://github.com/leanprover/con-leche/blob/master/ConLeche/Kernel/CoreDefs.lean#L472)).
 A `Bool` stored at a definition is declined, since the frontend puts a stream's `Bool` first.
 A nested occurrence whose container, or a member of
 the container's block, is def-headed and is not among the families the block's
@@ -1412,14 +1412,14 @@ instead of trusting the operation's name.
 
 * **Structural operations** (`Nat.add`, `sub`, `mul`, `pow`, `beq`,
   `ble`, and `pred` as a dependency;
-  [the list `natOpNames` in `ConLeche/Kernel/CoreDefs.lean`](https://github.com/leanprover/con-leche/blob/master/ConLeche/Kernel/CoreDefs.lean#L536-L544)):
+  [the list `natOpNames` in `ConLeche/Kernel/CoreDefs.lean`](https://github.com/leanprover/con-leche/blob/master/ConLeche/Kernel/CoreDefs.lean#L544-L552)):
   when a definition under one of these names arrives, its checked
   step certifies its defining recurrence equations by definitional
   equality, in the environment *before* the operation is stored, with
   the operation's self-references replaced by its definition value, so
   the not-yet-enabled fast path cannot discharge its own equations
   vacuously
-  ([the account of the certified fast path in `ConLeche/Kernel/CoreDefs.lean`](https://github.com/leanprover/con-leche/blob/master/ConLeche/Kernel/CoreDefs.lean#L471-L488),
+  ([the account of the certified fast path in `ConLeche/Kernel/CoreDefs.lean`](https://github.com/leanprover/con-leche/blob/master/ConLeche/Kernel/CoreDefs.lean#L479-L496),
   [function `certifyNatEqs` in `ConLeche/Kernel/Checker.lean`](https://github.com/leanprover/con-leche/blob/master/ConLeche/Kernel/Checker.lean#L105-L112)).
   A nonstandard definition is rejected; presence in the store is the
   certificate, and `whnf` folds literals for stored operations only.
@@ -1429,7 +1429,7 @@ instead of trusting the operation's name.
   ([theorem `natOps_install` in `ConLeche/Model/NatEqs.lean`](https://github.com/leanprover/con-leche/blob/master/ConLeche/Model/NatEqs.lean#L1071)).
 * **Well-founded operations** (`Nat.div`, `mod`, `gcd`, `land`, `lor`,
   `xor`, `shiftLeft`, `shiftRight`;
-  [the list `natDivModNames` in `ConLeche/Kernel/CoreDefs.lean`](https://github.com/leanprover/con-leche/blob/master/ConLeche/Kernel/CoreDefs.lean#L557))
+  [the list `natDivModNames` in `ConLeche/Kernel/CoreDefs.lean`](https://github.com/leanprover/con-leche/blob/master/ConLeche/Kernel/CoreDefs.lean#L565))
   are defined by well-founded recursion and have no recurrence the
   kernel can check directly. The binary embeds *pinned* copies of
   several supported toolchains' own definitions of each operation,
@@ -1469,7 +1469,7 @@ instead of trusting the operation's name.
   ([function `natOpRefusal` in `ConLeche/Cached/StateC.lean`](https://github.com/leanprover/con-leche/blob/master/ConLeche/Cached/StateC.lean#L252-L265)).
   Within the maximum size every operation folds, whatever the exponent:
   the specification's reduct is the computation itself
-  ([function `natOpResult` in `ConLeche/Kernel/CoreDefs.lean`](https://github.com/leanprover/con-leche/blob/master/ConLeche/Kernel/CoreDefs.lean#L667-L687)),
+  ([function `natOpResult` in `ConLeche/Kernel/CoreDefs.lean`](https://github.com/leanprover/con-leche/blob/master/ConLeche/Kernel/CoreDefs.lean#L675-L695)),
   and the bound is the cached core's alone, since a refusal only
   throws.
 * **`Bool`.** `Nat.beq` and `Nat.ble` return `Bool.true` or
@@ -1477,8 +1477,8 @@ instead of trusting the operation's name.
   guarded by `Nat.ble`, so these operations install only once `Bool`
   and its two constructors are stored, with no universe parameters,
   the constructors at the type `Bool` itself, and with `Bool : Type`
-  ([function `natOpGuard` in `ConLeche/Kernel/CoreDefs.lean`](https://github.com/leanprover/con-leche/blob/master/ConLeche/Kernel/CoreDefs.lean#L684-L698),
-  [function `natOpCod` in the same file](https://github.com/leanprover/con-leche/blob/master/ConLeche/Kernel/CoreDefs.lean#L741-L748)).
+  ([function `natOpGuard` in `ConLeche/Kernel/CoreDefs.lean`](https://github.com/leanprover/con-leche/blob/master/ConLeche/Kernel/CoreDefs.lean#L692-L706),
+  [function `natOpCod` in the same file](https://github.com/leanprover/con-leche/blob/master/ConLeche/Kernel/CoreDefs.lean#L749-L756)).
   That is the only reason the checker knows the name. `Bool` is not
   pinned: it is the stream's own block, installed like any other, and
   nothing depends on what it denotes — the fast path's result is the

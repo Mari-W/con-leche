@@ -576,7 +576,10 @@ theorem rewriteAttempt_occDeep {env : Env} {names : List Name} (hN : WhnfNamesFr
     rewriteAttempt_inv hrw
   have hQ : MatchPres r env d (fun a => a.occDeep names = false) :=
     ⟨by intro f a; simp only [Expr.occDeep, Bool.or_eq_false_iff],
-      fun hw h => litToCtorIfNat_occDeep hN (hwh hw h)⟩
+      fun hw h => by
+        rcases litToCtor_cases env _ with h' | ⟨s, -, hs, h'⟩
+        · rw [h']; exact litToCtorIfNat_occDeep hN (hwh hw h)
+        · rw [h']; exact strLitToConstructor_occDeep hN hs s⟩
   have h1 := ruleArgsM_pres hQ hm h0
   have hT := hN.1 t _ hf (hN.2.2.2.2.2.2.2.2.2 t cv hf)
   have hR := piResidual_occDeep hres

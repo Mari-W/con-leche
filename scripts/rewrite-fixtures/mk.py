@@ -113,6 +113,15 @@ if sys.argv[1] == "abstract":
     put("abstract_block_before_def", recs[:di] + [early] + recs[di:ai] + recs[ai + 1:])
     sys.exit(0)
 
+if sys.argv[1] == "retry":
+    # RrRetry.lean: a String literal read as its constructor form on the match's retry
+    src, out = sys.argv[2:4]
+    stmt_patch(f"{src}/str_retry.ndjson", f"{out}/rewrite_rule_retry_str.ndjson",
+               [("str_retry", "strRetryTgt")])
+    stmt_patch(f"{src}/str_empty.ndjson", f"{out}/rewrite_rule_retry_str_empty.ndjson",
+               [("str_empty", "strEmptyTgt")])
+    sys.exit(0)
+
 if sys.argv[1] == "prio":
     # RrPrio.lean: the order of a head's rules and the rules firing again on their reduct
     src, out = sys.argv[2:4]

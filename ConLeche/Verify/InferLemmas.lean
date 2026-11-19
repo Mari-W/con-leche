@@ -328,7 +328,7 @@ it holds of both parts, and that a term's retry (`ruleRetry`) keeps, holds of th
 of every binding of the slots where it holds of the term and of the bindings before. -/
 structure MatchPres (r : CoreFns CheckM) (env : Env) (d : Nat) (Q : Expr → Prop) : Prop where
   app : ∀ {f a}, Q (.app f a) ↔ Q f ∧ Q a
-  retry : ∀ {a w}, r.whnf d a = .ok w → Q a → Q (litToCtorIfNat env w)
+  retry : ∀ {a w}, r.whnf d a = .ok w → Q a → Q (litToCtor env w)
 
 /-- **The slot invariant** of a rule's match: every binding of the binder slots has `Q`. -/
 @[expose] def SlotsP (Q : Expr → Prop) (st : List (Option Expr) × List (Option Level)) : Prop :=
@@ -510,7 +510,7 @@ theorem rewriteAttempt_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {e e₂ : 
       piResidual (cv.type.instantiateLevelParams cv.levelParams us) args
         = some (.app (.app (.app (.const eqName [u]) A) l) e₂) ∧
       e₁.getAppFn = .const c ls ∧ us.length = cv.levelParams.length ∧
-      (∀ x ∈ args, x ∈ appSubterms e₁) ∧ (∀ x ∈ e₂.fvarLeaves, x ∈ e₁.fvarLeaves) ∧
+      (∀ x ∈ args, x ∈ appSubterms e₁) ∧
       iotaCertsFull r env d (cv.type.instantiateLevelParams cv.levelParams us) args = .ok true ∧
       e₁.levelFormEq l = true := by
   unfold rewriteAttempt rewriteFire at h
@@ -527,7 +527,7 @@ theorem rewriteAttempt_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {e e₂ : 
         rw [bind_eqSpine?_eq_some] at hres
         split at h
         · rename_i hchk
-          obtain ⟨rfl, hlen, hle, hsub, hleaf, hcst⟩ := hchk
+          obtain ⟨rfl, hlen, hle, hsub, hcst⟩ := hchk
           obtain ⟨c, ls, hhead⟩ : ∃ c ls, e₁.getAppFn = .const c ls := by
             revert hcst
             cases e₁.getAppFn <;> simp [Expr.isConstB]
@@ -535,7 +535,7 @@ theorem rewriteAttempt_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {e e₂ : 
           split at h
           · rename_i hb
             obtain rfl : rhs = e₂ := by simpa [pure, Except.pure] using h
-            exact ⟨cv, args, us, u, A, c, ls, e₁, l, hfind, ho, hres, hhead, hlen, hsub, hleaf,
+            exact ⟨cv, args, us, u, A, c, ls, e₁, l, hfind, ho, hres, hhead, hlen, hsub,
               by rw [hcert, hb], hle⟩
           · simp [pure, Except.pure] at h
         · simp [pure, Except.pure] at h
@@ -3179,6 +3179,28 @@ theorem reduceProjCore_pres {env : Env} {fuel d : Nat} {sn : Name} {i : Nat}
     · exact hc
     · exact hW hred (hstr s hs)
   exact hargs h3 _ (getD_mem (by omega))
+
+/-- The retry's literal reading: the `Nat` one, or a stored `String` literal's constructor form. -/
+theorem litToCtor_cases (env : Env) (e : Expr) :
+    litToCtor env e = litToCtorIfNat env e ∨
+      ∃ s, e = .lit (.strVal s) ∧ strLitStored env = true ∧
+        litToCtor env e = strLitToConstructor s := by
+  match e with
+  | .lit (.strVal s) =>
+    by_cases hs : strLitStored env = true
+    · exact .inr ⟨s, rfl, hs, by simp only [litToCtor, hs, ↓reduceIte]⟩
+    · exact .inl (by simp only [litToCtor, hs, Bool.false_eq_true, ↓reduceIte, litToCtorIfNat])
+  | .lit (.natVal n) => exact .inl rfl
+  | .bvar _ | .fvar _ _ | .sort _ | .const _ _ | .app _ _ | .lam _ _ | .forallE _ _ | .letE _ _ _
+  | .proj _ _ _ => exact .inl rfl
+
+/-- Off `String` literals the retry's reading is the `Nat` one. -/
+theorem litToCtor_of_not_str {env : Env} {e : Expr} (h : ∀ s, e ≠ .lit (.strVal s)) :
+    litToCtor env e = litToCtorIfNat env e := by
+  rcases litToCtor_cases env e with h' | ⟨s, rfl, -, -⟩
+  · exact h'
+  · exact absurd rfl (h s)
+
 /-- The literal-major conversion preserves well-scopedness. -/
 theorem litToCtorIfNat_WScoped {env : Env} {d : Nat} {e : Expr}
     (hw : WScoped d e) : WScoped d (litToCtorIfNat env e) := by
@@ -3192,6 +3214,12 @@ theorem litToCtorIfNat_WScoped {env : Env} {d : Nat} {e : Expr}
   | .bvar _ | .fvar _ _ | .sort _ | .const _ _ | .app _ _
   | .lam _ _ | .forallE _ _ | .letE _ _ _ | .proj _ _ _ =>
     exact hw
+
+theorem litToCtor_WScoped {env : Env} {d : Nat} {e : Expr}
+    (hw : WScoped d e) : WScoped d (litToCtor env e) := by
+  rcases litToCtor_cases env e with h | ⟨s, -, -, h⟩
+  · rw [h]; exact litToCtorIfNat_WScoped hw
+  · rw [h]; exact strLitToConstructor_WScoped s d
 
 /-- The fast-path reducts are closed atoms. -/
 theorem natOpResult_shape {c : Name} {a b : Nat} {e₂ : Expr}
@@ -3441,7 +3469,7 @@ theorem appSubterms_WScoped {d : Nat} (e : Expr) :
 theorem MatchPres.wscoped {env : Env} {r : CoreFns CheckM} {d : Nat}
     (hwh : ∀ {a w : Expr}, r.whnf d a = .ok w → WScoped d a → WScoped d w) :
     MatchPres r env d (WScoped d) :=
-  ⟨by intro f a; simp only [WScoped], fun hw h => litToCtorIfNat_WScoped (hwh hw h)⟩
+  ⟨by intro f a; simp only [WScoped], fun hw h => litToCtor_WScoped (hwh hw h)⟩
 
 /-- **A rule's right side is scoped where the term it rewrites is**: the theorem's type is
 closed, the arguments are subterms of the term. -/

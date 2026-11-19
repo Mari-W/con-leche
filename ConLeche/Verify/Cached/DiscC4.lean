@@ -327,9 +327,9 @@ theorem ruleRetryC_spec (ih : SSimC mode eager env f) {d : Nat} {a : Expr} {s₀
     ⦃fun s => s = s₀⦄ ruleRetryI mode (mkFEnv env) eager f d a
     ⦃fun r s' => CSOK mode eager env s' ∧ Runs (ruleRetry (fueledFns mode eager env) env d a) r ∧
       Expr.WScoped d r; ⊤⦄ := by
-  sym only [conleche_grind, ruleRetry, litToCtorIfNat_WScoped] =>
+  sym only [conleche_grind, ruleRetry, litToCtor_WScoped] =>
     vcgen [ruleRetryI.eq_def, ih.whnf_spec,
-      litToCtorIfNatC_spec (mode := mode) (eager := eager) (env := env)] <;> finish
+      litToCtorC_spec (mode := mode) (eager := eager) (env := env)] <;> finish
 
 /-- The argument step simulates its specification, given the match's at the same pattern. -/
 theorem ruleArgC_spec (ih : SSimC mode eager env f) {d n : Nat} {lps : List Name} {p : Expr}

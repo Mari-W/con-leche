@@ -456,6 +456,14 @@ def strLitStored (env : Env) : Bool :=
     (env.find? listConsName).isSome && (env.find? charName).isSome &&
     (env.find? charOfNatName).isSome
 
+/-- **The term a failed pattern position is matched again on** (official `match_rewrite_pattern`,
+after the `whnf`): a `Nat` literal read as its constructor form (`litToCtorIfNat`), a `String`
+literal as its characters under `String.ofList` (official `string_lit_to_constructor`), anything
+else as it is. -/
+def litToCtor (env : Env) : Expr → Expr
+  | .lit (.strVal s) => if strLitStored env then strLitToConstructor s else .lit (.strVal s)
+  | e => litToCtorIfNat env e
+
 /-- **The shape a declaration at a literal's name must have**: what a literal's meaning reads off
 it, its level parameters and type.  Checked at the declaration, once; nothing at a literal's use
 compares a stored type.  A declaration check cannot show a kind, so the three `Nat` names are read
@@ -824,6 +832,15 @@ def matchLevels (lps : List Name) :
   | st, l :: ls, l' :: ls' => (matchLevel lps st l l').bind fun st => matchLevels lps st ls ls'
   | _, _, _ => none
 
+/-- **The levels a rule fires at** (official `reduce_rewrite_step`): a level parameter the match
+bound takes its binding, one no position of the left side mentions takes `0`, and where the left
+side mentions a parameter no `.param` position bound (a level pattern the official kernel defers
+to `lchecks`, `get_undef_param`), the rule does not fire. -/
+def ruleLevels (lps : List Name) (lv : List (Option Level)) (l₀ : Expr) : Option (List Level) :=
+  if l₀.allLevelParamsDefined ((lps.zip lv).filterMap fun pl => pl.2.map fun _ => pl.1) then
+    some (lv.map (·.getD .zero))
+  else none
+
 /-- The index of a bound variable. -/
 def Expr.bvarIdx? : Expr → Option Nat
   | .bvar k => some k
@@ -866,13 +883,13 @@ def Expr.levelFormEq : Expr → Expr → Bool
 /-- **The syntactic gate of a rule's firing**: the spine's head is `Eq`, the levels are the
 theorem's, the left side is the term up to the official form of its constants' levels
 (`Expr.levelFormEq`: official `lchecks`, and the levels a parameter binds), the term's head is a
-constant, every argument is a subterm of the term's application tree, and every free-variable
-leaf of the right side is one of the term's. -/
+constant, and every argument is a subterm of the term's application tree.  The right side then
+has no free-variable leaf the term lacks, because the theorem's type is closed
+(`Expr.fvarLeaves_ruleRhs`), so the gate does not test it. -/
 def RuleGate (cv : ConstantVal) (us : List Level) (args : List Expr) (e : Expr) (eqn : Name)
-    (l rhs : Expr) : Prop :=
+    (l _rhs : Expr) : Prop :=
   eqn = eqName ∧ us.length = cv.levelParams.length ∧ e.levelFormEq l = true ∧
-    (∀ x ∈ args, x ∈ appSubterms e) ∧ (∀ x ∈ rhs.fvarLeaves, x ∈ e.fvarLeaves) ∧
-    e.getAppFn.isConstB = true
+    (∀ x ∈ args, x ∈ appSubterms e) ∧ e.getAppFn.isConstB = true
 
 instance (cv : ConstantVal) (us : List Level) (args : List Expr) (e : Expr) (eqn : Name)
     (l rhs : Expr) : Decidable (RuleGate cv us args e eqn l rhs) :=

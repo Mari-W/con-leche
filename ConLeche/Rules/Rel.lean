@@ -184,8 +184,7 @@ inductive Red (env : Env) : Nat → Expr → Expr → Prop where
   the official form of its constants' levels (`Expr.levelFormEq`).  The term
   has a constant head, so a ∀
   or a sort never rewrites (`Red.rigid`), every argument is a subterm of the
-  view's application tree (where a first-order matcher finds it), and
-  the right side has no free-variable leaf the view lacks.  The theorem
+  view's application tree (where a first-order matcher finds it).  The theorem
   is one of the rules in force at the term's head (`Env.rulesFor`): the
   theorem's type alone does not type its `Eq` spine in the model (over an
   empty `A` the spine reads as the point and says nothing of the sides), and
@@ -202,7 +201,6 @@ inductive Red (env : Env) : Nat → Expr → Expr → Prop where
       MatchRel env d [] e e₁ →
       e₁.levelFormEq l = true →
       (∀ x ∈ args, x ∈ appSubterms e₁) →
-      (∀ x ∈ r.fvarLeaves, x ∈ e₁.fvarLeaves) →
       h ∈ env.rulesFor c →
       Red env d e r
   /-- **The structural projection** `proj_i (ctor p⃗ x⃗) ↦ x_i`

@@ -544,8 +544,19 @@ theorem ruleRetry_rel {a : Expr} (ha : Res env₁ a) :
     Rel (Res env₁) (ruleRetry r₂ env₂ d a) (ruleRetry r₁ env₁ d a) := by
   unfold ruleRetry
   refine Rel.bind (K.whnf d ha) fun w hw => ?_
-  rw [litToCtorIfNat_ext hx hw]
-  exact Rel.ok (res_litToCtorIfNat hw)
+  by_cases hws : ∃ s, w = .lit (.strVal s)
+  · obtain ⟨s, rfl⟩ := hws
+    have h2 := strLit_of_res hx hw
+    by_cases hs : strLitStored env₁ = true
+    · have hs2 : strLitStored env₂ = true := h2 ▸ hs
+      simp only [litToCtor, hs, hs2, ↓reduceIte]
+      exact Rel.ok (res_strLitToConstructor hw)
+    · have hs2 : ¬ strLitStored env₂ = true := h2 ▸ hs
+      simp only [litToCtor, hs, hs2, Bool.false_eq_true, ↓reduceIte]
+      exact Rel.ok hw
+  · have hn : ∀ s, w ≠ .lit (.strVal s) := fun s hh => hws ⟨s, hh⟩
+    rw [litToCtor_of_not_str hn, litToCtor_of_not_str hn, litToCtorIfNat_ext hx hw]
+    exact Rel.ok (res_litToCtorIfNat hw)
 
 /-- What a rule's match hands on: the matched view and the slots' bindings resolve. -/
 abbrev ResM (env : Env) (o : Option ((List (Option Expr) × List (Option Level)) × Expr)) : Prop :=

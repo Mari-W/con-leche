@@ -1,7 +1,6 @@
 module
 
 public import ConLeche.Model.Env.Laws
-import ConLeche.Verify.InferLemmas
 import ConLeche.Verify.Denote.Lemmas
 
 public section

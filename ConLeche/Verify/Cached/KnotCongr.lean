@@ -208,6 +208,11 @@ theorem litToCtorIfNatI_congr (hfe : fe₁.find? = fe₂.find?) :
     litToCtorIfNatI fe₁ = litToCtorIfNatI fe₂ := by
   funext e; unfold litToCtorIfNatI; simp only [FEnv.natLit_congr hfe]
 
+/-- `litToCtorI` reads `fe` only through `find?`. -/
+theorem litToCtorI_congr (hfe : fe₁.find? = fe₂.find?) :
+    litToCtorI fe₁ = litToCtorI fe₂ := by
+  funext e; unfold litToCtorI; simp only [FEnv.strLit_congr hfe, litToCtorIfNatI_congr hfe]
+
 /-- `projCertAtF` reads `fe` only through `find?`. -/
 theorem projCertAtF_congr (hfe : fe₁.find? = fe₂.find?) :
     projCertAtF fe₁ = projCertAtF fe₂ := by
@@ -485,7 +490,7 @@ theorem FEnv.rulesFor_congr (hfe : fe₁.find? = fe₂.find?) (hrl : fe₁.base.
 theorem ruleRetryI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv) :
     ruleRetryI mode fe₁ eager lv = ruleRetryI mode fe₂ eager lv := by
   funext depth a; rw [ruleRetryI.eq_def, ruleRetryI.eq_def]
-  simp only [litToCtorIfNatI_congr hfe, h]
+  simp only [litToCtorI_congr hfe, h]
 
 /-- `ruleBindVarI` reads `fe` only through `defeqI`. -/
 theorem ruleBindVarI_congr (h : SlotsEq mode fe₁ fe₂ lv) :

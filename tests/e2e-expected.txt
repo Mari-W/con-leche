@@ -3597,6 +3597,12 @@
 # `∀ b, (fun x => fa x) 0 b = 0 + b`: β exposes `fa 0` with `b` left over, and head normalization
 # goes on at the whole spine `fa 0 b`, where `fa_two` (priority 2000) fires.
 0 rewrite_rule_prio_exposure.ndjson
+# the match's retry reads a `String` literal as its characters under `String.ofList`
+# (scripts/rewrite-fixtures/RrRetry.lean, `mk.py retry` patches the statements): `sf "ab" = 0`
+# under `sf_cons : sf (String.ofList (c :: cs)) = 0`, the rule fires.  `sf "" = 0` stays
+# unconvertible, the empty list does not match `c :: cs`.
+0 rewrite_rule_retry_str.ndjson
+1 rewrite_rule_retry_str_empty.ndjson
 # abstract definitions (scripts/rewrite-fixtures/RrAbstract.lean, rr-dev leanchecker 0): `double` is
 # abstract after its `abstract_block`, so only its block's members unfold it.  The member
 # `double_two : double 2 = 4` by `rfl` unfolds it.  Target 0.

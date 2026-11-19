@@ -1732,7 +1732,23 @@ private theorem ruleRetry_shift (ih : ShiftClaims mode eager env fuel) {p d : Na
       (ruleRetry (pureFns mode eager env fuel) env d a).map (shiftFrom p) := by
   unfold ruleRetry
   refine bind_rel (shiftFrom p) _ (ih.whnf hpd hw) fun w _ => ?_
-  rw [litToCtorIfNat_shiftFrom]; rfl
+  by_cases hws : ∃ s, w = .lit (.strVal s)
+  · obtain ⟨s, rfl⟩ := hws
+    show pure (litToCtor env (.lit (.strVal s))) = Except.map (shiftFrom p) (pure (litToCtor env _))
+    by_cases hs : strLitStored env = true
+    · simp only [litToCtor, hs, ↓reduceIte]
+      show pure _ = pure (shiftFrom p _)
+      rw [strLitToConstructor_shiftFrom]
+    · simp only [litToCtor, hs, Bool.false_eq_true, ↓reduceIte]
+      rfl
+  · have hn : ∀ s, w ≠ .lit (.strVal s) := fun s hh => hws ⟨s, hh⟩
+    have hn' : ∀ s, shiftFrom p w ≠ .lit (.strVal s) := by
+      intro s hh
+      cases w with
+      | lit l => exact hn s hh
+      | fvar i ty => rw [shiftFrom_fvar] at hh; cases hh
+      | _ => cases hh
+    rw [litToCtor_of_not_str hn', litToCtor_of_not_str hn, litToCtorIfNat_shiftFrom]; rfl
 
 /-- The retry's term is scoped where the argument is. -/
 private theorem ruleRetry_WScoped (henv : EnvWF env) {d : Nat} {a a' : Expr}
@@ -1748,7 +1764,7 @@ private theorem ruleRetry_WScoped (henv : EnvWF env) {d : Nat} {a a' : Expr}
     rw [show (pureFns mode eager env fuel).whnf d a = whnf mode eager env fuel d a from rfl,
       hwh] at h
     obtain rfl := Except.ok.inj h
-    exact litToCtorIfNat_WScoped (whnf_WScoped henv fuel hwh hw)
+    exact litToCtor_WScoped (whnf_WScoped henv fuel hwh hw)
 
 /-- **The match on a shifted term** binds the shifted subterms and gives the shifted matched view. -/
 private theorem ruleMatchM_shift (henv : EnvWF env) (ih : ShiftClaims mode eager env fuel)
@@ -1847,7 +1863,7 @@ private theorem ruleArgsM_shift (henv : EnvWF env) (ih : ShiftClaims mode eager 
     | some x =>
       obtain ⟨⟨sl, lv⟩, e₁⟩ := x
       simp only [Option.map_some, shiftSt, mapM_optShift sl]
-      cases sl.mapM id <;> cases lv.mapM id <;> rfl
+      cases sl.mapM id <;> cases ruleLevels cv.levelParams lv _ <;> rfl
   · rfl
 
 private theorem appSubterms_shiftFrom {p : Nat} :
@@ -1978,18 +1994,10 @@ private theorem rewriteAttempt_shift (henv : EnvWF env)
               rw [appSubterms_shiftFrom, forall_mem_map_inj fun _ _ h => shiftFrom_injective h,
                 hcst]
               constructor
-              · rintro ⟨h1, h2, h3, h4, h5, h6⟩
-                have hr : WScoped d rhs := by
-                  have := hwR h4; simp only [WScoped] at this; exact this.2
-                rw [fvarLeaves_shiftFrom hpd hr, fvarLeaves_shiftFrom hpd hw₁,
-                  forall_mem_map_inj fun _ _ h => shiftLeaf_injective h] at h5
-                exact ⟨h1, h2, (levelFormEq_shiftFrom p e₁ l) ▸ h3, h4, h5, h6⟩
-              · rintro ⟨h1, h2, h3, h4, h5, h6⟩
-                have hr : WScoped d rhs := by
-                  have := hwR h4; simp only [WScoped] at this; exact this.2
-                rw [fvarLeaves_shiftFrom hpd hr, fvarLeaves_shiftFrom hpd hw₁,
-                  forall_mem_map_inj fun _ _ h => shiftLeaf_injective h]
-                exact ⟨h1, h2, (levelFormEq_shiftFrom p e₁ l).symm ▸ h3, h4, h5, h6⟩
+              · rintro ⟨h1, h2, h3, h4, h6⟩
+                exact ⟨h1, h2, (levelFormEq_shiftFrom p e₁ l) ▸ h3, h4, h6⟩
+              · rintro ⟨h1, h2, h3, h4, h6⟩
+                exact ⟨h1, h2, (levelFormEq_shiftFrom p e₁ l).symm ▸ h3, h4, h6⟩
             by_cases hc : RuleGate cv us args e₁ eqn l rhs
             · rw [ite_eq_left (hiff.mpr hc), ite_eq_left hc]
               have hR := hwR hc.2.2.2.1

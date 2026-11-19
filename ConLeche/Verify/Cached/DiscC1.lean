@@ -322,6 +322,32 @@ theorem litToCtorIfNatC_spec {s₀ : CState} (hs : CSOK mode eager env s₀) (i 
   sym only [conleche_grind, litToCtorIfNat, mkFEnv_natLit] =>
     vcgen [litToCtorIfNatI] <;> finish
 
+/-- The cached twin computes the spec's `litToCtor`. -/
+theorem litToCtorC_spec {s₀ : CState} (hs : CSOK mode eager env s₀) (i : Expr) :
+    ⦃fun s => s = s₀⦄ litToCtorI (mkFEnv env) i
+    ⦃fun r s' => CSOK mode eager env s' ∧ r = litToCtor env i; ⊤⦄ := by
+  by_cases hstr : ∃ s, i = .lit (.strVal s)
+  · obtain ⟨s, rfl⟩ := hstr
+    sym only [conleche_grind, litToCtor, mkFEnv_strLit] =>
+      vcgen [litToCtorI] <;> finish
+  · have hn : ∀ s, i ≠ .lit (.strVal s) := fun s hh => hstr ⟨s, hh⟩
+    have h1 : litToCtorI (mkFEnv env) i = litToCtorIfNatI (mkFEnv env) i := by
+      cases i with
+      | lit l =>
+        cases l with
+        | strVal s => exact absurd rfl (hn s)
+        | natVal n => rfl
+      | _ => rfl
+    have h2 : litToCtor env i = litToCtorIfNat env i := by
+      cases i with
+      | lit l =>
+        cases l with
+        | strVal s => exact absurd rfl (hn s)
+        | natVal n => rfl
+      | _ => rfl
+    rw [h1, h2]
+    exact litToCtorIfNatC_spec hs i
+
 /-- The cached twin computes the spec's pure `unfoldDefinition`. -/
 theorem unfoldDefinitionC_spec {s₀ : CState} (hs : CSOK mode eager env s₀) (i : Expr) :
     ⦃fun s => s = s₀⦄ unfoldDefinitionI (mkFEnv env) i

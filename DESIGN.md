@@ -116368,3 +116368,51 @@ at the same fuel (`whnfCoreBody_eq_step`, `whnfStuckW_run` through `iotaAt_targe
 (priority beats arity), `refire` (the rules fire again before ι), `prefix` (an origin rule of
 arity 1 on a stuck unfolding of arity 2) and `exposure` flip from 1 to 0. The variants with the
 deciding rule dropped stay 1.
+
+## The rule gate's leaf check, the string retry and the remaining parity gaps (2026-11-19, rewrite-rules, r14)
+
+**The leaf check cost the PoC 2829 s.** `DFinsupp.sigmaUncurry_zero` took 2828.7 s of the
+38.9 T instructions of the PoC run (`perf/results/conleche-poc/poc.log`), and the official kernel
+checks it in well under a second. `perf record` on its closure (78% of the samples in
+`Expr.fvarLeaves`, `List.appendTR` and `List.decidableBAll`) puts the time in `RuleGate`'s
+conjunct `∀ x ∈ rhs.fvarLeaves, x ∈ e.fvarLeaves`. `fvarLeaves` lists the leaves of the tree, not
+of the shared graph, and the conjunct compares the two lists element by element, at every firing.
+The conjunct is a consequence of the others. The theorem's type is closed (`EnvWF`, the model's
+`constTy_pkg`), and the arguments are subterms of the view (`appSubterms`), so the right side has
+no leaf the view lacks (`Expr.fvarLeaves_ruleRhs`, `Verify/Leaves.lean`). `RuleGate` drops it,
+`Red.rewrite` drops the premise, and `Red.rewrite_sound` and `rewriteAttempt_fvarLeaves` derive it. The
+closure of `DFinsupp.sigmaUncurry_zero` (7499 declarations) now checks in 3.8 G instructions, the
+declaration itself in under 6 ms.
+
+**The string retry.** A failed pattern position is retried on the argument's `whnf` read as a
+constructor form. The official kernel reads a `String` literal there as its characters under
+`String.ofList` (`string_lit_to_constructor`), con-leche read only `Nat` literals. `ruleRetry` now
+uses `litToCtor`, which adds the `String` case under `strLitStored`, and the model already has the
+step (`Red.strLit`). Fixtures `rewrite_rule_retry_str` (0, was 1) and `_str_empty` (1).
+
+**Rule levels the match does not bind.** The official kernel instantiates a level parameter that no
+`.param` position bound with `0`, and a rule whose left side mentions such a parameter elsewhere
+never fires (`get_undef_param` on the deferred checks). `ruleLevels` does the same, where
+con-leche refused every firing with an unbound parameter. The registration check rejects a rule
+whose right side mentions a parameter the left side does not (`invalid rewrite rule`), so such a
+parameter reaches only the binder types. con-leche certifies the arguments against the telescope at
+the levels it fires at (`iotaCertsFull`) and the official kernel does not, so where an argument's
+type needs another level than `0`, con-leche does not fire. That stays a deviation toward
+rejection, and no fixture or export has met it.
+
+**Levels the export does not write in official form.** The matcher compares repeated parameters by
+official form (r13). The official kernel compares them as it holds them, simplified where it
+instantiated and as written elsewhere. Equal official forms evaluate equally, so con-leche fires
+only sound rules. It can fire where the official kernel does not, at a declaration's own level
+written outside Lean's normal form (8 of the 10 513 levels of the PoC export). Making it exact
+needs `Level.subst` to simplify the nodes it rebuilds as `instantiate` does, which every proof
+about substituted levels reads. It stays documented.
+
+**The rules-last budget.** The official kernel counts firings in one counter per outermost
+`whnf_core`, `whnf` or `rules_last` scope, shared by every nested call (`rewrite_fuel_scope`).
+con-leche counts per head-normalization loop, per `fireMore` and per nesting of rules-last
+restarts (`ruleNest`), and both count every firing against the declaration's total. Each con-leche
+counter counts a subset of the firings the official counter sees in the same scope, and the
+declaration totals are equal, so con-leche never reports an exhausted budget where the official
+kernel does not. It can let a runaway chain run longer before the declaration's budget stops it.
+The difference is in error timing on inputs both kernels reject or never finish, so it is safe.

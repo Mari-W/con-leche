@@ -66,11 +66,11 @@
 == ConLeche/Rules/Rel.lean#L108
    108  inductive Red (env : Env) : Nat → Expr → Expr → Prop where
 
-== ConLeche/Rules/Rel.lean#L382
-   382  inductive DefEq (env : Env) : Nat → Expr → Expr → Prop where
+== ConLeche/Rules/Rel.lean#L380
+   380  inductive DefEq (env : Env) : Nat → Expr → Expr → Prop where
 
-== ConLeche/Rules/Rel.lean#L623
-   623  inductive Infer (env : Env) : Grade → Nat → Expr → Expr → Prop where
+== ConLeche/Rules/Rel.lean#L621
+   621  inductive Infer (env : Env) : Grade → Nat → Expr → Expr → Prop where
 
 == whitepaper/Fragment/Interp.lean#L139-L146
    139  noncomputable def interp (M : Name → List Nat → V) (φ : Name → Nat) : (Nat → V) → Expr → V
@@ -1061,10 +1061,10 @@
    565    | const {Γ : List Expr} {c : Name} {ls ls' : List Level} :
    566        Level.eqList ls ls' = true → DefEq env Γ (const c ls) (const c ls')
 
-== ConLeche/Rules/Rel.lean#L396-L398
-   396    /-- Two sorts (`Core.lean:1581`). -/
-   397    | sort {d : Nat} {u v : Level} :
-   398        Level.isEquiv u v = some true → DefEq env d (.sort u) (.sort v)
+== ConLeche/Rules/Rel.lean#L394-L396
+   394    /-- Two sorts (`Core.lean:1581`). -/
+   395    | sort {d : Nat} {u v : Level} :
+   396        Level.isEquiv u v = some true → DefEq env d (.sort u) (.sort v)
 
 == whitepaper/Fragment/Rules.lean#L567-L575
    567    /-- `∀`-congruence (`DefEq.forallE`, `Rel.lean:399`): domains, then
@@ -1149,49 +1149,49 @@
    545  "reduce, then continue": `redL`.
    546  -/
 
-== ConLeche/Rules/Rel.lean#L358-L381
-   358  /-- **Definitional equality**: the verdict `true` of `isDefEq`.
-   359  
-   360  **There is no `trans` rule, deliberately, and none can be added**
-   361  (task #309, the experiment recorded in DESIGN.md).  The relation is
-   362  not an equivalence on terms: it is the checker's verdict, and the
-   363  checker only ever compares terms that are well-formed *together* — a
-   364  fact the rules never state, because well-formedness (scoping, the
-   365  readability of the terms, the grading of the reading) is semantic
-   366  and may not enter this inductive.  Every rule respects one syntactic
-   367  discipline instead: **the subject of each `DefEq` premise is either a
-   368  subterm of the conclusion or is produced by an existence-form `Red` /
-   369  `Infer` premise** (a reduct, an inferred type), so the soundness proof
-   370  (`ConLeche/Model/Rules/Sound.lean`) always has the premise's terms in
-   371  hand.  `trans` is the unique rule that would break it: its middle
-   372  term comes from nowhere, and with it two rules that are each sound
-   373  alone meet — `fvar` compares free variables by index only (their
-   374  types are not compared, as the checker does not), while
-   375  `proofFast` *reads* a head's stored data to decide "definitely a
-   376  proof" — and derive `DefEq env d (.fvar i ty) (.fvar i' ty')` for
-   377  every `i`, `i'`, which no model satisfies.  The recursive-structure rules
-   378  (`redL`, `natSucc`, `eta`, `structUnit`) are therefore not a
-   379  proof-engineering convenience but what keeps the relation sound; the
-   380  one chaining that is sound, "reduce, then continue", is `redL`, and
-   381  its right-hand and δ variants are derived in `Derived.lean`. -/
+== ConLeche/Rules/Rel.lean#L356-L379
+   356  /-- **Definitional equality**: the verdict `true` of `isDefEq`.
+   357  
+   358  **There is no `trans` rule, deliberately, and none can be added**
+   359  (task #309, the experiment recorded in DESIGN.md).  The relation is
+   360  not an equivalence on terms: it is the checker's verdict, and the
+   361  checker only ever compares terms that are well-formed *together* — a
+   362  fact the rules never state, because well-formedness (scoping, the
+   363  readability of the terms, the grading of the reading) is semantic
+   364  and may not enter this inductive.  Every rule respects one syntactic
+   365  discipline instead: **the subject of each `DefEq` premise is either a
+   366  subterm of the conclusion or is produced by an existence-form `Red` /
+   367  `Infer` premise** (a reduct, an inferred type), so the soundness proof
+   368  (`ConLeche/Model/Rules/Sound.lean`) always has the premise's terms in
+   369  hand.  `trans` is the unique rule that would break it: its middle
+   370  term comes from nowhere, and with it two rules that are each sound
+   371  alone meet — `fvar` compares free variables by index only (their
+   372  types are not compared, as the checker does not), while
+   373  `proofFast` *reads* a head's stored data to decide "definitely a
+   374  proof" — and derive `DefEq env d (.fvar i ty) (.fvar i' ty')` for
+   375  every `i`, `i'`, which no model satisfies.  The recursive-structure rules
+   376  (`redL`, `natSucc`, `eta`, `structUnit`) are therefore not a
+   377  proof-engineering convenience but what keeps the relation sound; the
+   378  one chaining that is sound, "reduce, then continue", is `redL`, and
+   379  its right-hand and δ variants are derived in `Derived.lean`. -/
 
-== ConLeche/Rules/Rel.lean#L399-L405
-   399    /-- Two free variables of the same index (`Kernel/Core.lean`).  The
-   400    carried types are NOT compared, as the checker does not compare them:
-   401    at a well-formed call `CtxOk` pins every opened variable's type, so
-   402    the reading ignores them.  This is one half of why the relation has
-   403    no `trans` (see the inductive's docstring). -/
-   404    | fvar {d i : Nat} {ty₁ ty₂ : Expr} :
-   405        DefEq env d (.fvar i ty₁) (.fvar i ty₂)
+== ConLeche/Rules/Rel.lean#L397-L403
+   397    /-- Two free variables of the same index (`Kernel/Core.lean`).  The
+   398    carried types are NOT compared, as the checker does not compare them:
+   399    at a well-formed call `CtxOk` pins every opened variable's type, so
+   400    the reading ignores them.  This is one half of why the relation has
+   401    no `trans` (see the inductive's docstring). -/
+   402    | fvar {d i : Nat} {ty₁ ty₂ : Expr} :
+   403        DefEq env d (.fvar i ty₁) (.fvar i ty₂)
 
-== ConLeche/Rules/Rel.lean#L463-L469
-   463    /-- **The `isProofFast` yes-arm** (`propIrrel`, `Kernel/Core.lean`):
-   464    both heads' stored data say "a proposition at every valuation"
-   465    (`prf_of_isProofFast`). -/
-   466    | proofFast {d : Nat} {a b : Expr} :
-   467        isProofFast env.find? env.findTable? a = true →
-   468          isProofFast env.find? env.findTable? b = true →
-   469        DefEq env d a b
+== ConLeche/Rules/Rel.lean#L461-L467
+   461    /-- **The `isProofFast` yes-arm** (`propIrrel`, `Kernel/Core.lean`):
+   462    both heads' stored data say "a proposition at every valuation"
+   463    (`prf_of_isProofFast`). -/
+   464    | proofFast {d : Nat} {a b : Expr} :
+   465        isProofFast env.find? env.findTable? a = true →
+   466          isProofFast env.find? env.findTable? b = true →
+   467        DefEq env d a b
 
 == whitepaper/Fragment/Rules.lean#L740-L748
    740  inductive Infer (env : Env) : List Expr → Expr → Expr → Prop where
@@ -1204,24 +1204,24 @@
    747    | sort {Γ : List Expr} {u : Level} :
    748        Infer env Γ (sort u) (sort (.succ u))
 
-== ConLeche/Rules/Rel.lean#L623-L639
-   623  inductive Infer (env : Env) : Grade → Nat → Expr → Expr → Prop where
-   624    /-- `Core.lean:1114` / `:1294`. -/
-   625    | sort {g : Grade} {d : Nat} {u : Level} :
-   626        Infer env g d (.sort u) (.sort (.succ u))
-   627    /-- `Kernel/Core.lean` / `:1295-1297`: an opened variable's stored
-   628    type, at the leaf scope check. -/
-   629    | fvar {g : Grade} {d idx : Nat} {ty : Expr} :
-   630        idx < d → Infer env g d (.fvar idx ty) ty
-   631    /-- `Kernel/Core.lean` / `:1298-1309`: a stored constant at the right
-   632    level arity. -/
-   633    | const {g : Grade} {d : Nat} {n : Name} {us : List Level}
-   634        {ci : ConstantInfo} :
-   635        env.find? n = some ci →
-   636        us.length = ci.toConstantVal.levelParams.length →
-   637        Infer env g d (.const n us)
-   638          (ci.toConstantVal.type.instantiateLevelParams
-   639            ci.toConstantVal.levelParams us)
+== ConLeche/Rules/Rel.lean#L621-L637
+   621  inductive Infer (env : Env) : Grade → Nat → Expr → Expr → Prop where
+   622    /-- `Core.lean:1114` / `:1294`. -/
+   623    | sort {g : Grade} {d : Nat} {u : Level} :
+   624        Infer env g d (.sort u) (.sort (.succ u))
+   625    /-- `Kernel/Core.lean` / `:1295-1297`: an opened variable's stored
+   626    type, at the leaf scope check. -/
+   627    | fvar {g : Grade} {d idx : Nat} {ty : Expr} :
+   628        idx < d → Infer env g d (.fvar idx ty) ty
+   629    /-- `Kernel/Core.lean` / `:1298-1309`: a stored constant at the right
+   630    level arity. -/
+   631    | const {g : Grade} {d : Nat} {n : Name} {us : List Level}
+   632        {ci : ConstantInfo} :
+   633        env.find? n = some ci →
+   634        us.length = ci.toConstantVal.levelParams.length →
+   635        Infer env g d (.const n us)
+   636          (ci.toConstantVal.type.instantiateLevelParams
+   637            ci.toConstantVal.levelParams us)
 
 == whitepaper/Fragment/Rules.lean#L754-L771
    754    /-- **`∀`-formation** (`Infer.forallE`, `Rel.lean:576`): the domain's
@@ -1255,12 +1255,12 @@
    780        Infer env Γ a ta → DefEq env Γ ta A →
    781        Infer env Γ (app f a) (B.inst a)
 
-== ConLeche/Rules/Rel.lean#L691-L695
-   691    | app {g : Grade} {d : Nat} {f a tf ty body ta : Expr} :
-   692        Infer env g d f tf → Red env d tf (.forallE ty body) →
-   693        (g = .full → Infer env .full d a ta) →
-   694        (g = .full → DefEq env d ta ty) →
-   695        Infer env g d (.app f a) (body.instantiate1 a)
+== ConLeche/Rules/Rel.lean#L689-L693
+   689    | app {g : Grade} {d : Nat} {f a tf ty body ta : Expr} :
+   690        Infer env g d f tf → Red env d tf (.forallE ty body) →
+   691        (g = .full → Infer env .full d a ta) →
+   692        (g = .full → DefEq env d ta ty) →
+   693        Infer env g d (.app f a) (body.instantiate1 a)
 
 == whitepaper/Fragment/Rules.lean#L782-L796
    782    /-- **`let`, by substitution** (official `infer_let`
@@ -2594,22 +2594,22 @@
    565    | const {Γ : List Expr} {c : Name} {ls ls' : List Level} :
    566        Level.eqList ls ls' = true → DefEq env Γ (const c ls) (const c ls')
 
-== ConLeche/Rules/Rel.lean#L633-L639
-   633    | const {g : Grade} {d : Nat} {n : Name} {us : List Level}
-   634        {ci : ConstantInfo} :
-   635        env.find? n = some ci →
-   636        us.length = ci.toConstantVal.levelParams.length →
-   637        Infer env g d (.const n us)
-   638          (ci.toConstantVal.type.instantiateLevelParams
-   639            ci.toConstantVal.levelParams us)
+== ConLeche/Rules/Rel.lean#L631-L637
+   631    | const {g : Grade} {d : Nat} {n : Name} {us : List Level}
+   632        {ci : ConstantInfo} :
+   633        env.find? n = some ci →
+   634        us.length = ci.toConstantVal.levelParams.length →
+   635        Infer env g d (.const n us)
+   636          (ci.toConstantVal.type.instantiateLevelParams
+   637            ci.toConstantVal.levelParams us)
 
-== ConLeche/Rules/Rel.lean#L405-L410
-   405        DefEq env d (.fvar i ty₁) (.fvar i ty₂)
-   406    /-- Two constants of the same name at equivalent levels
-   407    (`Kernel/Core.lean`). -/
-   408    | const {d : Nat} {n : Name} {us us' : List Level} :
-   409        Level.isEquivList us us' = some true →
-   410        DefEq env d (.const n us) (.const n us')
+== ConLeche/Rules/Rel.lean#L403-L408
+   403        DefEq env d (.fvar i ty₁) (.fvar i ty₂)
+   404    /-- Two constants of the same name at equivalent levels
+   405    (`Kernel/Core.lean`). -/
+   406    | const {d : Nat} {n : Name} {us us' : List Level} :
+   407        Level.isEquivList us us' = some true →
+   408        DefEq env d (.const n us) (.const n us')
 
 == whitepaper/Fragment/Rules.lean#L88-L94
     88    /-- **δ** (`Red.delta`, `Rel.lean:140`): a definition unfolds to its
@@ -4574,60 +4574,60 @@
    173          (mkAppN (rl.rhs.instL ci.lparams us)
    174            (args.take (numParams + numMotives + numMinors) ++ margs.drop numParams))
 
-== ConLeche/Rules/Rel.lean#L224-L276
-   224    /-- **ι** (`iotaRec`, `Kernel/Core.lean`): a stored recursor
-   225    applied to exactly its telescope, whose prepared major (the `Red`
-   226    premise: `prepareMajor`'s whnf / literal / rescue chain) is a
-   227    constructor application with a firing rule; the reduct is the rule's
-   228    right-hand side's body under its `rP + nfields` λs (lean4 PR #10565's
-   229    shape, no β-redex built), the leading arguments and the fields
-   230    substituted.  The recursor
-   231    telescope's syntactic arity over the redex's own spine, and (case 3
-   232    only) the level and parameter comparisons with the rule's comparands,
-   233    the constructor's full-grade telescope certificate and the index
-   234    comparison are the checker's, in its order.
-   235  
-   236    **The ι case split** (task #342 L10, S5c): `IotaCaseS` at the comparand
-   237    levels is the checker's test, the stored facts first (task #573).  A K rule, and a rule whose
-   238    constructor's family is never `Prop` at the comparand levels (case 2),
-   239    carry no premise about the constructor application; case 3 carries
-   240    all four. -/
-   241    | iota {d : Nat} {e : Expr} {c : Name} {us : List Level} {cv : ConstantVal}
-   242        {mI rP : Nat} {isK : Bool} {rules : List RecRule} {major : Expr} {cj : Name}
-   243        {usj : List Level} {cvj : ConstantVal} {cnP cnF : Nat} {induct : Name} {rl : RecRule}
-   244        {residual : Expr} {c3 : Bool} :
-   245        e.getAppFn = .const c us →
-   246        env.find? c = some (.recInfo cv mI rP isK rules) →
-   247        e.getAppArgs.length = mI + 1 →
-   248        us.length = cv.levelParams.length →
-   249        Red env d (e.getAppArgs.getD mI (.bvar 0)) major →
-   250        major.getAppFn = .const cj usj →
-   251        env.find? cj = some (.ctorInfo cvj cnP cnF induct) →
-   252        rules.find? (fun r' => r'.ctor == cj) = some rl →
-   253        major.getAppArgs.length = cnP + rl.nfields →
-   254        IotaCaseS env isK induct (recFireComparands rl cnP cv.levelParams us cvj.levelParams
-   255          e.getAppArgs rP).1 c3 →
-   256        (c3 = true →
-   257          Level.isEquivList usj
-   258            (recFireComparands rl cnP cv.levelParams us cvj.levelParams
-   259              e.getAppArgs rP).1 = some true) →
-   260        (c3 = true →
-   261          DefEqList env d (major.getAppArgs.take cnP)
-   262            (recFireComparands rl cnP cv.levelParams us cvj.levelParams
-   263              e.getAppArgs rP).2) →
-   264        (Expr.peelPis e.getAppArgs.length
-   265          (cv.type.instantiateLevelParams cv.levelParams us)).isSome = true →
-   266        (c3 = true →
-   267          CertsF env d (cvj.type.instantiateLevelParams cvj.levelParams usj)
-   268            major.getAppArgs) →
-   269        (c3 = true → mI ≠ rP →
-   270          piResidual (cvj.type.instantiateLevelParams cvj.levelParams usj)
-   271            major.getAppArgs = some residual) →
-   272        (c3 = true → mI ≠ rP →
-   273          DefEqList env d (residual.getAppArgs.drop cnP)
-   274            ((e.getAppArgs.take mI).drop rP)) →
-   275        Red env d e
-   276          (rl.iotaReduct cv.levelParams us rP (e.getAppArgs.take rP ++ major.getAppArgs.drop cnP))
+== ConLeche/Rules/Rel.lean#L222-L274
+   222    /-- **ι** (`iotaRec`, `Kernel/Core.lean`): a stored recursor
+   223    applied to exactly its telescope, whose prepared major (the `Red`
+   224    premise: `prepareMajor`'s whnf / literal / rescue chain) is a
+   225    constructor application with a firing rule; the reduct is the rule's
+   226    right-hand side's body under its `rP + nfields` λs (lean4 PR #10565's
+   227    shape, no β-redex built), the leading arguments and the fields
+   228    substituted.  The recursor
+   229    telescope's syntactic arity over the redex's own spine, and (case 3
+   230    only) the level and parameter comparisons with the rule's comparands,
+   231    the constructor's full-grade telescope certificate and the index
+   232    comparison are the checker's, in its order.
+   233  
+   234    **The ι case split** (task #342 L10, S5c): `IotaCaseS` at the comparand
+   235    levels is the checker's test, the stored facts first (task #573).  A K rule, and a rule whose
+   236    constructor's family is never `Prop` at the comparand levels (case 2),
+   237    carry no premise about the constructor application; case 3 carries
+   238    all four. -/
+   239    | iota {d : Nat} {e : Expr} {c : Name} {us : List Level} {cv : ConstantVal}
+   240        {mI rP : Nat} {isK : Bool} {rules : List RecRule} {major : Expr} {cj : Name}
+   241        {usj : List Level} {cvj : ConstantVal} {cnP cnF : Nat} {induct : Name} {rl : RecRule}
+   242        {residual : Expr} {c3 : Bool} :
+   243        e.getAppFn = .const c us →
+   244        env.find? c = some (.recInfo cv mI rP isK rules) →
+   245        e.getAppArgs.length = mI + 1 →
+   246        us.length = cv.levelParams.length →
+   247        Red env d (e.getAppArgs.getD mI (.bvar 0)) major →
+   248        major.getAppFn = .const cj usj →
+   249        env.find? cj = some (.ctorInfo cvj cnP cnF induct) →
+   250        rules.find? (fun r' => r'.ctor == cj) = some rl →
+   251        major.getAppArgs.length = cnP + rl.nfields →
+   252        IotaCaseS env isK induct (recFireComparands rl cnP cv.levelParams us cvj.levelParams
+   253          e.getAppArgs rP).1 c3 →
+   254        (c3 = true →
+   255          Level.isEquivList usj
+   256            (recFireComparands rl cnP cv.levelParams us cvj.levelParams
+   257              e.getAppArgs rP).1 = some true) →
+   258        (c3 = true →
+   259          DefEqList env d (major.getAppArgs.take cnP)
+   260            (recFireComparands rl cnP cv.levelParams us cvj.levelParams
+   261              e.getAppArgs rP).2) →
+   262        (Expr.peelPis e.getAppArgs.length
+   263          (cv.type.instantiateLevelParams cv.levelParams us)).isSome = true →
+   264        (c3 = true →
+   265          CertsF env d (cvj.type.instantiateLevelParams cvj.levelParams usj)
+   266            major.getAppArgs) →
+   267        (c3 = true → mI ≠ rP →
+   268          piResidual (cvj.type.instantiateLevelParams cvj.levelParams usj)
+   269            major.getAppArgs = some residual) →
+   270        (c3 = true → mI ≠ rP →
+   271          DefEqList env d (residual.getAppArgs.drop cnP)
+   272            ((e.getAppArgs.take mI).drop rP)) →
+   273        Red env d e
+   274          (rl.iotaReduct cv.levelParams us rP (e.getAppArgs.take rP ++ major.getAppArgs.drop cnP))
 
 == whitepaper/Fragment/Sound.lean#L805-L819
    805  /-- **A spine that is not the point fits its head's telescope, with no
@@ -5659,32 +5659,32 @@
    454      rules.map fun rl => { rl with fire := fire }
    455    | some _ => rules
 
-== ConLeche/Kernel/CoreDefs.lean#L1176-L1186
-  1176      (rP : Nat) : List Level × List Expr :=
-  1177    match rl.fire with
-  1178    | .nested lvls pins =>
-  1179      (lvls.map (Level.subst lps us),
-  1180       pins.map fun p => Expr.instSpine (args.take rP) (rP - 1)
-  1181         (p.instantiateLevelParams lps us))
-  1182    | .plain =>
-  1183      (cvjLps.map fun p => Level.subst lps us (.param p),
-  1184       args.take cnP)
-  1185    | .levels lvls =>
-  1186      (lvls.map (Level.subst lps us), args.take cnP)
+== ConLeche/Kernel/CoreDefs.lean#L1193-L1203
+  1193      (rP : Nat) : List Level × List Expr :=
+  1194    match rl.fire with
+  1195    | .nested lvls pins =>
+  1196      (lvls.map (Level.subst lps us),
+  1197       pins.map fun p => Expr.instSpine (args.take rP) (rP - 1)
+  1198         (p.instantiateLevelParams lps us))
+  1199    | .plain =>
+  1200      (cvjLps.map fun p => Level.subst lps us (.param p),
+  1201       args.take cnP)
+  1202    | .levels lvls =>
+  1203      (lvls.map (Level.subst lps us), args.take cnP)
 
-== ConLeche/Rules/Rel.lean#L254-L265
-   254        IotaCaseS env isK induct (recFireComparands rl cnP cv.levelParams us cvj.levelParams
-   255          e.getAppArgs rP).1 c3 →
-   256        (c3 = true →
-   257          Level.isEquivList usj
-   258            (recFireComparands rl cnP cv.levelParams us cvj.levelParams
-   259              e.getAppArgs rP).1 = some true) →
-   260        (c3 = true →
-   261          DefEqList env d (major.getAppArgs.take cnP)
-   262            (recFireComparands rl cnP cv.levelParams us cvj.levelParams
-   263              e.getAppArgs rP).2) →
-   264        (Expr.peelPis e.getAppArgs.length
-   265          (cv.type.instantiateLevelParams cv.levelParams us)).isSome = true →
+== ConLeche/Rules/Rel.lean#L252-L263
+   252        IotaCaseS env isK induct (recFireComparands rl cnP cv.levelParams us cvj.levelParams
+   253          e.getAppArgs rP).1 c3 →
+   254        (c3 = true →
+   255          Level.isEquivList usj
+   256            (recFireComparands rl cnP cv.levelParams us cvj.levelParams
+   257              e.getAppArgs rP).1 = some true) →
+   258        (c3 = true →
+   259          DefEqList env d (major.getAppArgs.take cnP)
+   260            (recFireComparands rl cnP cv.levelParams us cvj.levelParams
+   261              e.getAppArgs rP).2) →
+   262        (Expr.peelPis e.getAppArgs.length
+   263          (cv.type.instantiateLevelParams cv.levelParams us)).isSome = true →
 
 == ConLeche/Kernel/Inductives/BlockRec.lean#L82-L84
     82  def blockLargeElimAllowed (p : BlockShape) (nested : Bool) : Bool :=
@@ -6109,36 +6109,36 @@
    355        = Expr.mkAppN rhs (args.take numBefore) := by
    356    simp [projApps]
 
-== ConLeche/Rules/Rel.lean#L483-L494
-   483    /-- **Structure η** (`structEtaCert` → `structEtaCertWith`,
-   484    `Kernel/Core.lean`): `a` is a fully applied constructor of an
-   485    η-capable stored structure, its projection table's constructor, `b`'s
-   486    io-inferred type head-normalises to that structure at agreeing levels
-   487    and the table's parameter count, the parameters agree pairwise, and
-   488    every field is the corresponding projection of `b`.
-   489    The type application is not certified: the type is a type, so its
-   490    spine fits the former's telescope (task #342 L11b). -/
-   491    | structEta {d : Nat} {a b tb wtb : Expr} {c : Name} {us : List Level}
-   492        {cvc : ConstantVal} {cnP cnF : Nat} {cT T : Name} {us' : List Level}
-   493        {cvT : ConstantVal} {caps : IndCaps} {tbl : ProjTable} :
-   494        Infer env .io d b tb → Red env d tb wtb →
+== ConLeche/Rules/Rel.lean#L481-L492
+   481    /-- **Structure η** (`structEtaCert` → `structEtaCertWith`,
+   482    `Kernel/Core.lean`): `a` is a fully applied constructor of an
+   483    η-capable stored structure, its projection table's constructor, `b`'s
+   484    io-inferred type head-normalises to that structure at agreeing levels
+   485    and the table's parameter count, the parameters agree pairwise, and
+   486    every field is the corresponding projection of `b`.
+   487    The type application is not certified: the type is a type, so its
+   488    spine fits the former's telescope (task #342 L11b). -/
+   489    | structEta {d : Nat} {a b tb wtb : Expr} {c : Name} {us : List Level}
+   490        {cvc : ConstantVal} {cnP cnF : Nat} {cT T : Name} {us' : List Level}
+   491        {cvT : ConstantVal} {caps : IndCaps} {tbl : ProjTable} :
+   492        Infer env .io d b tb → Red env d tb wtb →
 
 == ConLeche/Model/Rules/DefEqSound.lean#L554-L556
    554  theorem DefEq.structEta_sound (hin : RulesInputs V m φ) {d : Nat}
    555      {a b tb wtb : Expr} {c : Name} {us : List Level} {cvc : ConstantVal}
    556      {cnP cnF : Nat} {cT T : Name} {us' : List Level} {cvT : ConstantVal}
 
-== ConLeche/Rules/Rel.lean#L306-L315
-   306    /-- **The structure-η rescue** (`majorToCtor`'s η branch,
-   307    `Kernel/Core.lean`; official `to_cnstr_when_structure`): at an
-   308    η-flagged single-rule recursor whose major's type is a never-`Prop`
-   309    instance of the structure, the constructor of the major's
-   310    projections is fabricated and scope-guarded.  No certificate: the
-   311    major is the fabrication by the family's η law, and the fabrication
-   312    is graded by the η constructor's telescope coherence (task #342
-   313    L11b, `EtaCoherent`).  The constructor and the counts are the
-   314    family's projection table's, which the η law is keyed on. -/
-   315    | rescueEta {d : Nat} {major tm tmaj fab : Expr} {recName : Name}
+== ConLeche/Rules/Rel.lean#L304-L313
+   304    /-- **The structure-η rescue** (`majorToCtor`'s η branch,
+   305    `Kernel/Core.lean`; official `to_cnstr_when_structure`): at an
+   306    η-flagged single-rule recursor whose major's type is a never-`Prop`
+   307    instance of the structure, the constructor of the major's
+   308    projections is fabricated and scope-guarded.  No certificate: the
+   309    major is the fabrication by the family's η law, and the fabrication
+   310    is graded by the η constructor's telescope coherence (task #342
+   311    L11b, `EtaCoherent`).  The constructor and the counts are the
+   312    family's projection table's, which the η law is keyed on. -/
+   313    | rescueEta {d : Nat} {major tm tmaj fab : Expr} {recName : Name}
 
 == ConLeche/Model/Rules/IotaSound.lean#L763-L764
    763  theorem Red.rescueEta_sound (hin : RulesInputs V m φ) {d : Nat}
@@ -6162,8 +6162,8 @@
     11  every member with ONE constructor and no index, nothing at any other
     12  member — with `stageFixTable` at each table (abstract in the former's
 
-== ConLeche/Rules/Rel.lean#L520
-   520        Infer env .io d b tb → Red env d tb wtb →
+== ConLeche/Rules/Rel.lean#L518
+   518        Infer env .io d b tb → Red env d tb wtb →
 
 == ConLeche/Model/Rules/UnitSound.lean#L487
    487  theorem DefEq.unitLike_sound {d : Nat} {a ta wta b tb wtb : Expr}
@@ -6183,34 +6183,34 @@
     75          (blockTables p rest).map (⟨ms.declared.name, p.lps, p.nP, c.1.name, c.2, bodies⟩ :: ·)
     76      | none => blockTables p rest
 
-== ConLeche/Rules/Rel.lean#L208-L223
-   208    /-- **The structural projection** `proj_i (ctor p⃗ x⃗) ↦ x_i`
-   209    (`whnfCoreBody`'s `.proj` clause, `Kernel/Core.lean`), driven by
-   210    the projection table, with the
-   211    constructor telescope's syntactic arity (`projCertAt`,
-   212    `teleArityOk`). -/
-   213    | proj {d : Nat} {sn : Name} {i : Nat} {e : Expr} {entry : ProjEntry}
-   214        {us : List Level} {cvC : ConstantVal} {nP nF : Nat} {induct : Name} :
-   215        env.findProj? sn i = some entry →
-   216        e.getAppFn = .const entry.ctor us →
-   217        i < entry.numFields →
-   218        e.getAppArgs.length = entry.numParams + entry.numFields →
-   219        us.length = entry.levelParams.length →
-   220        env.find? entry.ctor = some (.ctorInfo cvC nP nF induct) →
-   221        (Expr.peelPis e.getAppArgs.length
-   222          (cvC.type.instantiateLevelParams cvC.levelParams us)).isSome = true →
-   223        Red env d (.proj sn i e) (e.getAppArgs.getD (entry.numParams + i) (.bvar 0))
+== ConLeche/Rules/Rel.lean#L206-L221
+   206    /-- **The structural projection** `proj_i (ctor p⃗ x⃗) ↦ x_i`
+   207    (`whnfCoreBody`'s `.proj` clause, `Kernel/Core.lean`), driven by
+   208    the projection table, with the
+   209    constructor telescope's syntactic arity (`projCertAt`,
+   210    `teleArityOk`). -/
+   211    | proj {d : Nat} {sn : Name} {i : Nat} {e : Expr} {entry : ProjEntry}
+   212        {us : List Level} {cvC : ConstantVal} {nP nF : Nat} {induct : Name} :
+   213        env.findProj? sn i = some entry →
+   214        e.getAppFn = .const entry.ctor us →
+   215        i < entry.numFields →
+   216        e.getAppArgs.length = entry.numParams + entry.numFields →
+   217        us.length = entry.levelParams.length →
+   218        env.find? entry.ctor = some (.ctorInfo cvC nP nF induct) →
+   219        (Expr.peelPis e.getAppArgs.length
+   220          (cvC.type.instantiateLevelParams cvC.levelParams us)).isSome = true →
+   221        Red env d (.proj sn i e) (e.getAppArgs.getD (entry.numParams + i) (.bvar 0))
 
-== ConLeche/Rules/Rel.lean#L710-L718
-   710  
-   711  /-- **Official's walk to a family's sort** (`formerSortLoop`): the binders, each
-   712  reached by reduction, and then a sort. -/
-   713  inductive FormerSort (env : Env) : Nat → Nat → Expr → Level → Prop where
-   714    | sort {d : Nat} {e : Expr} {s : Level} :
-   715        Red env d e (.sort s) → FormerSort env d 0 e s
-   716    | pi {d n : Nat} {e dom b : Expr} {s : Level} :
-   717        Red env d e (.forallE dom b) →
-   718        FormerSort env (d + 1) n (b.instantiate1 (.fvar d dom)) s →
+== ConLeche/Rules/Rel.lean#L708-L716
+   708  
+   709  /-- **Official's walk to a family's sort** (`formerSortLoop`): the binders, each
+   710  reached by reduction, and then a sort. -/
+   711  inductive FormerSort (env : Env) : Nat → Nat → Expr → Level → Prop where
+   712    | sort {d : Nat} {e : Expr} {s : Level} :
+   713        Red env d e (.sort s) → FormerSort env d 0 e s
+   714    | pi {d n : Nat} {e dom b : Expr} {s : Level} :
+   715        Red env d e (.forallE dom b) →
+   716        FormerSort env (d + 1) n (b.instantiate1 (.fvar d dom)) s →
 
 == ConLeche/Model/Inductives/BlockStageTables.lean#L10-L12
     10  `stageBlockTables`: the loop `checkBlockTables` runs — a table at
@@ -6354,41 +6354,41 @@
    147    | delta {d : Nat} {e e' : Expr} :
    148        unfoldDefinition env e = some e' → Red env d e e'
 
-== ConLeche/Rules/Rel.lean#L491-L494
-   491    | structEta {d : Nat} {a b tb wtb : Expr} {c : Name} {us : List Level}
-   492        {cvc : ConstantVal} {cnP cnF : Nat} {cT T : Name} {us' : List Level}
-   493        {cvT : ConstantVal} {caps : IndCaps} {tbl : ProjTable} :
-   494        Infer env .io d b tb → Red env d tb wtb →
+== ConLeche/Rules/Rel.lean#L489-L492
+   489    | structEta {d : Nat} {a b tb wtb : Expr} {c : Name} {us : List Level}
+   490        {cvc : ConstantVal} {cnP cnF : Nat} {cT T : Name} {us' : List Level}
+   491        {cvT : ConstantVal} {caps : IndCaps} {tbl : ProjTable} :
+   492        Infer env .io d b tb → Red env d tb wtb →
 
-== ConLeche/Rules/Rel.lean#L554
-   554  (`unitLikeShape`). -/
+== ConLeche/Rules/Rel.lean#L552
+   552  (`unitLikeShape`). -/
 
-== ConLeche/Rules/Rel.lean#L332-L356
-   332    /-- **The `And` rescue** (`majorToCtor`'s `And` branch,
-   333    `Kernel/Core.lean`; `And` only, by ruling): `And.intro a b
-   334    (.proj And 0 h) (.proj And 1 h)` is fabricated for a stuck proof
-   335    `h`, certified the K branch's way; the last four premises are the
-   336    major's half of the `proofIrrel` run, as in the K branch. -/
-   337    | rescueAnd {d : Nat} {major tm tmaj fab tf tp ttp : Expr} {v : Level} {recName : Name}
-   338        {cv : ConstantVal} {mI rP : Nat} {isK : Bool} {rl : RecRule} {cvj : ConstantVal}
-   339        {cnP cnF : Nat} {ust : List Level} {cvT : ConstantVal}
-   340        {caps : IndCaps} :
-   341        env.find? recName = some (.recInfo cv mI rP isK [rl]) →
-   342        env.find? rl.ctor = some (.ctorInfo cvj cnP cnF andName) →
-   343        env.find? andName = some (.indInfo cvT caps) →
-   344        Infer env .io d major tm → Red env d tm tmaj →
-   345        tmaj.getAppFn = .const andName ust →
-   346        tmaj.getAppArgs.length = cnP →
-   347        cvj.levelParams.length = ust.length →
-   348        andRescueSlots env rl.ctor cnP = true →
-   349        fab = Expr.mkAppN (.const rl.ctor ust)
-   350          (tmaj.getAppArgs ++ [.proj andName 0 major, .proj andName 1 major]) →
-   351        fab.wscopedB d = true → fab.looseBVarsBounded 0 = true →
-   352        fab.fvarLeaves.all (fun l => major.fvarLeaves.contains l) = true →
-   353        Infer env .io d fab tf → DefEq env d tmaj tf →
-   354        Infer env .io d major tp → Infer env .io d tp ttp →
-   355        Red env d ttp (.sort v) → Level.isEquiv v .zero = some true →
-   356        Red env d major fab
+== ConLeche/Rules/Rel.lean#L330-L354
+   330    /-- **The `And` rescue** (`majorToCtor`'s `And` branch,
+   331    `Kernel/Core.lean`; `And` only, by ruling): `And.intro a b
+   332    (.proj And 0 h) (.proj And 1 h)` is fabricated for a stuck proof
+   333    `h`, certified the K branch's way; the last four premises are the
+   334    major's half of the `proofIrrel` run, as in the K branch. -/
+   335    | rescueAnd {d : Nat} {major tm tmaj fab tf tp ttp : Expr} {v : Level} {recName : Name}
+   336        {cv : ConstantVal} {mI rP : Nat} {isK : Bool} {rl : RecRule} {cvj : ConstantVal}
+   337        {cnP cnF : Nat} {ust : List Level} {cvT : ConstantVal}
+   338        {caps : IndCaps} :
+   339        env.find? recName = some (.recInfo cv mI rP isK [rl]) →
+   340        env.find? rl.ctor = some (.ctorInfo cvj cnP cnF andName) →
+   341        env.find? andName = some (.indInfo cvT caps) →
+   342        Infer env .io d major tm → Red env d tm tmaj →
+   343        tmaj.getAppFn = .const andName ust →
+   344        tmaj.getAppArgs.length = cnP →
+   345        cvj.levelParams.length = ust.length →
+   346        andRescueSlots env rl.ctor cnP = true →
+   347        fab = Expr.mkAppN (.const rl.ctor ust)
+   348          (tmaj.getAppArgs ++ [.proj andName 0 major, .proj andName 1 major]) →
+   349        fab.wscopedB d = true → fab.looseBVarsBounded 0 = true →
+   350        fab.fvarLeaves.all (fun l => major.fvarLeaves.contains l) = true →
+   351        Infer env .io d fab tf → DefEq env d tmaj tf →
+   352        Infer env .io d major tp → Infer env .io d tp ttp →
+   353        Red env d ttp (.sort v) → Level.isEquiv v .zero = some true →
+   354        Red env d major fab
 
 == ConLeche/Cached/Decls.lean#L83-L84
     83  /-- **The declaration fold.**
@@ -6407,9 +6407,9 @@
    436    | bvar (i : Nat)
    437    | fvar (idx : Nat) (type : Expr)
 
-== ConLeche/Rules/Rel.lean#L404-L405
-   404    | fvar {d i : Nat} {ty₁ ty₂ : Expr} :
-   405        DefEq env d (.fvar i ty₁) (.fvar i ty₂)
+== ConLeche/Rules/Rel.lean#L402-L403
+   402    | fvar {d i : Nat} {ty₁ ty₂ : Expr} :
+   403        DefEq env d (.fvar i ty₁) (.fvar i ty₂)
 
 == ConLeche/Term/Syntax.lean#L188-L219
    188  inductive Term where
@@ -6463,67 +6463,67 @@
    144    | ρ, .snd e => ssnd (interp ρ e)
    145    | _, .prf => pt
 
-== ConLeche/Rules/Rel.lean#L788-L797
-   788  /-- **The full-grade telescope certificate** (`iotaCertsFull`,
-   789  `Kernel/Core.lean`; ι's case 3, task #342 L10): each argument's
-   790  FULL-grade type is definitionally equal to its binder domain, the
-   791  domains instantiated along the spine; no slot is skipped. -/
-   792  inductive CertsF (env : Env) : Nat → Expr → List Expr → Prop where
-   793    | nil {d : Nat} {T : Expr} : CertsF env d T []
-   794    | cert {d : Nat} {ty body arg ta : Expr} {rest : List Expr} :
-   795        Infer env .full d arg ta → DefEq env d ta ty →
-   796        CertsF env d (body.instantiate1 arg) rest →
-   797        CertsF env d (.forallE ty body) (arg :: rest)
+== ConLeche/Rules/Rel.lean#L786-L795
+   786  /-- **The full-grade telescope certificate** (`iotaCertsFull`,
+   787  `Kernel/Core.lean`; ι's case 3, task #342 L10): each argument's
+   788  FULL-grade type is definitionally equal to its binder domain, the
+   789  domains instantiated along the spine; no slot is skipped. -/
+   790  inductive CertsF (env : Env) : Nat → Expr → List Expr → Prop where
+   791    | nil {d : Nat} {T : Expr} : CertsF env d T []
+   792    | cert {d : Nat} {ty body arg ta : Expr} {rest : List Expr} :
+   793        Infer env .full d arg ta → DefEq env d ta ty →
+   794        CertsF env d (body.instantiate1 arg) rest →
+   795        CertsF env d (.forallE ty body) (arg :: rest)
 
-== ConLeche/Rules/Rel.lean#L824-L829
-   824  /-- **Pairwise definitional equality** (`defEqList`, `Kernel/Core.lean`). -/
-   825  inductive DefEqList (env : Env) : Nat → List Expr → List Expr → Prop where
-   826    | nil {d : Nat} : DefEqList env d [] []
-   827    | cons {d : Nat} {a b : Expr} {as bs : List Expr} :
-   828        DefEq env d a b → DefEqList env d as bs →
-   829        DefEqList env d (a :: as) (b :: bs)
+== ConLeche/Rules/Rel.lean#L822-L827
+   822  /-- **Pairwise definitional equality** (`defEqList`, `Kernel/Core.lean`). -/
+   823  inductive DefEqList (env : Env) : Nat → List Expr → List Expr → Prop where
+   824    | nil {d : Nat} : DefEqList env d [] []
+   825    | cons {d : Nat} {a b : Expr} {as bs : List Expr} :
+   826        DefEq env d a b → DefEqList env d as bs →
+   827        DefEqList env d (a :: as) (b :: bs)
 
-== ConLeche/Rules/Rel.lean#L581-L620
-   581  /-- **λ-telescope congruence, typed at the innermost level only**
-   582  (task #349; the fragment's `DefEqLams`).  Two λ-telescopes are compared
-   583  level by level: the domains at every level, the opened bodies' FULL-grade
-   584  types only where the comparison stops descending through two λs — where
-   585  the checker's `Expr.binderPair?` fails (`defeqBinders`, `Kernel/Core.lean`).
-   586  
-   587  *Why the outer levels need no type comparison.*  The type comparison is
-   588  what makes λ-congruence's claim **unconditional** — `DefEq`'s claim says
-   589  nothing where a side is the point, and two bodies in one type are both
-   590  the point or neither — and an unconditional equality of the bodies at
-   591  every value of the variable is an equality of the λs, with no type at
-   592  all; so the claim propagates outward through any number of levels.
-   593  
-   594  *Unequal depth, and reduction between levels.*  The descent continues
-   595  only through two **syntactic** λs (`outer`'s premise is this relation
-   596  itself, which has no reduction rule).  Where one body is not a λ — the
-   597  comparison ends in η or any other rule, possibly after δ or whnf steps —
-   598  that level is the innermost one (`inner`), and its bodies' types are
-   599  inferred and compared at the full grade.  Syntactically equal λs
-   600  (`refl`) are equal outright. -/
-   601  inductive DefEqLams (env : Env) : Nat → Expr → Expr → Prop where
-   602    /-- Syntactically equal sides (the checker's `a == b` fast path). -/
-   603    | refl {d : Nat} {a : Expr} : DefEqLams env d a a
-   604    /-- The innermost level: domains, bodies opened with the RIGHT
-   605    domain, and the opened bodies' full-grade types. -/
-   606    | inner {d : Nat} {ty₁ body₁ ty₂ body₂ t₁ t₂ : Expr} :
-   607        DefEq env d ty₁ ty₂ →
-   608        DefEq env (d + 1) (body₁.instantiate1 (.fvar d ty₂))
-   609          (body₂.instantiate1 (.fvar d ty₂)) →
-   610        Infer env .full (d + 1) (body₁.instantiate1 (.fvar d ty₂)) t₁ →
-   611        Infer env .full (d + 1) (body₂.instantiate1 (.fvar d ty₂)) t₂ →
-   612        DefEq env (d + 1) t₁ t₂ →
-   613        DefEqLams env d (.lam ty₁ body₁) (.lam ty₂ body₂)
-   614    /-- An outer level: the domains, and the opened bodies by this
-   615    relation — no inference, no type comparison. -/
-   616    | outer {d : Nat} {ty₁ body₁ ty₂ body₂ : Expr} :
-   617        DefEq env d ty₁ ty₂ →
-   618        DefEqLams env (d + 1) (body₁.instantiate1 (.fvar d ty₂))
-   619          (body₂.instantiate1 (.fvar d ty₂)) →
-   620        DefEqLams env d (.lam ty₁ body₁) (.lam ty₂ body₂)
+== ConLeche/Rules/Rel.lean#L579-L618
+   579  /-- **λ-telescope congruence, typed at the innermost level only**
+   580  (task #349; the fragment's `DefEqLams`).  Two λ-telescopes are compared
+   581  level by level: the domains at every level, the opened bodies' FULL-grade
+   582  types only where the comparison stops descending through two λs — where
+   583  the checker's `Expr.binderPair?` fails (`defeqBinders`, `Kernel/Core.lean`).
+   584  
+   585  *Why the outer levels need no type comparison.*  The type comparison is
+   586  what makes λ-congruence's claim **unconditional** — `DefEq`'s claim says
+   587  nothing where a side is the point, and two bodies in one type are both
+   588  the point or neither — and an unconditional equality of the bodies at
+   589  every value of the variable is an equality of the λs, with no type at
+   590  all; so the claim propagates outward through any number of levels.
+   591  
+   592  *Unequal depth, and reduction between levels.*  The descent continues
+   593  only through two **syntactic** λs (`outer`'s premise is this relation
+   594  itself, which has no reduction rule).  Where one body is not a λ — the
+   595  comparison ends in η or any other rule, possibly after δ or whnf steps —
+   596  that level is the innermost one (`inner`), and its bodies' types are
+   597  inferred and compared at the full grade.  Syntactically equal λs
+   598  (`refl`) are equal outright. -/
+   599  inductive DefEqLams (env : Env) : Nat → Expr → Expr → Prop where
+   600    /-- Syntactically equal sides (the checker's `a == b` fast path). -/
+   601    | refl {d : Nat} {a : Expr} : DefEqLams env d a a
+   602    /-- The innermost level: domains, bodies opened with the RIGHT
+   603    domain, and the opened bodies' full-grade types. -/
+   604    | inner {d : Nat} {ty₁ body₁ ty₂ body₂ t₁ t₂ : Expr} :
+   605        DefEq env d ty₁ ty₂ →
+   606        DefEq env (d + 1) (body₁.instantiate1 (.fvar d ty₂))
+   607          (body₂.instantiate1 (.fvar d ty₂)) →
+   608        Infer env .full (d + 1) (body₁.instantiate1 (.fvar d ty₂)) t₁ →
+   609        Infer env .full (d + 1) (body₂.instantiate1 (.fvar d ty₂)) t₂ →
+   610        DefEq env (d + 1) t₁ t₂ →
+   611        DefEqLams env d (.lam ty₁ body₁) (.lam ty₂ body₂)
+   612    /-- An outer level: the domains, and the opened bodies by this
+   613    relation — no inference, no type comparison. -/
+   614    | outer {d : Nat} {ty₁ body₁ ty₂ body₂ : Expr} :
+   615        DefEq env d ty₁ ty₂ →
+   616        DefEqLams env (d + 1) (body₁.instantiate1 (.fvar d ty₂))
+   617          (body₂.instantiate1 (.fvar d ty₂)) →
+   618        DefEqLams env d (.lam ty₁ body₁) (.lam ty₂ body₂)
 
 == ConLeche/Verify/Rules/Bridge.lean#L29-L32
     29  theorem bridgeAt (env : Env) :

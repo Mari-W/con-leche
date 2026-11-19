@@ -436,7 +436,10 @@ theorem ruleMatchM_bridge (hw : WhnfBridge μ eager env fuel) (hd : DefEqBridge 
               simp only [pure, Except.pure, Except.ok.injEq] at ha'
               subst ha'
               obtain ⟨hm, hs⟩ := ihp _ hst₁ h
-              exact ⟨.red (.trans (hw hwh) (.litToCtorIfNat w)) hm, hs⟩
+              refine ⟨.red (.trans (hw hwh) ?_) hm, hs⟩
+              rcases litToCtor_cases env w with h' | ⟨s, rfl, hss, h'⟩
+              · rw [h']; exact .litToCtorIfNat w
+              · rw [h']; exact .strLit hss
     | _ => simp [ruleMatchM, pure, Except.pure] at h
   | const c ls =>
     intro P st st' e e₁ hst h
@@ -462,12 +465,12 @@ theorem rewriteAttempt_bridge (hw : WhnfBridge μ eager env fuel)
     (hfn' : e.getAppFn = .const c' ls') (hmem : t ∈ env.rulesFor c')
     (h : rewriteAttempt (pureFns μ eager env fuel) env d e t = .ok (some e₂)) :
     Red env d e e₂ := by
-  obtain ⟨cv, args, us, u, A, c, ls, e₁, l, hf, hm, hres, -, hlen, hsub, hleaf, hcert, hlf⟩ :=
+  obtain ⟨cv, args, us, u, A, c, ls, e₁, l, hf, hm, hres, -, hlen, hsub, hcert, hlf⟩ :=
     rewriteAttempt_inv h
   obtain ⟨l₀, st', hm'⟩ := ruleArgsM_inv hm
   exact .rewrite hf hlen (iotaCertsFull_bridge hd hi hcert) hres hfn'
     (ruleMatchM_bridge hw hd l₀ [] (SlotsIn.replicate _ _ _) hm').1
-    hlf hsub hleaf hmem
+    hlf hsub hmem
 
 theorem rewriteStep_bridge (hw : WhnfBridge μ eager env fuel) (hd : DefEqBridge μ eager env fuel)
     (hi : InferBridge μ eager env fuel)

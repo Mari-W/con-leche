@@ -9,7 +9,6 @@ public import ConLeche.Model.Env.BlockLfp
 public import ConLeche.Semantics.Inductives.FieldsEqOn
 import ConLeche.Verify.Denote
 import ConLeche.Verify.Denote.VClosed
-import ConLeche.Verify.InferLemmas
 
 public section
 

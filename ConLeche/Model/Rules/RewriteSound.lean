@@ -157,7 +157,6 @@ theorem Red.rewrite_sound (hin : RulesInputs V m φ) {d : Nat} {h : Name}
     (hmatch₁ : MatchRelSem m φ d [] e e₁)
     (hlf : e₁.levelFormEq l = true)
     (hsub : ∀ x ∈ args, x ∈ ConLeche.appSubterms e₁)
-    (hleaves₁ : ∀ x ∈ r.fvarLeaves, x ∈ e₁.fvarLeaves)
     (hmem : h ∈ env.rulesFor c) :
     RedSem m φ d e r := by
   intro hfe Δa ee hCe hee
@@ -167,11 +166,14 @@ theorem Red.rewrite_sound (hin : RulesInputs V m φ) {d : Nat} {h : Name}
   obtain ⟨hfl, hLS, ea, hea, hsem⟩ := hmatch₁.of_levelFormEq hlf hfe (fun _ h => h) hCe
     (fun _ hq => nomatch hq) hee
   have hCl : CtxOkS m φ d Δa l := hCe.of_subset hLS
-  have hleaves : ∀ x ∈ r.fvarLeaves, x ∈ l.fvarLeaves :=
-    fun x hx => levelFormEq_fvarLeaves hlf ▸ hleaves₁ x hx
   -- the theorem's stored type: closed, read, graded, inhabited
   obtain ⟨ta, hTd, hTok, hTmem, hnfT, hbdT⟩ :=
     constTy_pkg (ci := .thmInfo cv) hin.const_ty hthm hus
+  -- the right side's leaves are the arguments', so the view's
+  have hleaves : ∀ x ∈ r.fvarLeaves, x ∈ l.fvarLeaves := fun x hx => by
+    have := ConLeche.Expr.fvarLeaves_ruleRhs hres hnfT hsub x
+    simp only [Expr.fvarLeaves, List.mem_append] at this
+    exact levelFormEq_fvarLeaves hlf ▸ this (.inr hx)
   obtain ⟨hfT, hCT⟩ := frame_of_not_hasFvar (m := m) (φ := φ) hnfT hbdT hCl.1
   -- the arguments are subterms of the left side
   have hfargs : ∀ x ∈ args, Frame d x ∧ CtxOkS m φ d Δa x :=
