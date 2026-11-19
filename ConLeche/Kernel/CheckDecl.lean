@@ -162,7 +162,7 @@ def checkDeclKind (ops : CheckerOps m) (pins : List NatOpPinSet) (env : Env)
       | .error e => throw e
     else throw (.invalid "number of parameters mismatch")
   | .quotDecl k cv => checkQuotRecord env k cv
-  | .rewriteDecl thm head _ =>
+  | .rewriteDecl thm head _ _ =>
     -- a rule's registration: the fragment and shape check, the sides' typing once
     -- (`checkRuleLaw`), then the rule recorded; it fires only under a later `useRules` that
     -- names its theorem

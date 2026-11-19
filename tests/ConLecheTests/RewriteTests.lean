@@ -113,7 +113,7 @@ The same declarations as records: a rule is registered (`rewriteDecl`) and fires
   (verdict id (pureSeq ds), verdict (·.1) (cachedSeq ds))
 
 @[expose] def reg (thm : String) (prio : Nat := 1000) : Declaration :=
-  .rewriteDecl (nm thm) (nm "code") prio
+  .rewriteDecl (nm thm) (nm "code") prio none
 
 -- registered and in force: the rule fires
 #guard seqV [reg "code_eq", .useRules [nm "code_eq"], declY] == ("ok", "ok")
@@ -133,12 +133,12 @@ The same declarations as records: a rule is registered (`rewriteDecl`) and fires
 #guard seqV [reg "code_refl", reg "code_eq", .useRules [nm "code_refl", nm "code_eq"], declY] ==
   ("ok", "ok")
 -- malformed registrations
-#guard seqV [.rewriteDecl (nm "a") (nm "code") 1000] ==
+#guard seqV [.rewriteDecl (nm "a") (nm "code") 1000 none] ==
   ("rewrite rule a: no stored theorem of that name", "rewrite rule a: no stored theorem of that name")
-#guard seqV [.rewriteDecl (nm "code_vac") (nm "code") 1000] ==
+#guard seqV [.rewriteDecl (nm "code_vac") (nm "code") 1000 none] ==
   ("rewrite rule code_vac: a variable of its statement does not occur in its left side",
    "rewrite rule code_vac: a variable of its statement does not occur in its left side")
-#guard seqV [.rewriteDecl (nm "code_eq") (nm "g") 1000] ==
+#guard seqV [.rewriteDecl (nm "code_eq") (nm "g") 1000 none] ==
   ("rewrite rule code_eq: declared head g, but its left side is headed by code",
    "rewrite rule code_eq: declared head g, but its left side is headed by code")
 

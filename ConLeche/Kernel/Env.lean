@@ -377,7 +377,7 @@ inductive Declaration where
   constant of its left side `head` (redundant, checked against the theorem) and its priority.
   Registration installs no constant and activates nothing: a rule fires only while a later
   `useRules` names its theorem. -/
-  | rewriteDecl (thm head : Name) (prio : Nat)
+  | rewriteDecl (thm head : Name) (prio : Nat) (pre : Option Nat)
   /-- **The rule set the following records are checked under**: the registered rules whose
   theorem is in `S` (the stream's `R(D)`, trusted as given).  The frontends emit one only where
   the set changes. -/
@@ -499,6 +499,7 @@ structure RewriteRule where
   thm : Name
   head : Name
   prio : Nat
+  pre : Option Nat := none
   deriving DecidableEq, Repr, Inhabited
 
 /-- **The firing order** (`notes/format.md`): priority descending, then the theorem's name by
@@ -556,7 +557,7 @@ its rule, a `useRules` rebuilds the active table from the registered rules and r
 `len`, an abstract record adds its definition, and a declaration record records the abstract
 definitions it may not unfold (`blockedFor`) before it is checked (`Env.enter`). -/
 def RuleTable.step (rt : RuleTable) (len : Nat) : Declaration → RuleTable
-  | .rewriteDecl thm head prio => { rt with registered := ⟨thm, head, prio⟩ :: rt.registered }
+  | .rewriteDecl thm head prio pre => { rt with registered := ⟨thm, head, prio, pre⟩ :: rt.registered }
   | .useRules S =>
     let a := activeTable rt.registered S
     { rt with active := a, snaps := (len, a) :: rt.snaps }

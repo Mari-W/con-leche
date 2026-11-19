@@ -341,7 +341,7 @@ def checkDeclKindC (pins : List NatOpPinSet) (fe : FEnv) (pd : Declaration) :
         throw (.notImplemented (nonStdAxiomMsg cv.name))
   | .indDecl block nP => checkIndDeclC mode fe block nP
   | .quotDecl k cv => checkQuotRecordC fe k cv
-  | .rewriteDecl thm head _ =>
+  | .rewriteDecl thm head _ _ =>
     match ruleDeclError? fe.find? thm head with
     | some e => throw e
     | none => do
@@ -377,7 +377,7 @@ def declCLabel : Declaration → String
   | .axiomDecl cv => s!"axiom {cv.name}"
   | .indDecl b _ => s!"inductive {(b.head?.map (·.name)).getD .anonymous}"
   | .quotDecl _ cv => s!"quot {cv.name}"
-  | .rewriteDecl thm _ _ => s!"rewrite {thm}"
+  | .rewriteDecl thm _ _ _ => s!"rewrite {thm}"
   | .useRules S => s!"rewrite rules ({S.length})"
   | .abstractDecl c _ => s!"abstract {c}"
 

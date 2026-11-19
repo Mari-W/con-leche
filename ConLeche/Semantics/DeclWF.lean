@@ -295,7 +295,7 @@ theorem declWFStepRun {F : Nat}
     · exact henv
   | quotDecl k cv => exact declQuotRun_envWF henv h
   | indDecl block nP => exact hind h
-  | rewriteDecl thm head prio =>
+  | rewriteDecl thm head prio pre =>
     obtain ⟨-, -, rfl⟩ := h
     exact henv.stepRules _
   | useRules S =>

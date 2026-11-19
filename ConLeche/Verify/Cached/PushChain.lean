@@ -84,7 +84,7 @@ theorem PushChain.stepRules {env : Env} {fe : FEnv} (h : PushChain env fe) (d : 
 theorem PushChain.enter {env : Env} {fe : FEnv} (h : PushChain env fe) (d : Declaration) :
     PushChain env (fe.enter d) := by
   cases d with
-  | rewriteDecl _ _ _ => exact h
+  | rewriteDecl _ _ _ _ => exact h
   | useRules _ => exact h
   | abstractDecl _ _ => exact h
   | _ => dsimp only [FEnv.enter]; exact h.stepRules _
@@ -611,7 +611,7 @@ theorem checkDeclKindC_push (mode : CheckMode) {env : Env} {fe : FEnv}
       | error e => exact Yields.ofThrow
       | ok p => exact checkBlockKS_push mode h block p (ConLeche.readBlock_declared (by assumption))
     · exact Yields.ofThrow
-  | rewriteDecl thm head prio =>
+  | rewriteDecl thm head prio pre =>
     simp only []
     split
     · exact Yields.ofThrow

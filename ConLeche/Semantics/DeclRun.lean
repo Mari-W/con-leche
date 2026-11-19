@@ -219,9 +219,9 @@ def DeclKindRun (F : Nat)
   | .axiomDecl cv, env₂ => DeclAxiomRun F env cv env₂
   | .indDecl block nP, env₂ => Ind block nP env₂
   | .quotDecl k cv, env₂ => DeclQuotRun env k cv env₂
-  | .rewriteDecl thm head prio, env₂ =>
+  | .rewriteDecl thm head prio pre, env₂ =>
     ruleDeclError? env.find? thm head = none ∧ RuleLawRun F env thm ∧
-      env₂ = env.stepRules (.rewriteDecl thm head prio)
+      env₂ = env.stepRules (.rewriteDecl thm head prio pre)
   | .useRules S, env₂ => env₂ = env.stepRules (.useRules S)
   | .abstractDecl c ms, env₂ =>
     abstractDeclError? env.find? env.rules.abstracts c = none ∧

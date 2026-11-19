@@ -1292,7 +1292,7 @@ theorem checkDeclKind_datF (env : Env) (d : Declaration) (F : Nat) :
       · exact checkBlock_datF env block _ F
       · rfl
     · rfl
-  | rewriteDecl thm head prio =>
+  | rewriteDecl thm head prio pre =>
     dsimp only
     split
     · simp only [FueledM.atF_throw]

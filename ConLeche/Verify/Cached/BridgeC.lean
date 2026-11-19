@@ -318,7 +318,7 @@ theorem checkDeclKindC_spec (henv : EnvWF env)
     sym only [conleche_grind, checkDeclKind, mkFEnv_env, mkFEnv_find_fun, mkFEnv_abs,
         stepRules_mkFEnv] =>
       vcgen [checkDeclKindC] <;> finish
-  | rewriteDecl thm head prio =>
+  | rewriteDecl thm head prio pre =>
     sym only [conleche_grind, checkDeclKind, mkFEnv_env, mkFEnv_find_fun, stepRules_mkFEnv] =>
       vcgen [checkDeclKindC, checkRuleLawC_spec henv hs] <;> finish
   | quotDecl k cv =>

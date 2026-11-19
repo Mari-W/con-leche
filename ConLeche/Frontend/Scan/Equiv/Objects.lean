@@ -1639,23 +1639,24 @@ theorem naiveRuleDecl_rest_suffix (l : List UInt8) : (naiveRuleDecl l).rest <:+ 
   exact naiveObject_rest_suffix _ _ rewriteFields_read_suffix _ _ l
 
 theorem scanRuleDeclLoop_eq (b : ByteArray) (i : USize) (wantMember : Bool) (seen : UInt32)
-    (hd nm pr : Nat) :
-    scanRuleDeclLoop b i wantMember seen hd nm pr =
-      liftRes b i ((naiveObjLoop rewriteFields 7 (tailAt b i) wantMember seen (hd, nm, pr)).map
-        (fun (h, n, p) => DeclRec.rule n h p)) := by
-  fun_induction scanRuleDeclLoop b i wantMember seen hd nm pr
+    (hd nm pr : Nat) (pre : Option Nat) :
+    scanRuleDeclLoop b i wantMember seen hd nm pr pre =
+      liftRes b i ((naiveObjLoop rewriteFields 7 (tailAt b i) wantMember seen (hd, nm, pr, pre)).map
+        (fun (h, n, p, k) => DeclRec.rule n h p k)) := by
+  fun_induction scanRuleDeclLoop b i wantMember seen hd nm pr pre
   obj_head rewriteFields_read_suffix
   obj_num rewriteFields_read_suffix case10 case11 case12 case13
   obj_num rewriteFields_read_suffix case14 case15 case16 case17
   obj_num rewriteFields_read_suffix case18 case19 case20 case21
-  case case22 => o_unknown rewriteFields x1 x2 x3
-  case case23 => o_other
-  case case24 => o_end
+  obj_num rewriteFields_read_suffix case22 case23 case24 case25
+  case case26 => o_unknown rewriteFields x1 x2 x3 x4
+  case case27 => o_other
+  case case28 => o_end
 
 theorem scanRuleDecl_eq (b : ByteArray) (i : USize) :
     scanRuleDecl b i = liftRes b i (naiveRuleDecl (tailAt b i)) := by
   unfold scanRuleDecl naiveRuleDecl
-  exact objWrap rewriteFields_read_suffix (scanRuleDeclLoop_eq b (i + 1) true 0 0 0 0)
+  exact objWrap rewriteFields_read_suffix (scanRuleDeclLoop_eq b (i + 1) true 0 0 0 0 none)
 
 /-! ### `scanAbstractDecl` -/
 

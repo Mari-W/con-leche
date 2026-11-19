@@ -223,7 +223,7 @@ private def declCName : ConLeche.Declaration → Name
     cv.name
   | .quotDecl _ cv => cv.name
   | .indDecl b _ => (b.head?.map (·.name)).getD .anonymous
-  | .rewriteDecl thm _ _ => thm
+  | .rewriteDecl thm _ _ _ => thm
   | .useRules _ => .anonymous
   | .abstractDecl c _ => c
 

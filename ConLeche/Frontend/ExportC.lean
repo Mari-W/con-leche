@@ -448,7 +448,7 @@ changed, from key lookups in a DOM to fields of a syntax record. -/
     match ← validateIndF nm lv ex tys cts rcs with
     | .inl v => pure (.inr v)
     | .inr (cts, nPd) => return .inl (← indBlockOfF nm lv ex tys cts rcs nPd)
-  | .rule t h p => return .inl (.rewriteDecl (← nm t) (← nm h) p)
+  | .rule t h p pre => return .inl (.rewriteDecl (← nm t) (← nm h) p pre)
   | .abstr c ms => return .inl (.abstractDecl (← nm c) (← ms.mapM nm))
   -- the record itself; its rule set is `declsOfF`'s
   | .underRules _ d => declOfF nm lv ex d

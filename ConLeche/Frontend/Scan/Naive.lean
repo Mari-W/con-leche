@@ -190,7 +190,7 @@ def naiveKeyBody : List UInt8 → Option (List UInt8 × List UInt8)
 /-- The dialect's keys, by spelling. -/
 def keyTable : List (String × Key) :=
   [("abstract", .kAbstract), ("all", .kAll), ("app", .kApp), ("arg", .kArg), ("axiom", .kAxiom),
-   ("binderInfo", .kBinderInfo), ("body", .kBody), ("bvar", .kBvar),
+   ("beforeDeltaKey", .kBeforeDeltaKey), ("binderInfo", .kBinderInfo), ("body", .kBody), ("bvar", .kBvar),
    ("cidx", .kCidx), ("const", .kConst), ("ctor", .kCtor), ("ctors", .kCtors),
    ("def", .kDef), ("fn", .kFn), ("forallE", .kForallE), ("head", .kHead), ("hints", .kHints),
    ("i", .kI), ("idx", .kIdx), ("ie", .kIe), ("il", .kIl), ("imax", .kImax),
@@ -630,15 +630,17 @@ def indFields : Key →
 def naiveIndDecl : List UInt8 → NRes DeclRec :=
   naiveObject indFields 26 ([], [], [], []) fun (cs, rs, ts, rw) => .withRules rw (.ind ts cs rs)
 
-/-- `rewrite`: `head`, `name`, `prio`, all required — state `(head, name, prio)`. -/
-def rewriteFields : Key → Option (Slot (Nat × Nat × Nat))
-  | .kHead => some (.of 1 naiveNat fun h (_, n, p) => (h, n, p))
-  | .kName => some (.of 2 naiveNat fun n (h, _, p) => (h, n, p))
-  | .kPrio => some (.of 4 naiveNat fun p (h, n, _) => (h, n, p))
+/-- `rewrite`: `head`, `name`, `prio` required and `beforeDeltaKey` optional — state
+`(head, name, prio, beforeDeltaKey)`. -/
+def rewriteFields : Key → Option (Slot (Nat × Nat × Nat × Option Nat))
+  | .kHead => some (.of 1 naiveNat fun h (_, n, p, k) => (h, n, p, k))
+  | .kName => some (.of 2 naiveNat fun n (h, _, p, k) => (h, n, p, k))
+  | .kPrio => some (.of 4 naiveNat fun p (h, n, _, k) => (h, n, p, k))
+  | .kBeforeDeltaKey => some (.of 8 naiveNat fun k (h, n, p, _) => (h, n, p, some k))
   | _ => none
 
 def naiveRuleDecl : List UInt8 → NRes DeclRec :=
-  naiveObject rewriteFields 7 (0, 0, 0) fun (h, n, p) => .rule n h p
+  naiveObject rewriteFields 7 (0, 0, 0, none) fun (h, n, p, k) => .rule n h p k
 
 /-- `abstract`: `members`, `name`, both required — state `(members, name)`. -/
 def abstractFields : Key → Option (Slot (List Nat × Nat))

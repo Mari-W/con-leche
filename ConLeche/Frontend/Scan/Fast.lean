@@ -221,6 +221,16 @@ exactly what a literal compare against a short line gives (task #264).
     byteAt b (i + 7) == c7 && byteAt b (i + 8) == c8 &&
     byteAt b (i + 9) == c9
 
+/-- The 13 bytes from `i` on are `c0` … `c12`. -/
+@[inline] def lit13 (b : @& ByteArray) (i : USize)
+    (c0 c1 c2 c3 c4 c5 c6 c7 c8 c9 c10 c11 c12 : UInt8) : Bool :=
+  byteAt b i == c0 && byteAt b (i + 1) == c1 && byteAt b (i + 2) == c2 &&
+    byteAt b (i + 3) == c3 && byteAt b (i + 4) == c4 &&
+    byteAt b (i + 5) == c5 && byteAt b (i + 6) == c6 &&
+    byteAt b (i + 7) == c7 && byteAt b (i + 8) == c8 &&
+    byteAt b (i + 9) == c9 && byteAt b (i + 10) == c10 &&
+    byteAt b (i + 11) == c11 && byteAt b (i + 12) == c12
+
 /-- Classify the key whose opening quote is at `i` and whose length
 is `kl` bytes: a switch on the first byte, then on the length — which
 leaves at most four candidates — and an unrolled `litN` compare of
@@ -250,6 +260,10 @@ def keyAt (b : @& ByteArray) (i : USize) (kl : USize) : Key :=
     else if kl == 10 then
       if lit9 b j 105 110 100 101 114 73 110 102 111 then
         .kBinderInfo  -- "binderInfo"
+      else .kUnknown
+    else if kl == 14 then
+      if lit13 b j 101 102 111 114 101 68 101 108 116 97 75 101 121 then
+        .kBeforeDeltaKey  -- "beforeDeltaKey"
       else .kUnknown
     else .kUnknown
   | 99 =>   -- 'c'
@@ -2469,17 +2483,18 @@ def scanRuleDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
     (seen : UInt32)
     (hd : Nat)
     (nm : Nat)
-    (pr : Nat) : ScanRes DeclRec :=
+    (pr : Nat)
+    (pre : Option Nat) : ScanRes DeclRec :=
   if h : i < b.usize then
     let c := b.uget i (usizeInBounds b i h)
-    if isWs c then scanRuleDeclLoop b (i + 1) wantMember seen hd nm pr
+    if isWs c then scanRuleDeclLoop b (i + 1) wantMember seen hd nm pr pre
     else if c == 125 then
       if wantMember && seen != 0 then .err ⟨i.toNat, .expectedKey⟩
       else if (seen &&& 7) != 7 then .err ⟨i.toNat, .missingKey⟩
-      else .ok (.rule nm hd pr) (i + 1)
+      else .ok (.rule nm hd pr pre) (i + 1)
     else if c == 44 then
       if wantMember then .err ⟨i.toNat, .expectedKey⟩
-      else scanRuleDeclLoop b (i + 1) true seen hd nm pr
+      else scanRuleDeclLoop b (i + 1) true seen hd nm pr pre
     else if c == 34 then
       if !wantMember then .err ⟨i.toNat, .expectedComma⟩
       else
@@ -2495,7 +2510,7 @@ def scanRuleDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
             let e := numEnd b v
             if e == v then .err ⟨v.toNat, .expectedNat⟩
             else if _hj : i < e then
-              scanRuleDeclLoop b e false (seen ||| 1) (readNatAt b v e) nm pr
+              scanRuleDeclLoop b e false (seen ||| 1) (readNatAt b v e) nm pr pre
             else .err ⟨i.toNat, .noProgress⟩
         | .kName =>
           if (seen &&& 2) != 0 then .err ⟨i.toNat, .duplicateKey⟩
@@ -2503,7 +2518,7 @@ def scanRuleDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
             let e := numEnd b v
             if e == v then .err ⟨v.toNat, .expectedNat⟩
             else if _hj : i < e then
-              scanRuleDeclLoop b e false (seen ||| 2) hd (readNatAt b v e) pr
+              scanRuleDeclLoop b e false (seen ||| 2) hd (readNatAt b v e) pr pre
             else .err ⟨i.toNat, .noProgress⟩
         | .kPrio =>
           if (seen &&& 4) != 0 then .err ⟨i.toNat, .duplicateKey⟩
@@ -2511,7 +2526,15 @@ def scanRuleDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
             let e := numEnd b v
             if e == v then .err ⟨v.toNat, .expectedNat⟩
             else if _hj : i < e then
-              scanRuleDeclLoop b e false (seen ||| 4) hd nm (readNatAt b v e)
+              scanRuleDeclLoop b e false (seen ||| 4) hd nm (readNatAt b v e) pre
+            else .err ⟨i.toNat, .noProgress⟩
+        | .kBeforeDeltaKey =>
+          if (seen &&& 8) != 0 then .err ⟨i.toNat, .duplicateKey⟩
+          else
+            let e := numEnd b v
+            if e == v then .err ⟨v.toNat, .expectedNat⟩
+            else if _hj : i < e then
+              scanRuleDeclLoop b e false (seen ||| 8) hd nm pr (some (readNatAt b v e))
             else .err ⟨i.toNat, .noProgress⟩
         | _ => .err ⟨i.toNat, .unknownKey⟩
     else .err ⟨i.toNat, .expectedComma⟩
@@ -2526,7 +2549,7 @@ decreasing_by
 /-- A `rewrite` record: a rule's registration (lean4export 3.2). -/
 def scanRuleDecl (b : @& ByteArray) (i : USize) : ScanRes DeclRec :=
   if byteAt b i == 123 then
-    scanRuleDeclLoop b (i + 1) true 0 0 0 0
+    scanRuleDeclLoop b (i + 1) true 0 0 0 0 none
   else .err ⟨i.toNat, .expectedObject⟩
 
 def scanAbstractDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)

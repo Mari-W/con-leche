@@ -372,20 +372,20 @@ theorem declStep_preserves
       | none =>
         -- the uniform install, at any number of members, nested blocks included
         exact declBlock mp hdf (unreserved_of_basisNamesOk hnames hk) hrun' hcov hS hN
-  | rewriteDecl thm head prio =>
+  | rewriteDecl thm head prio pre =>
     -- the rules alone change; the new rule's law is its registration's runs'
     obtain ⟨-, hlaw, rfl⟩ := hrun
     obtain ⟨cv, hf, hsome, hl⟩ := ruleLaw_of_run mp hlaw
-    exact ⟨(stepRules_cover mp _ fun t _ _ hd => by
+    exact ⟨(stepRules_cover mp _ fun t _ _ _ hd => by
         cases hd; exact ⟨cv, hf, hsome, hl⟩).covered hcov hS (freshExt_stepRules env _),
       ⟨hN.trio⟩⟩
   | useRules S =>
     subst hrun
-    exact ⟨(stepRules_cover mp (.useRules S) fun _ _ _ hd => nomatch hd).covered hcov hS
+    exact ⟨(stepRules_cover mp (.useRules S) fun _ _ _ _ hd => nomatch hd).covered hcov hS
       (freshExt_stepRules env _), ⟨hN.trio⟩⟩
   | abstractDecl c ms =>
     obtain ⟨-, rfl⟩ := hrun
-    exact ⟨(stepRules_cover mp (.abstractDecl c ms) fun _ _ _ hd => nomatch hd).covered hcov hS
+    exact ⟨(stepRules_cover mp (.abstractDecl c ms) fun _ _ _ _ hd => nomatch hd).covered hcov hS
       (freshExt_stepRules env _), ⟨hN.trio⟩⟩
 
 /-- **The invariant at the environment a record is checked at** (`Env.enter`): a declaration
@@ -393,14 +393,14 @@ record's blocked set is a rule record's effect, which keeps the model (`stepRule
 theorem EnvModelOk.enter {env : Env} (hm : EnvModelOk V env) (d : Declaration) :
     EnvModelOk V (env.enter d) := by
   cases d with
-  | rewriteDecl _ _ _ => exact hm
+  | rewriteDecl _ _ _ _ => exact hm
   | useRules _ => exact hm
   | abstractDecl _ _ => exact hm
   | _ =>
     dsimp only [Env.enter]
     obtain ⟨⟨mp, hcov, hS⟩, hN⟩ := hm
     refine ⟨(stepRules_cover mp _ ?_).covered hcov hS (freshExt_stepRules env _), ⟨hN.trio⟩⟩
-    intro _ _ _ hd
+    intro _ _ _ _ hd
     exact nomatch hd
 
 /-- **The P fold**: the declaration fold's recursion at the P invariant. -/

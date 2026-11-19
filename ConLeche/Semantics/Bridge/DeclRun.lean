@@ -476,7 +476,7 @@ theorem checkDeclRun_of {F : Nat}
   | axiomDecl cv => exact declAxiomRun_of h
   | quotDecl k cv => exact declQuotRunOf h
   | indDecl block nP => exact hind h
-  | rewriteDecl thm head prio =>
+  | rewriteDecl thm head prio pre =>
     dsimp only [Env.enter] at h ⊢
     unfold checkDeclKind at h
     dsimp only at h

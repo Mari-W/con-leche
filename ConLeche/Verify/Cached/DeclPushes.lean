@@ -719,7 +719,7 @@ theorem checkDeclKindC_pushes (mode : CheckMode) (fe : FEnv) (pd : Declaration) 
       | error e => exact Yields.ofThrow
       | ok p => exact checkBlockKS_pushes mode fe block p
     · exact Yields.ofThrow
-  | rewriteDecl thm head prio =>
+  | rewriteDecl thm head prio pre =>
     unfold checkDeclKindC
     simp only []
     split

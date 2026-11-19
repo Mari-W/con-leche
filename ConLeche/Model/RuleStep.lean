@@ -85,12 +85,12 @@ theorem natOps_stepRules (mp : EnvModelM V env) (d : Declaration)
 /-- A theorem the rules name after a record: one named before, or the rule the record
 registers.  A `useRules` activates registered rules only. -/
 theorem ruleNamed_stepRules {d : Declaration} {t : Name} (h : RuleNamed (env.stepRules d) t) :
-    RuleNamed env t ∨ ∃ head prio, d = .rewriteDecl t head prio := by
+    RuleNamed env t ∨ ∃ head prio pre, d = .rewriteDecl t head prio pre := by
   cases d with
-  | rewriteDecl thm head prio =>
+  | rewriteDecl thm head prio pre =>
     rcases h with ⟨r, hr, rfl⟩ | ⟨e, he, rfl⟩
     · rcases List.mem_cons.mp hr with rfl | hr
-      · exact .inr ⟨head, prio, rfl⟩
+      · exact .inr ⟨head, prio, pre, rfl⟩
       · exact .inl (.inl ⟨r, hr, rfl⟩)
     · exact .inl (.inr ⟨e, he, rfl⟩)
   | useRules S =>
@@ -104,7 +104,7 @@ theorem ruleNamed_stepRules {d : Declaration} {t : Name} (h : RuleNamed (env.ste
 /-- **The P carrier after a rule record**: the prefix's leaves and recorded blocks, and a
 registered rule's law (`hnew`, from its registration's runs). -/
 theorem stepRules_model (mp : EnvModelM V env) (d : Declaration)
-    (hnew : ∀ thm head prio, d = .rewriteDecl thm head prio → ∃ cv,
+    (hnew : ∀ thm head prio pre, d = .rewriteDecl thm head prio pre → ∃ cv,
       env.find? thm = some (.thmInfo cv) ∧ (ConLeche.ruleSides cv.type).isSome = true ∧
         RuleLaw V mp.base2 cv.type) :
     ∃ mp' : EnvModelM V (env.stepRules d),
@@ -151,16 +151,16 @@ theorem stepRules_model (mp : EnvModelM V env) (d : Declaration)
         fun ψ k e ta hb h => (denote_stepRules d _ ψ k hb).trans h
       obtain ⟨cv, hf, hsome, hlaw⟩ : ∃ cv, env.find? t = some (.thmInfo cv) ∧
           (ConLeche.ruleSides cv.type).isSome = true ∧ RuleLaw V mp.base2 cv.type := by
-        rcases ruleNamed_stepRules ht with ht | ⟨head, prio, hd⟩
+        rcases ruleNamed_stepRules ht with ht | ⟨head, prio, pre, hd⟩
         · exact mp.rule_law t ht
-        · exact hnew t head prio hd
+        · exact hnew t head prio pre hd
       have hres : cv.type.constsResolve env = true :=
         (mp.base2.wf.consts _ (ConLeche.Env.find?_mem hf)).2.2.1
       exact ⟨cv, hf, hsome, hlaw.transport hres hread⟩ }, rfl, rfl⟩
 
 /-- **The coverage step at a rule record.** -/
 theorem stepRules_cover (mp : EnvModelM V env) (d : Declaration)
-    (hnew : ∀ thm head prio, d = .rewriteDecl thm head prio → ∃ cv,
+    (hnew : ∀ thm head prio pre, d = .rewriteDecl thm head prio pre → ∃ cv,
       env.find? thm = some (.thmInfo cv) ∧ (ConLeche.ruleSides cv.type).isSome = true ∧
         RuleLaw V mp.base2 cv.type) : CoverStep mp (env.stepRules d) := by
   obtain ⟨mp', hac, hlb⟩ := stepRules_model mp d hnew
@@ -180,7 +180,7 @@ theorem freshExt_stepRules (env : Env) (d : Declaration) : FreshExt env (env.ste
     | useRules S => exact ⟨[_], rfl, fun s hs => by simp at hs; simp [hs]⟩
     | _ => exact ⟨[], rfl, fun _ h => nomatch h⟩, by
     cases d with
-    | rewriteDecl _ _ _ => exact ⟨[], rfl, fun _ h => nomatch h⟩
+    | rewriteDecl _ _ _ _ => exact ⟨[], rfl, fun _ h => nomatch h⟩
     | useRules _ => exact ⟨[], rfl, fun _ h => nomatch h⟩
     | abstractDecl _ _ => exact ⟨[], rfl, fun _ h => nomatch h⟩
     | _ =>

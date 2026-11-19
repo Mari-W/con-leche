@@ -183,7 +183,7 @@ theorem checkDecl_declares {env env₂ : Env} {F : Nat}
     · exact hann
   | quotDecl k cv₀ => exact hcv.elim
   | indDecl block nP => exact hcv.elim
-  | rewriteDecl thm head prio => exact hcv.elim
+  | rewriteDecl thm head prio pre => exact hcv.elim
   | useRules S => exact hcv.elim
   | abstractDecl c ms => exact hcv.elim
 

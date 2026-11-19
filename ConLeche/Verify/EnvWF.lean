@@ -306,7 +306,7 @@ theorem RulesWF.stepRules {env : Env} (h : RulesWF env) (d : Declaration) :
       · exact Nat.le_refl _
       · exact h.le s hs
     · simp [Env.stepRules, RuleTable.step, activeAtS]
-  | rewriteDecl t c p => exact ⟨h.le, h.active, h.ble⟩
+  | rewriteDecl t c p _ => exact ⟨h.le, h.active, h.ble⟩
   | abstractDecl c ms => exact ⟨h.le, h.active, h.ble⟩
   | _ =>
     refine ⟨h.le, h.active, fun s hs => ?_⟩
@@ -817,7 +817,7 @@ theorem EnvWF.stepRules {env : Env} (h : EnvWF env) (d : Declaration) : EnvWF (e
 /-- **A record is checked at a well-formed environment** (`Env.enter`). -/
 theorem EnvWF.enter {env : Env} (henv : EnvWF env) (d : Declaration) : EnvWF (env.enter d) := by
   cases d with
-  | rewriteDecl _ _ _ => exact henv
+  | rewriteDecl _ _ _ _ => exact henv
   | useRules _ => exact henv
   | abstractDecl _ _ => exact henv
   | _ => dsimp only [Env.enter]; exact henv.stepRules _

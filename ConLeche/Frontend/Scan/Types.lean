@@ -227,8 +227,8 @@ inductive DeclRec where
   | ind (types : List IndTypeRec) (ctors : List IndCtorRec)
         (recs : List IndRecRec)
   /-- a rewrite rule's registration, `{"rewrite":{"name":t,"head":h,"prio":p}}` (lean4export
-  3.2) -/
-  | rule (name head prio : Nat)
+  3.2), with the optional `"beforeDeltaKey":k` as `pre` -/
+  | rule (name head prio : Nat) (pre : Option Nat)
   /-- an abstract definition's registration, `{"abstract":{"name":c,"members":[m…]}}`
   (lean4 `abstract_block`) -/
   | abstr (name : Nat) (members : List Nat)
@@ -268,6 +268,7 @@ inductive Key where
   | kApp
   | kArg
   | kAxiom
+  | kBeforeDeltaKey
   | kBinderInfo
   | kBody
   | kBvar

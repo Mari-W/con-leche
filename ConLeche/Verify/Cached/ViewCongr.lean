@@ -385,7 +385,7 @@ theorem Twin.enter {fe₁ fe₂ : FEnv} (h : Twin fe₁ fe₂) (d : Declaration)
     Twin (fe₁.enter d) (fe₂.enter d) := by
   rw [FEnv.enter_eq, FEnv.enter_eq]
   cases d with
-  | rewriteDecl _ _ _ => exact h
+  | rewriteDecl _ _ _ _ => exact h
   | useRules _ => exact h
   | abstractDecl _ _ => exact h
   | _ =>
@@ -1664,7 +1664,7 @@ theorem checkDeclKindC_twin (pins : List NatOpPinSet) {fe₁ fe₂ : FEnv} (ht :
     refine RelRun.mono (R := PushedFrom fe₁ fe₂) ?_ fun _ _ _ => trivial
     unfold checkDeclKindC
     exact checkQuotRecordC_twin ht k cv
-  | rewriteDecl thm head prio =>
+  | rewriteDecl thm head prio pre =>
     unfold checkDeclKindC
     simp only [hfe]
     cases ruleDeclError? fe₂.find? thm head with
