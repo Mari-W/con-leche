@@ -58,6 +58,19 @@ if sys.argv[1] == "level":
     stmt_patch(swap, f"{out}/rewrite_rule_level_swap.ndjson", [("lvl_swap", "lvlSwapTgt")])
     sys.exit(0)
 
+if sys.argv[1] == "leveleq":
+    # RrLevelEq.lean: a repeated level parameter at an equivalent level, and the same theorem with
+    # no rule in force
+    src, out = sys.argv[2:4]
+    open(f"{out}/rewrite_rule_level_equiv.ndjson", "w").write(open(src).read())
+    recs = [json.loads(l) for l in open(src).read().splitlines()]
+    for r in recs:
+        if "thm" in r: r["thm"].pop("rewrites", None)
+    J = lambda r: json.dumps(r, separators=(",", ":"))
+    open(f"{out}/rewrite_rule_level_equiv_norule.ndjson", "w").write(
+        "\n".join(J(r) for r in recs) + "\n")
+    sys.exit(0)
+
 if sys.argv[1] == "nonlinear":
     # RrMatch.lean: a non-linear rule whose binding comes from a retried position, and the same
     # theorem with no rule in force

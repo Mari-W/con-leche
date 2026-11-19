@@ -467,17 +467,19 @@ theorem eval_officialForm (φ : Name → Nat) :
     simp only [officialForm, eval_mkIMaxOff, eval, eval_officialForm φ a, eval_officialForm φ b]
   | .zero | .param _ => rfl
 
-/-- Levels of the same official forms read the same. -/
+/-- Pairwise equivalent levels read the same. -/
 theorem substFn_formsEq (φ : Name → Nat) :
     ∀ (ks : List Name) {ls ls' : List Level}, formsEq ls ls' = true →
       substFn φ ks ls = substFn φ ks ls'
   | [], _, _, _ => by funext n; rfl
   | _ :: _, [], [], _ => rfl
   | k :: ks, l :: ls, l' :: ls', h => by
-    simp only [formsEq, Bool.and_eq_true, decide_eq_true_eq] at h
+    simp only [formsEq, Bool.and_eq_true, Bool.or_eq_true, decide_eq_true_eq, beq_iff_eq] at h
     funext n
     simp only [substFn]
-    rw [← eval_officialForm φ l, h.1, eval_officialForm, substFn_formsEq φ ks h.2]
+    rcases h.1 with h1 | h1
+    · rw [← eval_officialForm φ l, h1, eval_officialForm, substFn_formsEq φ ks h.2]
+    · rw [isEquiv_sound h1 φ, substFn_formsEq φ ks h.2]
   | _ :: _, [], _ :: _, h | _ :: _, _ :: _, [], h => by simp [formsEq] at h
 
 theorem formsEq_length : ∀ {ls ls' : List Level}, formsEq ls ls' = true → ls.length = ls'.length

@@ -11,8 +11,9 @@
    `lift.{u, 0}`, whose value is `Box.mk.{max a b}`, to `Box.mk.{u}` there, so `H_mk`'s pattern
    `H.{l} n (Box.mk.{l} y)` matches with `l := u` after the retry on whnf.  `mk.py level` gives
    `lvl_swap` the statement of `lvlSwapTgt`: `H.{max a b}` against `Box.mk.{max b a}`, levels of
-   the same value that the official kernel does not simplify into each other, so the rule does not
-   fire and the conversion fails. -/
+   the same value that the official kernel does not simplify into each other. The proof stays
+   `trivial`, so the declaration is rejected whether or not the rule fires (`RrLevelEq.lean` has
+   the same match with an `rfl` proof). -/
 universe u v
 
 structure Box (α : Type u) : Type u where

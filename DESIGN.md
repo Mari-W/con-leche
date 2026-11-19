@@ -116416,3 +116416,30 @@ counter counts a subset of the firings the official counter sees in the same sco
 declaration totals are equal, so con-leche never reports an exhausted budget where the official
 kernel does not. It can let a runaway chain run longer before the declaration's budget stops it.
 The difference is in error timing on inputs both kernels reject or never finish, so it is safe.
+
+## Rule levels up to equivalence (2026-11-19, rewrite-rules, fix round (a))
+
+**The change in the official kernel.** The Mathlib PoC met rules that did not fire on levels of the
+same value written in another order. `Cardinal.sum_le_lift_mk_mul_iSup_lift` leaves
+`lift.{max u v, max v u}` where the rule wants `lift.{l, l}`, and `Homotopy.pi_lift` meets
+`Quotient.map.{max (u_2+1) (u_1+1)}` on a `Quot.mk.{max (u_1+1) (u_2+1)}`. The elaborator and the
+kernel of the lean4 fork (branch `fix-round`, 21fd9d17c6) now compare a repeated level parameter
+(`match_rewrite_levels`) and the deferred level checks (`lchecks`) with `is_equivalent`, which is
+`==` or equal `normalize` forms. The same change made the `Subobject.lower` case of finding (b)
+fire, where `Quotient.mk''` unfolds to a `Quot.mk` at `max (u₁+1) (v₁+1)` against a head at
+`(max u₁ v₁)+1`.
+
+**con-leche.** `matchLevel` accepts a repeated parameter at an equivalent level, and
+`Level.formsEq`, which the gate's `Expr.levelFormEq` uses for the deferred checks, accepts
+equivalent levels. Both try equal official forms first and `Level.isEquiv` second. `isEquiv` decides
+equality of value (antisymmetric `leq`), so it accepts every pair `is_equivalent` accepts, and also
+pairs whose `normalize` forms differ but whose values agree. That is the deviation con-leche already
+has for `Sort` levels in definitional equality, and it fires only sound rules. An exhausted `isEquiv`
+counts as no match. **Proofs.** `substFn_formsEq` takes the second case from `isEquiv_sound`. Nothing
+else reads the definitions. No model change.
+
+**Fixtures.** `scripts/rewrite-fixtures/RrLevelEq.lean`, `mk.py leveleq`, exported with the fork at
+`fix-round`. `rewrite_rule_level_equiv` (`H.{max a b}` against `Box.mk.{max b a}`, proved by `rfl`)
+is 0 and was 1 before. `_norule`, the same theorem with no rule in force, is 1.
+`rewrite_rule_level_swap` stays 1, because its patched statement keeps the proof `trivial`. The lean4 tests `tests/elab/rewriteRules.lean` (section `Levels`) cover the
+elaborator and the kernel, with a negative case at `u` against `v`.

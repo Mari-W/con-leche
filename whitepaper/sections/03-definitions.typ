@@ -45,7 +45,7 @@ $
 declared with level parameters $arrow(p)$ is taken at the levels
 $arrow(ell)$, replaces the parameters in sorts and in the level lists
 of constants
-(#src("ConLeche/Kernel/Level.lean", 288, 301)[as in con-leche]).
+(#src("ConLeche/Kernel/Level.lean", 291, 304)[as in con-leche]).
 
 *The rules for constants.* A constant
 #src("whitepaper/Fragment/Rules.lean", 749, 753)[has its declared type] at the
@@ -144,7 +144,7 @@ the declared level parameters.
 
 #real[
   The real proof's model carries the same two laws among others
-  (#src("ConLeche/Model/Env/EnvModelM.lean", 269, 292)[the carrier's invariant]).
+  (#src("ConLeche/Model/Env/EnvModelM.lean", 268, 291)[the carrier's invariant]).
 ]
 
 The empty environment #src("whitepaper/Fragment/EnvModel.lean", 359, 368)[has a model

@@ -232,10 +232,13 @@ def officialForm : Level → Level
   | .imax a b => mkIMaxOff a.officialForm b.officialForm
   | l => l
 
-/-- Pairwise equal official forms, and equal lengths. -/
+/-- Pairwise equivalent levels, and equal lengths (official `is_equivalent` in the rule matcher,
+`match_rewrite_levels` and the `lchecks`): equal official forms decide directly, otherwise
+`isEquiv`, so `max u v` and `max v u` agree. -/
 def formsEq : List Level → List Level → Bool
   | [], [] => true
-  | l :: ls, r :: rs => l.officialForm = r.officialForm && formsEq ls rs
+  | l :: ls, r :: rs =>
+    (l.officialForm = r.officialForm || isEquiv l r == some true) && formsEq ls rs
   | _, _ => false
 
 /-- The zero-ness datum of a level (task #161): the exact reading of

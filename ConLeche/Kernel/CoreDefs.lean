@@ -811,8 +811,8 @@ def ruleTele : Expr → Nat × Expr
   | e => (0, e)
 
 /-- A level pattern against a level (official `match_rewrite_levels`): a theorem level
-parameter takes the level it meets, and meets the same official form wherever it repeats
-(`Level.officialForm`).  Every other pattern level is checked only once the match has bound
+parameter takes the level it meets, and meets an equivalent level wherever it repeats (equal
+official forms, `Level.officialForm`, or `Level.isEquiv`; official `is_equivalent`).  Every other pattern level is checked only once the match has bound
 the parameters, against its instance (`RuleGate`, official `lchecks`), so it never fails here
 and never triggers the retry on `whnf`. -/
 def matchLevel (lps : List Name) (st : List (Option Level)) : Level → Level → Option (List (Option Level))
@@ -820,7 +820,9 @@ def matchLevel (lps : List Name) (st : List (Option Level)) : Level → Level �
     match lps.idxOf? p with
     | some j =>
       match st.getD j none with
-      | some l'' => if l''.officialForm = l'.officialForm then some st else none
+      | some l'' =>
+        if l''.officialForm = l'.officialForm || Level.isEquiv l'' l' == some true then some st
+        else none
       | none => some (st.set j (some l'))
     | none => some st
   | _, _ => some st
@@ -870,8 +872,8 @@ def ruleSides : Expr → Option (Expr × Expr × Expr × Expr × Expr)
       (.forallE dom P, .lam dom L, .lam dom R, .lam dom LA, .forallE dom PU)
   | e => (eqSpine? e).map fun (_, u, A, l, r) => (A, l, r, A, .sort u)
 
-/-- **Equal up to the official form of constant levels** (task r13): the same application
-tree, where constants of the same name may carry different levels of the same official form
+/-- **Equal up to equivalent constant levels** (task r13, fix round (a)): the same application
+tree, where constants of the same name may carry different but equivalent levels
 (`Level.formsEq`), and everything else equal.  Equal terms are equal by pointer first, so a
 firing whose levels agree as written walks nothing. -/
 def Expr.levelFormEq : Expr → Expr → Bool

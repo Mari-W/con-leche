@@ -2565,21 +2565,21 @@
    120    | pi A B => pi (instL ps ls A) (instL ps ls B)
    121    | letE T v b => letE (instL ps ls T) (instL ps ls v) (instL ps ls b)
 
-== ConLeche/Kernel/Level.lean#L288-L301
-   288  def Expr.instantiateLevelParams (ks : List Name) (us : List Level) : Expr → Expr
-   289    | .bvar i => .bvar i
-   290    | .fvar idx ty => .fvar idx (ty.instantiateLevelParams ks us)
-   291    | .sort u => .sort (Level.subst ks us u)
-   292    | .const n vs => .const n (vs.map (Level.subst ks us))
-   293    | .app f a => .app (f.instantiateLevelParams ks us) (a.instantiateLevelParams ks us)
-   294    | .lam ty body =>
-   295      .lam (ty.instantiateLevelParams ks us) (body.instantiateLevelParams ks us)
-   296    | .forallE ty body =>
-   297      .forallE (ty.instantiateLevelParams ks us) (body.instantiateLevelParams ks us)
-   298    | .letE ty val body => .letE (ty.instantiateLevelParams ks us)
-   299        (val.instantiateLevelParams ks us) (body.instantiateLevelParams ks us)
-   300    | .lit l => .lit l
-   301    | .proj s i e => .proj s i (e.instantiateLevelParams ks us)
+== ConLeche/Kernel/Level.lean#L291-L304
+   291  def Expr.instantiateLevelParams (ks : List Name) (us : List Level) : Expr → Expr
+   292    | .bvar i => .bvar i
+   293    | .fvar idx ty => .fvar idx (ty.instantiateLevelParams ks us)
+   294    | .sort u => .sort (Level.subst ks us u)
+   295    | .const n vs => .const n (vs.map (Level.subst ks us))
+   296    | .app f a => .app (f.instantiateLevelParams ks us) (a.instantiateLevelParams ks us)
+   297    | .lam ty body =>
+   298      .lam (ty.instantiateLevelParams ks us) (body.instantiateLevelParams ks us)
+   299    | .forallE ty body =>
+   300      .forallE (ty.instantiateLevelParams ks us) (body.instantiateLevelParams ks us)
+   301    | .letE ty val body => .letE (ty.instantiateLevelParams ks us)
+   302        (val.instantiateLevelParams ks us) (body.instantiateLevelParams ks us)
+   303    | .lit l => .lit l
+   304    | .proj s i e => .proj s i (e.instantiateLevelParams ks us)
 
 == whitepaper/Fragment/Rules.lean#L749-L753
    749    /-- A stored constant at the right number of levels has its
@@ -2796,31 +2796,31 @@
    311        WellDenoted M φ ρ (v.instL ci.lparams ls) ∧
    312        interp M φ ρ (v.instL ci.lparams ls) = M c (ls.map (Level.eval φ))
 
-== ConLeche/Model/Env/EnvModelM.lean#L269-L292
-   269  structure EnvModelM (env : Env) where
-   270    /-- the environment carrier, contained -/
-   271    base2 : EnvModel V env
-   272    /-- every stored type reads, at every ground assignment -/
-   273    type_reads : ∀ c ∈ env.consts, ∀ ψ : Name → Nat,
-   274      ∃ ta : Term,
-   275        denote base2.acval env ψ 0 c.toConstantVal.type = some ta
-   276    /-- the stored types' readings are graded types -/
-   277    type_wellDenotedTy : ∀ c ∈ env.consts, ∀ (ψ : Name → Nat) (ta : Term),
-   278      denote base2.acval env ψ 0 c.toConstantVal.type = some ta →
-   279      ∀ ρ : Nat → V, WellDenotedTy V ρ ta
-   280    /-- stored constants inhabit their types' readings (a projection
-   281    table's constant type is the closed dummy `Sort 1` and its leaf is
-   282    `Sort 0`, so the row holds of tables too; that a table is not a term
-   283    is `inferTypeCore`'s own rejection of a `.const` naming one) -/
-   284    mem_type : ∀ c ∈ env.consts,
-   285      ∀ (ψ : Name → Nat) (ta : Term),
-   286      denote base2.acval env ψ 0 c.toConstantVal.type = some ta →
-   287      ∀ ρ : Nat → V,
-   288        interp V ρ (base2.acval c.name ψ) ∈ˢ interp V ρ ta
-   289    /-- stored definition and theorem values read, to the constant's own
-   290    leaf (existence) -/
-   291    defn_reads : AcvalDefnInst base2
-   292    /-- the two `Nat`-literal head facts, at every assignment -/
+== ConLeche/Model/Env/EnvModelM.lean#L268-L291
+   268  structure EnvModelM (env : Env) where
+   269    /-- the environment carrier, contained -/
+   270    base2 : EnvModel V env
+   271    /-- every stored type reads, at every ground assignment -/
+   272    type_reads : ∀ c ∈ env.consts, ∀ ψ : Name → Nat,
+   273      ∃ ta : Term,
+   274        denote base2.acval env ψ 0 c.toConstantVal.type = some ta
+   275    /-- the stored types' readings are graded types -/
+   276    type_wellDenotedTy : ∀ c ∈ env.consts, ∀ (ψ : Name → Nat) (ta : Term),
+   277      denote base2.acval env ψ 0 c.toConstantVal.type = some ta →
+   278      ∀ ρ : Nat → V, WellDenotedTy V ρ ta
+   279    /-- stored constants inhabit their types' readings (a projection
+   280    table's constant type is the closed dummy `Sort 1` and its leaf is
+   281    `Sort 0`, so the row holds of tables too; that a table is not a term
+   282    is `inferTypeCore`'s own rejection of a `.const` naming one) -/
+   283    mem_type : ∀ c ∈ env.consts,
+   284      ∀ (ψ : Name → Nat) (ta : Term),
+   285      denote base2.acval env ψ 0 c.toConstantVal.type = some ta →
+   286      ∀ ρ : Nat → V,
+   287        interp V ρ (base2.acval c.name ψ) ∈ˢ interp V ρ ta
+   288    /-- stored definition and theorem values read, to the constant's own
+   289    leaf (existence) -/
+   290    defn_reads : AcvalDefnInst base2
+   291    /-- the two `Nat`-literal head facts, at every assignment -/
 
 == whitepaper/Fragment/EnvModel.lean#L359-L368
    359  /-- The empty environment has a model: any assignment, vacuous laws. -/
@@ -5660,19 +5660,21 @@
    455    | some _ => rules
 
 == ConLeche/Kernel/CoreDefs.lean#L1193-L1203
-  1193      (rP : Nat) : List Level × List Expr :=
-  1194    match rl.fire with
-  1195    | .nested lvls pins =>
-  1196      (lvls.map (Level.subst lps us),
-  1197       pins.map fun p => Expr.instSpine (args.take rP) (rP - 1)
-  1198         (p.instantiateLevelParams lps us))
-  1199    | .plain =>
-  1200      (cvjLps.map fun p => Level.subst lps us (.param p),
-  1201       args.take cnP)
-  1202    | .levels lvls =>
-  1203      (lvls.map (Level.subst lps us), args.take cnP)
+  1193  def recFireComparands (rl : RecRule) (cnP : Nat) (lps : List Name)
+  1194      (us : List Level) (cvjLps : List Name) (args : List Expr)
+  1195      (rP : Nat) : List Level × List Expr :=
+  1196    match rl.fire with
+  1197    | .nested lvls pins =>
+  1198      (lvls.map (Level.subst lps us),
+  1199       pins.map fun p => Expr.instSpine (args.take rP) (rP - 1)
+  1200         (p.instantiateLevelParams lps us))
+  1201    | .plain =>
+  1202      (cvjLps.map fun p => Level.subst lps us (.param p),
+  1203       args.take cnP)
 
-== ConLeche/Rules/Rel.lean#L252-L263
+== ConLeche/Rules/Rel.lean#L250-L261
+   250        rules.find? (fun r' => r'.ctor == cj) = some rl →
+   251        major.getAppArgs.length = cnP + rl.nfields →
    252        IotaCaseS env isK induct (recFireComparands rl cnP cv.levelParams us cvj.levelParams
    253          e.getAppArgs rP).1 c3 →
    254        (c3 = true →
@@ -5683,8 +5685,6 @@
    259          DefEqList env d (major.getAppArgs.take cnP)
    260            (recFireComparands rl cnP cv.levelParams us cvj.levelParams
    261              e.getAppArgs rP).2) →
-   262        (Expr.peelPis e.getAppArgs.length
-   263          (cv.type.instantiateLevelParams cv.levelParams us)).isSome = true →
 
 == ConLeche/Kernel/Inductives/BlockRec.lean#L82-L84
     82  def blockLargeElimAllowed (p : BlockShape) (nested : Bool) : Bool :=
