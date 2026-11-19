@@ -14,7 +14,7 @@ persistent bulk-instantiation memo, with the linear-update discipline
 them is written in.
 
 The environment-index guards
-below (`headHintC`, `unfoldableHeadC`,
+below (`headHintC`, `unfoldableHeadC`, `isCtorAppC`, `isStuckResultC`, `noteOriginC`,
 `sameConstHeadsC`, `rawNatLitC?`, `etaCtorShapeC`) are what the core
 calls directly.
 
@@ -59,6 +59,31 @@ def unfoldableHeadC (fe : FEnv) (e : Expr) : Bool :=
     | some (.defnInfo cv _ _) => us.length == cv.levelParams.length
     | _ => false
   | _ => false
+
+/-- `isCtorApp` through the index. -/
+def isCtorAppC (fe : FEnv) (e : Expr) : Bool :=
+  match Expr.getAppFn e with
+  | .const c _ .. =>
+    match fe.find? c with
+    | some (.ctorInfo ..) => true
+    | _ => false
+  | _ => false
+
+/-- `isStuckResult` through the index. -/
+def isStuckResultC (fe : FEnv) : Expr → Bool
+  | .lam .. | .forallE .. | .sort .. | .lit .. => false
+  | e => !isCtorAppC fe e
+
+/-- `noteOrigin` through the index.  With no rule in the table it answers `none` at once
+(official `note_rewrite_origin`'s `m_rules.empty()`), before the head's lookup. -/
+def noteOriginC (fe : FEnv) (o : Option Expr) (e : Expr) : Option Expr :=
+  match o with
+  | some o => some o
+  | none =>
+    if fe.base.rls.isEmpty then none else
+    match Expr.getAppFn e with
+    | .const c _ .. => if !(fe.rulesFor c).isEmpty && unfoldableHeadC fe e then some e else none
+    | _ => none
 
 /-- The cached `sameConstHeads`. -/
 def sameConstHeadsC (a b : Expr) : Bool :=
@@ -300,11 +325,23 @@ structure CState where
   the head-normalization loop counts here, and the declaration is rejected past
   `ruleDeclBudget`.  Not a memo: zero in a declaration's fresh state, kept by the flush. -/
   ruleTotal : Nat := 0
+  /-- **The rules-last restarts in progress** (official: the firings under one outermost
+  `rewrite_fuel_scope`, which `rules_last` opens and its restart nests in): each restart of the
+  comparison after a rule fired at an origin is a nested `defeq`, so a rule cycle through them
+  recurses; past `ruleFireBudget` nested restarts the declaration is rejected (`nestEnterI`).
+  Not a memo: zero in a declaration's fresh state. -/
+  ruleNest : Nat := 0
 
 instance : Inhabited CState := ⟨{}⟩
 
 /-- The state after one more rule firing (`tickRuleI`). -/
 def CState.tickRule (s : CState) : CState := { s with ruleTotal := s.ruleTotal + 1 }
+
+/-- The state entering a rules-last restart (`nestEnterI`). -/
+def CState.nestEnter (s : CState) : CState := { s with ruleNest := s.ruleNest + 1 }
+
+/-- The state leaving a rules-last restart (`nestLeaveI`). -/
+def CState.nestLeave (s : CState) : CState := { s with ruleNest := s.ruleNest - 1 }
 
 /-- Entry bound for the persistent bulk-instantiation memo. -/
 def instCCapC : Nat := 32000000

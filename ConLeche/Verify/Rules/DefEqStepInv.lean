@@ -311,17 +311,19 @@ theorem defeqLazy_inv {d : Nat} {a b : Expr}
     ∃ a' b', whnfCore μ eager env fuel d a true = .ok a' ∧
       whnfCore μ eager env fuel d b true = .ok b' ∧
       (quickDefEqFueled μ eager env fuel d a' b' = .ok (some true) ∨
-       lazyDeltaReductionFueled μ eager env fuel d defeqLoopFuel a' b' =
-         .ok (.verdict true) ∨
-       ∃ a₁ b₁, lazyDeltaReductionFueled μ eager env fuel d defeqLoopFuel a' b' =
-           .ok (.unknown a₁ b₁) ∧
+       lazyDeltaReductionFueled μ eager env fuel d defeqLoopFuel
+         (noteOrigin env none a') (noteOrigin env none b') a' b' = .ok (.verdict true) ∨
+       ∃ oa ob a₁ b₁, lazyDeltaReductionFueled μ eager env fuel d defeqLoopFuel
+           (noteOrigin env none a') (noteOrigin env none b') a' b' =
+           .ok (.unknown oa ob a₁ b₁) ∧
          (defeqProjPairFueled μ eager env fuel d a₁ b₁ = .ok true ∨
           defeqStuckFueled μ eager env fuel d a₁ b₁ = .ok true ∨
+          rulesLastFueled μ eager env fuel d oa ob a₁ b₁ = .ok true ∨
           ∃ a₂ b₂, whnfCore μ eager env fuel d a₁ = .ok a₂ ∧
             whnfCore μ eager env fuel d b₁ = .ok b₂ ∧
             isDefEqCore μ eager env fuel d a₂ b₂ = .ok true)) := by
   simp only [defeqLazyFueled, defeqLazy, Bind.bind, Except.bind, whnfCore_def,
-    propIrrel_fold, quickDefEq_fold,
+    propIrrel_fold, quickDefEq_fold, rulesLast_fold,
     lazyDeltaReduction_fold, defeqProjPair_fold, defeqStuck_fold, defeq_def] at h
   cases hq₀ : quickDefEqFueled μ eager env fuel d a b with
   | error err => rw [hq₀] at h; exact nomatch h
@@ -367,7 +369,8 @@ theorem defeqLazy_inv {d : Nat} {a b : Expr}
     exact Or.inl rfl
   | none =>
   dsimp only at h
-  cases hl : lazyDeltaReductionFueled μ eager env fuel d defeqLoopFuel a' b' with
+  cases hl : lazyDeltaReductionFueled μ eager env fuel d defeqLoopFuel
+      (noteOrigin env none a') (noteOrigin env none b') a' b' with
   | error err => rw [hl] at h; exact nomatch h
   | ok lr =>
   rw [hl] at h
@@ -377,8 +380,8 @@ theorem defeqLazy_inv {d : Nat} {a b : Expr}
     simp only [pure, Except.pure, Except.ok.injEq] at h
     subst h
     exact Or.inr (Or.inl rfl)
-  | unknown a₁ b₁ =>
-  refine Or.inr (Or.inr ⟨a₁, b₁, rfl, ?_⟩)
+  | unknown oa ob a₁ b₁ =>
+  refine Or.inr (Or.inr ⟨oa, ob, a₁, b₁, rfl, ?_⟩)
   dsimp only at h
   cases hpp : defeqProjPairFueled μ eager env fuel d a₁ b₁ with
   | error err => rw [hpp] at h; exact nomatch h
@@ -390,7 +393,14 @@ theorem defeqLazy_inv {d : Nat} {a b : Expr}
   | false =>
   simp only [Bool.false_eq_true, ↓reduceIte] at h
   split at h
-  · exact Or.inr (Or.inl h)
+  · -- the stuck comparison, else the rules last
+    cases hs : defeqStuckFueled μ eager env fuel d a₁ b₁ with
+    | error err => rw [hs] at h; exact nomatch h
+    | ok v =>
+    rw [hs] at h
+    cases v with
+    | true => exact Or.inr (Or.inl rfl)
+    | false => exact Or.inr (Or.inr (Or.inl h))
   cases hwa : whnfCore μ eager env fuel d a₁ with
   | error err => rw [hwa] at h; exact nomatch h
   | ok a₂ =>
@@ -402,8 +412,21 @@ theorem defeqLazy_inv {d : Nat} {a b : Expr}
   rw [hwb] at h
   dsimp only at h
   split at h
-  · exact Or.inr (Or.inl h)
-  · exact Or.inr (Or.inr ⟨a₂, b₂, rfl, rfl, h⟩)
+  · -- the stuck comparison, else the rules last
+    cases hs : defeqStuckFueled μ eager env fuel d a₁ b₁ with
+    | error err => rw [hs] at h; exact nomatch h
+    | ok v =>
+    rw [hs] at h
+    cases v with
+    | true => exact Or.inr (Or.inl rfl)
+    | false => exact Or.inr (Or.inr (Or.inl h))
+  · cases hde : isDefEqCore μ eager env fuel d a₂ b₂ with
+    | error err => rw [hde] at h; exact nomatch h
+    | ok v =>
+    rw [hde] at h
+    cases v with
+    | true => exact Or.inr (Or.inr (Or.inr ⟨a₂, b₂, rfl, rfl, hde⟩))
+    | false => exact Or.inr (Or.inr (Or.inl h))
 
 /-- **The inversion of `defeqBody`** (`Kernel/Core.lean`): the syntactic
 fast path, the constructor shortcut's two sides (the lazy comparison of

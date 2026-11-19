@@ -223,7 +223,7 @@ decreasing_by
 fire; a firing is marked (`WhnfStep.fire`), and otherwise the loop goes on. -/
 @[expose] def whnfAppRuleW (mode : CheckMode) (r : CoreFns m) (env : Env) (depth : Nat)
     (fa : Expr) (rest : List Expr) : m WhnfStep := do
-  match ← rewriteStep r env depth fa with
+  match ← rewriteStep r env depth false fa with
   | some (t, e₂) => pure (.fire t (Expr.mkAppN e₂ rest))
   | none => whnfAppW mode r env depth fa rest
 termination_by (rest.length, 2)
@@ -270,7 +270,7 @@ theorem whnfAppRuleW_eq (r : CoreFns m) (env : Env) (depth : Nat) (fa : Expr)
     (rest : List Expr) :
     whnfAppRuleW mode r env depth fa rest
       = (do
-          match ← rewriteStep r env depth fa with
+          match ← rewriteStep r env depth false fa with
           | some (t, e₂) => pure (.fire t (Expr.mkAppN e₂ rest))
           | none => whnfAppW mode r env depth fa rest) := by
   rw [whnfAppRuleW]
@@ -315,7 +315,7 @@ the loop's continuation `k` abstracted. -/
   | .forallE ty body => pure (.forallE ty body)
   | .lam ty body => pure (.lam ty body)
   | .const n us => do
-    match ← rewriteStep r env depth (.const n us) with
+    match ← rewriteStep r env depth false (.const n us) with
     | some (_, e₂) => k e₂
     | none => pure (.const n us)
   | .lit l => pure (.lit l)
@@ -339,7 +339,7 @@ returning the head normal form or the term to continue with. -/
   | .forallE ty body => pure (.done (.forallE ty body))
   | .lam ty body => pure (.done (.lam ty body))
   | .const n us => do
-    match ← rewriteStep r env depth (.const n us) with
+    match ← rewriteStep r env depth false (.const n us) with
     | some (t, e₂) => pure (.fire t e₂)
     | none => pure (.done (.const n us))
   | .lit l => pure (.done (.lit l))
@@ -560,12 +560,12 @@ theorem iotaThenRule_mono {d : Nat} {e : Expr} {F F' : Nat}
   rw [← iotaThenRule_atF] at h ⊢
   exact (iotaThenRule mode (fueledFns mode eager env) env d e).property hle h
 
-theorem rewriteStep_mono {d : Nat} {e : Expr} {F F' : Nat}
+theorem rewriteStep_mono {d : Nat} {stuck : Bool} {e : Expr} {F F' : Nat}
     (hle : F ≤ F') {o : Option (Name × Expr)}
-    (h : rewriteStep (pureFns mode eager env F) env d e = .ok o) :
-    rewriteStep (pureFns mode eager env F') env d e = .ok o := by
+    (h : rewriteStep (pureFns mode eager env F) env d stuck e = .ok o) :
+    rewriteStep (pureFns mode eager env F') env d stuck e = .ok o := by
   rw [← rewriteStep_atF] at h ⊢
-  exact (rewriteStep (fueledFns mode eager env) env d e).property hle h
+  exact (rewriteStep (fueledFns mode eager env) env d stuck e).property hle h
 
 /-- `whnfCore` is the identity on a lambda (at nonzero fuel). -/
 theorem whnfCore_lam (F d : Nat) (ty body : Expr)
@@ -1067,7 +1067,7 @@ theorem whnfApp_run {d F : Nat} (kF : Expr → CheckM Expr) :
         | none =>
           show _ = (whnfAppRuleW mode (pureFns mode eager env F) env d (.app v a) rest >>= _)
           rw [whnfAppRuleW_eq]
-          cases hr : rewriteStep (pureFns mode eager env F) env d (.app v a) with
+          cases hr : rewriteStep (pureFns mode eager env F) env d false (.app v a) with
           | error err => rfl
           | ok ro =>
             cases ro with
@@ -1108,7 +1108,7 @@ theorem whnfCoreStepM_run {d F : Nat} (kF : Expr → CheckM Expr) (e : Expr) :
   cases e with
   | const n us =>
     simp only [whnfCoreStepM, whnfCoreStepW]
-    cases hr : rewriteStep (pureFns mode eager env F) env d (.const n us) with
+    cases hr : rewriteStep (pureFns mode eager env F) env d false (.const n us) with
     | error err => rfl
     | ok ro => cases ro <;> rfl
   | app f a =>
@@ -1370,7 +1370,7 @@ theorem whnf_forallE (F d : Nat) (t b : Expr)
   -- budget is `irreducible`, so peel it with its positivity witness)
   obtain ⟨k, hk⟩ := whnfLoopFuel_succ
   rw [whnf_succ]
-  show whnfLoop (pureFns mode eager env (F + 1)) env d whnfLoopFuel _ = _
+  show whnfLoop (pureFns mode eager env (F + 1)) env d whnfLoopFuel none _ = _
   rw [hk]
   rfl
 

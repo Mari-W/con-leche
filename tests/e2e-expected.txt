@@ -3521,10 +3521,11 @@
 0 rewrite_rule_family.ndjson
 # a rule whose right side δ-unfolds back to its left side (`op_apply : o.op a = apply' o a`,
 # `apply' o a := o.op a`) in the false `o.op a = o.op (a + 1)` (scripts/rewrite-fixtures/RrLoop.lean,
-# patched by `mk.py loop`).  Each `whnfCore` call fires once and lazy δ unfolds back, so the per-loop
-# budget never runs out; the per-declaration total (2^22, official `LEAN_REWRITE_DECL_BUDGET`)
-# rejects it (about 18 s).  Before the total it ran into the timeout.  Target 1 (the C++ kernel has
-# the same total; the patched record is not replayed there).
+# patched by `mk.py loop`).  `o.op a` unfolds to a projection stuck on `o`, so the rule fires last,
+# and the restart of the comparison unfolds `apply' o a` back to `o.op a`: each round is one nested
+# rules-last restart, and past 65536 of them (`nestEnterI`) the declaration is rejected (about 1 s).
+# Before the rules came last the per-declaration total (2^22) rejected it after about 18 s, and
+# before the total it ran into the timeout.  Target 1 (the patched record is not replayed in C++).
 1 rewrite_rule_decl_budget.ndjson
 # a pattern position matched up to whnf (scripts/rewrite-fixtures/RrMatch.lean, rr-dev 0): a raw
 # literal against `Nat.zero` and against `Nat.succ m`, an argument that needs a δ step (`zero'`) and
@@ -3542,3 +3543,15 @@
 # the same rule at two different variables (`mk.py match` patches the statement): the rule does not
 # fire.  Today the registration rejects it; target 1, from the failed conversion.
 1 rewrite_rule_nonlinear_diff.ndjson
+# the reduction order (scripts/rewrite-fixtures/RrOrder.lean, rr-dev 0): δ first, and a rule on a
+# definition only where its unfolding gets stuck (official `whnf` and `is_def_eq_core`'s rules last).
+# `swap (1, 2) = (2, 1)` under `swap_loop : swap (a, b) = swap (swap (b, a))`: δ gives a pair, a
+# value, so the rule does not fire; a rule fired before δ would loop until the budget.  Target 0.
+0 rewrite_rule_order_swap.ndjson
+# `∀ n, 0 + n = n` by `rfl` under `zero_add' : Nat.zero + n = n`: unfolding `0 + n` gets stuck on
+# `n`, and the rule fires at the remembered `0 + n`.  Target 0; without the rule list, target 1.
+0 rewrite_rule_order_stuck.ndjson
+1 rewrite_rule_order_stuck_norule.ndjson
+# the global rule `cat_nil : cat xs [] = xs` in `cat xs [] = xs` by `rfl` (`mk.py order` patches
+# the statement): `cat xs []` unfolds to a recursor stuck on `xs`, and the rule fires.  Target 0.
+0 rewrite_rule_order_global.ndjson

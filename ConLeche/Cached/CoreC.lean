@@ -366,6 +366,21 @@ past `ruleDeclBudget` firings in the declaration, the rule `t` that would fire i
   if (← get).ruleTotal < ruleDeclBudget then modify CState.tickRule
   else throw (ruleDeclBudgetError t)
 
+/-- **The matched view of an application** `e = f' a` whose sides matched as `f₁` and `a₁`:
+`e` itself where neither side changed (`==` tests the pointer first), a new node otherwise. -/
+@[inline] def appView (e f' a f₁ a₁ : Expr) : Expr :=
+  if f₁ == f' && a₁ == a then e else .app f₁ a₁
+
+/-- **Enter a rules-last restart** (`rulesLastI`): past `ruleFireBudget` nested restarts, the
+rule `t` that would fire is rejected (`ruleBudgetError`), before a rule cycle through the
+restarts exhausts the native stack. -/
+@[inline] def nestEnterI (t : Name) : CheckCM Unit := do
+  if (← get).ruleNest < ruleFireBudget then modify CState.nestEnter
+  else throw (ruleBudgetError t)
+
+/-- Leave a rules-last restart. -/
+@[inline] def nestLeaveI : CheckCM Unit := modify CState.nestLeave
+
 /-- The `whnfCore` memo of a mode: the full mode reads `whnfCoreC`, the
 cheap mode `whnfCoreCheapC` (see `whnfCoreLoopI`). -/
 @[inline] def whnfCoreLookupI (cheap : Bool) (e : Expr) : CheckCM (Option Expr) := do
@@ -1138,20 +1153,21 @@ def ruleArgI (eager : Bool) (lv : Nat) (depth n : Nat) (lps : List Name) (p : Ex
       ruleMatchI eager lv depth n lps p st a'
 termination_by (lv, 28, 0, 2 * sizeOf p + 3)
 
-/-- Twin of `ruleMatchM`. -/
+/-- Twin of `ruleMatchM`.  The matched view is the term itself wherever no position below it
+was retried (`f₁ == f'` and `a₁ == a`, by pointer on the unretried path), so a match without a
+retry builds no node. -/
 def ruleMatchI (eager : Bool) (lv : Nat) (depth n : Nat) (lps : List Name) :
     Expr → List (Option Expr) × List (Option Level) → Expr →
       CheckCM (Option ((List (Option Expr) × List (Option Level)) × Expr))
-  | .app f p, st, .app f' a => do
+  | .app f p, st, e@(.app f' a) => do
     match ← ruleMatchI eager lv depth n lps f st f' with
     | none => pure none
     | some (st₁, f₁) =>
       match ← ruleArgI eager lv depth n lps p st₁ a with
       | none => pure none
-      | some (st₂, a₁) => pure (some (st₂, .app f₁ a₁))
-  | .const c ls, (sl, lv'), .const c' ls' =>
-    pure (if c = c' then (matchLevels lps lv' ls ls').map fun lv' => ((sl, lv'), .const c' ls')
-      else none)
+      | some (st₂, a₁) => pure (some (st₂, appView e f' a f₁ a₁))
+  | .const c ls, (sl, lv'), e@(.const c' ls') =>
+    pure (if c = c' then (matchLevels lps lv' ls ls').map fun lv' => ((sl, lv'), e) else none)
   | _, _, _ => pure none
 termination_by pat _ _ => (lv, 28, 0, 2 * sizeOf pat + 2)
 
@@ -1207,12 +1223,22 @@ def rewriteRulesI (eager : Bool) (lv : Nat) (depth : Nat) (e : Expr) :
 termination_by ts => (lv, 28, 3, ts.length)
 
 /-- Twin of `rewriteStep`: the rules through the index (`FEnv.rulesFor`). -/
-def rewriteStepI (eager : Bool) (lv : Nat) (depth : Nat) (e : Expr) :
+def rewriteStepI (eager : Bool) (lv : Nat) (depth : Nat) (stuck : Bool) (e : Expr) :
     CheckCM (Option (Name × Expr)) :=
   match e.getAppFn with
-  | .const c _ => rewriteRulesI eager lv depth e (fe.rulesFor c)
+  | .const c _ =>
+    if !stuck && unfoldableHeadC fe e then pure none
+    else rewriteRulesI eager lv depth e (fe.rulesFor c)
   | _ => pure none
 termination_by (lv, 28, 4, 0)
+
+/-- Twin of `originFire`. -/
+def originFireI (eager : Bool) (lv : Nat) (depth : Nat) (o : Option Expr) (e : Expr) :
+    CheckCM (Option (Name × Expr)) :=
+  match o with
+  | some o' => if isStuckResultC fe e then rewriteStepI eager lv depth true o' else pure none
+  | none => pure none
+termination_by (lv, 28, 5, 0)
 
 /-- Peel loop of `whnfAppI`: `t` is the raw (unsubstituted) lambda body
 after the binders consumed so far, their arguments the spine range
@@ -1277,11 +1303,13 @@ def whnfAppI (eager : Bool) (lv : Nat) (depth : Nat)
 termination_by (lv, 30, args.size - i, 1)
 
 /-- The rule arm of `whnfAppI` at the prefix `fa`, headed by the constant `c`, where ι did not
-fire: the rules of `c` (`rewriteRulesI`); a firing hands the loop its reduct applied to the
+fire: unless `c` unfolds (δ comes first, `rewriteStep`'s gate), the rules of `c`
+(`rewriteRulesI`); a firing hands the loop its reduct applied to the
 rest of the spine, marked as a firing (`WhnfStep.fire`), and otherwise the argument loop goes
 on. -/
 def whnfAppRuleI (eager : Bool) (lv : Nat) (depth : Nat)
     (fa : Expr) (c : Name) (args : Array Expr) (i : Nat) : CheckCM WhnfStep := do
+  if unfoldableHeadC fe fa then whnfAppI eager lv depth fa args (i + 1) else
   match ← rewriteRulesI eager lv depth fa (fe.rulesFor c) with
   | some (t, e₂) => pure (.fire t (mkAppRange e₂ args (i + 1) args.size))
   | none => whnfAppI eager lv depth fa args (i + 1)
@@ -1327,7 +1355,7 @@ def whnfCoreStepI (eager : Bool) (lv : Nat) (cheap : Bool) (depth : Nat)
     | .lam .. | .lit _ => pure (.done e)
     | .const .. => do
       -- a rule whose left side is a bare constant
-      match ← rewriteStepI eager lv depth e with
+      match ← rewriteStepI eager lv depth false e with
       | some (t, e₂) => pure (.fire t e₂)
       | none => pure (.done e)
     | .app _ _ => do
@@ -1489,24 +1517,34 @@ so a δ chain of any length runs in constant native stack (task #342 R2:
 a non-terminating δ chain — Coquand's paradox — runs until the external
 timeout instead of overflowing the stack). -/
 def whnfLoopI (eager : Bool) (lv : Nat) (depth : Nat) :
-    Nat → Expr → CheckCM Expr
-  | 0, _ => throw (.internal "fuel exhausted: whnf loop")
-  | n + 1, e => do
+    Nat → Nat → Option Expr → Expr → CheckCM Expr
+  | 0, _, _, _ => throw (.internal "fuel exhausted: whnf loop")
+  | n + 1, fires, o, e => do
     let e₁ ← whnfCoreI eager lv false depth e
     match ← reduceNatI eager lv depth e₁ with
     -- a computed literal is the answer (official `whnf`: `if (auto v =
     -- reduce_nat(t)) return *v;`); a `Bool` constructor goes on (see
     -- `whnfStep`)
-    | some e₂ => if e₂.isLit then pure e₂ else whnfLoopI eager lv depth n e₂
+    | some e₂ => if e₂.isLit then pure e₂ else whnfLoopI eager lv depth n fires o e₂
     | none =>
       match ← unfoldDefinitionI fe e₁ with
-      | some e₂ => whnfLoopI eager lv depth n e₂
-      | none => pure e₁
-termination_by n _ => (lv, 37, n, 0)
+      | some e₂ => whnfLoopI eager lv depth n fires (noteOriginC fe o e₁) e₂
+      | none =>
+        match ← originFireI eager lv depth o e₁ with
+        | some (t, e₂) =>
+          -- a firing counts against the loop's budget (official: per outermost `whnf` call,
+          -- `rewrite_fuel_scope`) and the declaration's (`tickRuleI`)
+          match fires with
+          | 0 => throw (ruleBudgetError t)
+          | k + 1 => do
+            tickRuleI t
+            whnfLoopI eager lv depth n k none e₂
+        | none => pure e₁
+termination_by n _ _ _ => (lv, 37, n, 0)
 
 /-- Twin of `whnfBody`. -/
 def whnfBodyI (eager : Bool) (lv : Nat) : Nat → Expr → CheckCM Expr :=
-  fun depth e => whnfLoopI eager lv depth whnfLoopFuel e
+  fun depth e => whnfLoopI eager lv depth whnfLoopFuel ruleFireBudget none e
 termination_by (lv, 38, 0, 0)
 
 /-- Twin of `ensureSort` (returns the level; no readback needed). -/
@@ -1964,9 +2002,9 @@ termination_by (lv, 58, 0, 0)
 
 /-- Twin of `lazyDeltaReduction`. -/
 def lazyDeltaReductionI (eager : Bool) (lv : Nat) (depth : Nat) :
-    Nat → Expr → Expr → CheckCM LazyRes
-  | 0, _, _ => throw (.internal "fuel exhausted: defeq loop")
-  | n + 1, a, b => do
+    Nat → Option Expr → Option Expr → Expr → Expr → CheckCM LazyRes
+  | 0, _, _, _, _ => throw (.internal "fuel exhausted: defeq loop")
+  | n + 1, oa, ob, a, b => do
     match ← defeqOffsetI eager lv depth a b with
     | some v => pure (.verdict v)
     | none =>
@@ -1983,11 +2021,12 @@ def lazyDeltaReductionI (eager : Bool) (lv : Nat) (depth : Nat) :
       pure (.verdict v)
     | none =>
     match ← lazyDeltaStepI eager lv depth a b with
-    | .cont a' b' => lazyDeltaReductionI eager lv depth n a' b'
+    | .cont a' b' =>
+      lazyDeltaReductionI eager lv depth n (noteOriginC fe oa a') (noteOriginC fe ob b') a' b'
     | .eq => pure (.verdict true)
     | .diff => pure (.verdict false)
-    | .unknown => pure (.unknown a b)
-termination_by n _ _ => (lv, 59, n, 0)
+    | .unknown => pure (.unknown oa ob a b)
+termination_by n _ _ _ _ => (lv, 59, n, 0)
 
 /-- Twin of `lazyDeltaProjReduction`. -/
 def lazyDeltaProjReductionI (eager : Bool) (lv : Nat) (depth : Nat)
@@ -2067,6 +2106,35 @@ def defeqStuckI (eager : Bool) (lv : Nat) (depth : Nat) (a b : Expr) :
   | _, _ => stuckIrrelI eager lv depth a b
 termination_by (lv, 62, 0, 0)
 
+/-- Twin of `rulesLast`; a firing counts against the declaration's budget (`tickRuleI`), and the
+restart is one nested restart more (`nestEnterI`). -/
+def rulesLastI (eager : Bool) (lv : Nat) (depth : Nat) (oa ob : Option Expr) (a b : Expr) :
+    CheckCM Bool := do
+  let ra ← originFireI eager lv depth oa a
+  let rb ← originFireI eager lv depth ob b
+  match ra, rb with
+  | none, none => pure false
+  | some (t, a₂), none => do
+    tickRuleI t
+    nestEnterI t
+    let v ← defeqI eager lv depth a₂ b
+    nestLeaveI
+    pure v
+  | none, some (t, b₂) => do
+    tickRuleI t
+    nestEnterI t
+    let v ← defeqI eager lv depth a b₂
+    nestLeaveI
+    pure v
+  | some (t, a₂), some (t', b₂) => do
+    tickRuleI t
+    tickRuleI t'
+    nestEnterI t
+    let v ← defeqI eager lv depth a₂ b₂
+    nestLeaveI
+    pure v
+termination_by (lv, 62, 1, 0)
+
 /-- Twin of `defeqLazy`. -/
 def defeqLazyI (eager : Bool) (lv : Nat) (depth : Nat) (a b : Expr) : CheckCM Bool := do
   match ← quickDefEqI eager lv depth a b with
@@ -2079,16 +2147,21 @@ def defeqLazyI (eager : Bool) (lv : Nat) (depth : Nat) (a b : Expr) : CheckCM Bo
   match ← quickDefEqI eager lv depth a' b' with
   | some v => pure v
   | none =>
-  match ← lazyDeltaReductionI eager lv depth defeqLoopFuel a' b' with
+  match ← lazyDeltaReductionI eager lv depth defeqLoopFuel
+      (noteOriginC fe none a') (noteOriginC fe none b') a' b' with
   | .verdict v => pure v
-  | .unknown a₁ b₁ =>
+  | .unknown oa ob a₁ b₁ =>
   if ← defeqProjPairI eager lv depth a₁ b₁ then pure true else
   if !(Expr.headIsProj a₁) && !(Expr.headIsProj b₁) then
-    defeqStuckI eager lv depth a₁ b₁ else
+    if ← defeqStuckI eager lv depth a₁ b₁ then pure true
+    else rulesLastI eager lv depth oa ob a₁ b₁ else
   let a₂ ← whnfCoreI eager lv false depth a₁
   let b₂ ← whnfCoreI eager lv false depth b₁
-  if a₂ == a₁ && b₂ == b₁ then defeqStuckI eager lv depth a₁ b₁
-  else defeqI eager lv depth a₂ b₂
+  if a₂ == a₁ && b₂ == b₁ then
+    if ← defeqStuckI eager lv depth a₁ b₁ then pure true
+    else rulesLastI eager lv depth oa ob a₁ b₁
+  else if ← defeqI eager lv depth a₂ b₂ then pure true
+  else rulesLastI eager lv depth oa ob a₁ b₁
 termination_by (lv, 63, 0, 0)
 
 /-- Twin of `defeqBody`. -/

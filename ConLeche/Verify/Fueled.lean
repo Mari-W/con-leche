@@ -627,11 +627,11 @@ theorem lazyDeltaStep_atF (d : Nat) (a b : Expr) (F : Nat) :
   atF_core3 (first | rw [deltaQuick_atF] | rw [tryUnfoldProjApp_atF] | rw [defeqSpine_atF])
 
 theorem lazyDeltaReduction_atF (d : Nat) (F : Nat) :
-    ∀ (n : Nat) (a b : Expr),
-      (lazyDeltaReduction mi ei (fueledFns mode eager env) env d n a b).val F =
-        lazyDeltaReduction mi ei (pureFns mode eager env F) env d n a b
-  | 0, _, _ => rfl
-  | n + 1, a, b => by
+    ∀ (n : Nat) (oa ob : Option Expr) (a b : Expr),
+      (lazyDeltaReduction mi ei (fueledFns mode eager env) env d n oa ob a b).val F =
+        lazyDeltaReduction mi ei (pureFns mode eager env F) env d n oa ob a b
+  | 0, _, _, _, _ => rfl
+  | n + 1, oa, ob, a, b => by
     unfold lazyDeltaReduction
     atF_core3 (first | rw [lazyDeltaStep_atF] | rw [defeqOffset_atF] | rw [lazyDeltaReduction_atF d F n])
 
@@ -690,12 +690,24 @@ theorem rewriteRules_atF (d : Nat) (e : Expr) (F : Nat) :
     | some e₂ => rfl
     | none => exact rewriteRules_atF d e F ts
 
-theorem rewriteStep_atF (d : Nat) (e : Expr) (F : Nat) :
-    (rewriteStep (fueledFns mode eager env) env d e).val F =
-      rewriteStep (pureFns mode eager env F) env d e := by
+theorem rewriteStep_atF (d : Nat) (stuck : Bool) (e : Expr) (F : Nat) :
+    (rewriteStep (fueledFns mode eager env) env d stuck e).val F =
+      rewriteStep (pureFns mode eager env F) env d stuck e := by
   unfold rewriteStep
   split
-  · exact rewriteRules_atF d e F _
+  · split
+    · rfl
+    · exact rewriteRules_atF d e F _
+  · rfl
+
+theorem originFire_atF (d : Nat) (o : Option Expr) (e : Expr) (F : Nat) :
+    (originFire (fueledFns mode eager env) env d o e).val F =
+      originFire (pureFns mode eager env F) env d o e := by
+  unfold originFire
+  split
+  · split
+    · exact rewriteStep_atF d true _ F
+    · rfl
   · rfl
 
 theorem iotaThenRule_atF (d : Nat) (e : Expr) (F : Nat) :
@@ -727,6 +739,7 @@ macro "atF_core4" x:tactic : tactic =>
     | (rw [defEqList_atF])
     | (rw [reduceNat_atF])
     | (rw [rewriteStep_atF])
+    | (rw [originFire_atF])
     | (rw [ensureSort_atF])
     | (rw [checkProjGuard_atF])
     | (rw [iotaCaseAt_atF])
@@ -782,24 +795,25 @@ theorem whnfCoreBody_atF (c : Bool) (d : Nat) (e : Expr) (F : Nat) :
   unfold whnfCoreBody
   atF_tac4
 
-theorem whnfStep_atF (d : Nat) (k : Expr → FueledM Expr)
-    (kF : Expr → CheckM Expr) (hk : ∀ e, (k e).val F = kF e) (e : Expr) :
-    (whnfStep (fueledFns mode eager env) env d k e).val F =
-      whnfStep (pureFns mode eager env F) env d kF e := by
-  unfold whnfStep
+theorem whnfStep_atF (d : Nat) (k : Option Expr → Expr → FueledM Expr)
+    (kF : Option Expr → Expr → CheckM Expr) (hk : ∀ o e, (k o e).val F = kF o e)
+    (o : Option Expr) (e : Expr) :
+    (whnfStep (fueledFns mode eager env) env d k o e).val F =
+      whnfStep (pureFns mode eager env F) env d kF o e := by
+  unfold whnfStep whnfFix
   atF_tac4k hk
 
 theorem whnfLoop_atF (d : Nat) (F : Nat) :
-    ∀ (n : Nat) (e : Expr),
-      (whnfLoop (fueledFns mode eager env) env d n e).val F =
-        whnfLoop (pureFns mode eager env F) env d n e
-  | 0, _ => rfl
-  | n + 1, e => whnfStep_atF d _ _ (fun e' => whnfLoop_atF d F n e') e
+    ∀ (n : Nat) (o : Option Expr) (e : Expr),
+      (whnfLoop (fueledFns mode eager env) env d n o e).val F =
+        whnfLoop (pureFns mode eager env F) env d n o e
+  | 0, _, _ => rfl
+  | n + 1, o, e => whnfStep_atF d _ _ (fun o' e' => whnfLoop_atF d F n o' e') o e
 
 theorem whnfBody_atF (d : Nat) (e : Expr) (F : Nat) :
     (whnfBody (fueledFns mode eager env) env d e).val F =
       whnfBody (pureFns mode eager env F) env d e :=
-  whnfLoop_atF d F whnfLoopFuel e
+  whnfLoop_atF d F whnfLoopFuel none e
 
 theorem inferBody_atF (d : Nat) (e : Expr) (F : Nat) :
     (inferBody (fueledFns mode eager env) env d e).val F =
@@ -818,11 +832,23 @@ theorem inferBodyIO_atF (d : Nat) (e : Expr) (F : Nat) :
   -- field `ensureSort` reads) untouched, so the plain lemma closes them
   all_goals exact ensureSort_atF _ _ _
 
+theorem rulesLast_atF (d : Nat) (oa ob : Option Expr) (a b : Expr) (F : Nat) :
+    (rulesLast (fueledFns mode eager env) env d oa ob a b).val F =
+      rulesLast (pureFns mode eager env F) env d oa ob a b := by
+  unfold rulesLast
+  rw [FueledM.atF_bind, originFire_atF]
+  congr 1
+  funext ra
+  rw [FueledM.atF_bind, originFire_atF]
+  congr 1
+  funext rb
+  rcases ra with _ | ⟨_, _⟩ <;> rcases rb with _ | ⟨_, _⟩ <;> rfl
+
 theorem defeqLazy_atF (d : Nat) (a b : Expr) (F : Nat) :
     (defeqLazy mode eager (fueledFns mode eager env) env d a b).val F =
       defeqLazy mode eager (pureFns mode eager env F) env d a b := by
   unfold defeqLazy
-  atF_tac4
+  atF_tac4k rulesLast_atF
 
 theorem defeqBody_atF (d : Nat) (a b : Expr) (F : Nat) :
     (defeqBody mode eager (fueledFns mode eager env) env d a b).val F =

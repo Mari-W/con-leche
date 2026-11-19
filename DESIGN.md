@@ -116050,3 +116050,80 @@ new fixtures (the three non-linear ones pinned at 1 until step 2), plain-reach 6
 repointed and their expectations regenerated. README needed none. In the playground `just e2e`
 now accepts `E2E.Literal`, and its pin in `playground/E2E/expected.txt` is 0. Builds ran as
 `LEAN_NUM_THREADS=4 nice -n 19 lake build`.
+
+## Rules when stuck (2026-11-19, rewrite-rules, reduction order step 2)
+
+The checker follows the C++ kernel's new reduction order (lean4 97f520aced and 93e18eb8af,
+`notes/reduction-order.md`, option C). A rule never fires on a head that unfolds. `whnf`
+remembers the outermost term with rules that it unfolds and tries that term's rules when the
+unfolding ends stuck, and definitional equality tries them after every other check failed.
+
+**The checker.** `rewriteStep` takes the C++ `stuck` flag. Without it a rule on a head that
+`unfoldableHead` accepts does not fire, so the two callers in `whnfCoreBody` (the constant arm
+and `iotaThenRule`) pass `false`. `isStuckResult` (a λ, Π, sort, literal or constructor spine is
+a value) and `noteOrigin` (the outermost term with rules whose head unfolds) live in
+`Kernel/CoreDefs.lean`. `originFire` is `reduce_rewrite(origin, true)`. `whnfStep` threads the
+origin through its continuation, notes it at every unfolding, and ends in the named block
+`whnfFix`, which fires at the origin and goes on with no origin. `lazyDeltaReduction` carries an
+origin per side, noted at every continuation and by `defeqLazy` at the entry, and returns them in
+`LazyRes.unknown`. `rulesLast` fires each side's origin and restarts the comparison on the
+reducts. `defeqLazy` runs it where the full `whnfCore` restart fails and where `defeqStuck`
+fails, the C++ `rules_last` positions.
+
+Deviations. The C++ `is_delta` also unfolds theorems and con-leche never does, so a rule on a
+theorem head is gated by `unfoldableHead` (false) and fires at once. The C++ string-literal
+expansion returns its `false` without the rules last. `defeqStuck` folds that arm into one Bool,
+so here the rules last also run after a failed expansion. A rule firing in the C++
+`reduce_rewrite` iterates the next steps itself. Here the continuation's `whnfCore` takes them,
+with the same rules.
+
+**The cached twin.** `rewriteStepI` and `whnfAppRuleI` gate on `unfoldableHeadC`. `whnfLoopI`
+carries the origin and a firing count. An origin firing counts against `ruleFireBudget` per
+`whnf` call (the C++ `rewrite_fuel_scope` of `whnf`) and against the declaration's total.
+`rulesLastI` restarts through `defeqI`, so a rule cycle through the restarts recurses natively.
+`CState.ruleNest` counts the restarts in progress and `nestEnterI` rejects past
+`ruleFireBudget` of them. Without it `rewrite_rule_decl_budget` overflowed the stack (exit 134)
+before the declaration total. `noteOriginC` answers `none` at once on an empty rule table (the
+C++ `m_rules.empty()`). `ruleMatchI` returns the term itself where no position below it was
+retried (`appView`), the cheap fix the step 1 record left open.
+
+**Model and relation.** Unchanged. Delaying or blocking a firing only restricts runs, and a
+firing at the origin is `Red.rewrite` at the origin.
+
+**Proofs.** The bridges state the loop invariants from a fixed start. `whnfLoop_bridge` proves
+`Red e₀ e'` from `Red e₀ e` and `OriginP (Red env d e₀) o`, because the rule's right side is a
+reduct of the origin and the origin of the start, not of the current term. `LazySound` carries the
+two starts and the origins, and `rulesLast_bridge` closes with `redL`/`redR`. `OriginP`
+(`Verify/Knot.lean`) is the origin invariant every preservation proof threads (scope, closedness,
+leaves, member freedom, shift, environment extension). The cached simulation names `whnfFix`
+with two guarded `Runs` equations, the lazy loop's and the body's blocks gain the origins, and
+`rulesLast` is split into `rulesLastAP`/`rulesLastPairP` and their cached twins. `OptWS` is the
+origin's scope side condition.
+
+**Fixtures.** `scripts/rewrite-fixtures/RrOrder.lean`, and rr-dev accepts all three. They are
+`rewrite_rule_order_swap` (the looping `swap_loop` on a value, 0, where the step 1 binary looped into
+an exit 134), `rewrite_rule_order_stuck` (`∀ n, 0 + n = n` by `rfl` under `zero_add'`, 0) and
+`_stuck_norule` (its rule list dropped, 1), and `rewrite_rule_order_global` (`cat_nil'` under
+the global `cat_nil`, 0). The elaborator does not fire the global rule at `cat xs []`, so
+`mk.py order` patches that statement in. Every older rule fixture keeps its verdict.
+`rewrite_rule_decl_budget` is now rejected by the nesting budget after about 1 s.
+
+Cost. `perf stat -e instructions:u` against 6c9dcdbc7 (`_tmp/r8/perf-base.txt`,
+`_tmp/r8/perf-s2.txt`, `--jobs=1`). Streams without rules cost +0.06% to +0.29% (`wide_ok`,
+`nat_divmod_ok`, `stored_rec_outparam`, `natop_perturbed_used_later`), the origin bookkeeping
+behind the empty-table fast path. Before the fast path it was +0.55%. The older rule fixtures
+cost +0.2% to +0.7%, the new accepting ones +0.9% to +1.0%. `rewrite_rule_priority_loop`
+costs +25% (1.352 G to 1.690 G), because each of its 65 536 firings now follows an unfolding that got
+stuck. `rewrite_rule_order_swap` drops from 30.2 G and an exit 134 to 21.9 M and an accept, and
+`rewrite_rule_decl_budget` from 188.6 G to 8.0 G, with the same rejection.
+
+Gates. `lake build` and `lake test` warning-free (`_tmp/r8/build.log`, `_tmp/r8/test.log`),
+`tests/shake.sh` passes (666/666 allowlisted, none demotable, `_tmp/r8/shake.log`) after the
+now-implied `import ConLeche.Verify.Knot` left `Verify/EnvExt.lean` and the allowlist line for
+`DiscC5`'s public import of `DiscC4` went. plain-reach 667 reached, nothing new allowlisted.
+e2e 635/635 with the four new fixtures, olean gate 122/122, self-check 56 514 declarations,
+axioms pinned, trusted and `--jobs` sweeps without divergence. The anchors that moved in OVERVIEW
+and the whitepaper were repointed and their expectations regenerated. README needed none. `tests/arena.sh` exits 0
+(`_tmp/r8/arena.log`). A first run failed one progress-lane check, `--jobs=4 --progress=1`
+naming the oldest running check, which depends on a worker being busy at that moment. It passed
+on the rerun (`_tmp/r8/arena1.log`).

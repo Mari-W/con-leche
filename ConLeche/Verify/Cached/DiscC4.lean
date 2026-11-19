@@ -72,21 +72,22 @@ private theorem ne_lam_of_getAppFn {v h : Expr} (hv : v.getAppFn = h)
 
 /-- At a spine whose head no rule rewrites (`noRulesC`) the rewrite step answers `none`. -/
 theorem rewriteStep_noRules {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
-    {r : CoreFns m} {d : Nat} {x h : Expr} (hx : x.getAppFn = h)
-    (hn : noRulesC (mkFEnv env) h = true) : rewriteStep r env d x = pure none := by
+    {r : CoreFns m} {d : Nat} {stuck : Bool} {x h : Expr} (hx : x.getAppFn = h)
+    (hn : noRulesC (mkFEnv env) h = true) : rewriteStep r env d stuck x = pure none := by
   unfold rewriteStep
   rw [hx]
   cases h with
   | const c us =>
     simp only [noRulesC, mkFEnv_rulesFor, List.isEmpty_iff] at hn
-    show rewriteRules r env d x (env.rulesFor c) = _
+    show (if (!stuck && unfoldableHead env x) = true then pure none
+      else rewriteRules r env d x (env.rulesFor c)) = _
     rw [hn]
-    rfl
+    split <;> rfl
   | _ => rfl
 
 /-- The rule arm of the spine loop at a head no rule rewrites is the loop itself. -/
 theorem whnfAppRuleW_noRules {d : Nat} {fa : Expr} {rest : List Expr}
-    (h : rewriteStep (fueledFns .verified eager env) env d fa = pure none) :
+    (h : rewriteStep (fueledFns .verified eager env) env d false fa = pure none) :
     whnfAppRuleW .verified (fueledFns .verified eager env) env d fa rest =
       whnfAppW .verified (fueledFns .verified eager env) env d fa rest := by
   rw [whnfAppRuleW_eq, h, FueledM.pure_bind_eq]
@@ -345,26 +346,38 @@ theorem reduceProjCoreC_spec (ih : SSimC mode eager env f) {d : Nat} {sn : Name}
 @[conleche_grind =] theorem HeadIs.const_eq (c c' : Name) (us : List Level) :
     HeadIs c (.const c' us) = (c' = c) := rfl
 
-/-- The rewrite step at a spine headed by the constant `c` reads `c`'s rules. -/
+/-- The rewrite step at a spine headed by the constant `c`, past the δ gate, reads `c`'s rules. -/
 theorem rewriteStep_head {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
-    {r : CoreFns m} {d : Nat} {e : Expr} {c : Name} {us : List Level}
-    (h : e.getAppFn = .const c us) : rewriteStep r env d e = rewriteRules r env d e (env.rulesFor c) := by
-  unfold rewriteStep; rw [h]
-grind_pattern [conleche_grind] rewriteStep_head => rewriteStep r env d e, Expr.const c us where
+    {r : CoreFns m} {d : Nat} {stuck : Bool} {e : Expr} {c : Name} {us : List Level}
+    (h : e.getAppFn = .const c us) (hg : (!stuck && unfoldableHead env e) = false) :
+    rewriteStep r env d stuck e = rewriteRules r env d e (env.rulesFor c) := by
+  unfold rewriteStep; rw [h]; simp only [hg, Bool.false_eq_true, ↓reduceIte]
+grind_pattern [conleche_grind] rewriteStep_head => rewriteStep r env d stuck e, Expr.const c us where
   guard e.getAppFn = .const c us
+  guard (!stuck && unfoldableHead env e) = false
+
+/-- The δ gate: a rule on a head that unfolds does not fire unless the unfolding got stuck. -/
+theorem rewriteStep_gate {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
+    {r : CoreFns m} {d : Nat} {e : Expr} (hg : unfoldableHead env e = true) :
+    rewriteStep r env d false e = pure none := by
+  unfold rewriteStep; split
+  · simp only [hg, Bool.not_false, Bool.and_self, ↓reduceIte]
+  · rfl
 
 theorem rewriteStep_headIs {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
-    {r : CoreFns m} {d : Nat} {e : Expr} {c : Name} (h : HeadIs c e.getAppFn) :
-    rewriteStep r env d e = rewriteRules r env d e (env.rulesFor c) := by
+    {r : CoreFns m} {d : Nat} {stuck : Bool} {e : Expr} {c : Name} (h : HeadIs c e.getAppFn)
+    (hg : (!stuck && unfoldableHead env e) = false) :
+    rewriteStep r env d stuck e = rewriteRules r env d e (env.rulesFor c) := by
   unfold rewriteStep
   revert h
   cases e.getAppFn with
-  | const c' us => rintro rfl; rfl
+  | const c' us => rintro rfl; simp only [hg, Bool.false_eq_true, ↓reduceIte]
   | _ => intro h; exact h.elim
 
 theorem rewriteStep_notconst {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
-    {r : CoreFns m} {d : Nat} {e : Expr} (h : ∀ c us, e.getAppFn = .const c us → False) :
-    rewriteStep r env d e = pure none := by
+    {r : CoreFns m} {d : Nat} {stuck : Bool} {e : Expr}
+    (h : ∀ c us, e.getAppFn = .const c us → False) :
+    rewriteStep r env d stuck e = pure none := by
   unfold rewriteStep; split
   · next h' => exact (h _ _ h').elim
   · rfl
@@ -462,6 +475,16 @@ theorem ruleArgC_spec (ih : SSimC mode eager env f) {d n : Nat} {lps : List Name
   | none =>
     sym only [conleche_grind] =>
       vcgen [ruleArgI.eq_def, hm, ruleRetryC_spec ih] <;> finish
+
+/-- The cached match's view of an application where nothing changed is the application. -/
+@[conleche_grind =] theorem appView_eq (f' a f₁ a₁ : Expr) :
+    appView (.app f' a) f' a f₁ a₁ = Expr.app f₁ a₁ := by
+  unfold appView
+  split
+  · rename_i h
+    simp only [Bool.and_eq_true, beq_iff_eq] at h
+    rw [h.1, h.2]
+  · rfl
 
 /-- A rule's match simulates its specification. -/
 theorem ruleMatchC_spec (ih : SSimC mode eager env f) {d n : Nat} {lps : List Name} :
@@ -586,15 +609,60 @@ theorem rewriteRulesC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d :
 
 /-- The rewrite step simulates its specification: the index's rules are `Env.rulesFor`'s. -/
 theorem rewriteStepC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d : Nat}
-    {e : Expr} {s₀ : CState} (hs : CSOK mode eager env s₀) (hw : Expr.WScoped d e) :
-    ⦃fun s => s = s₀⦄ rewriteStepI mode (mkFEnv env) eager f d e
+    {stuck : Bool} {e : Expr} {s₀ : CState} (hs : CSOK mode eager env s₀)
+    (hw : Expr.WScoped d e) :
+    ⦃fun s => s = s₀⦄ rewriteStepI mode (mkFEnv env) eager f d stuck e
     ⦃fun o s' => CSOK mode eager env s' ∧
-      Runs (rewriteStep (fueledFns mode eager env) env d e) o ∧ RuleWS d o; ⊤⦄ := by
+      Runs (rewriteStep (fueledFns mode eager env) env d stuck e) o ∧ RuleWS d o; ⊤⦄ := by
   unfold rewriteStepI rewriteStep
-  rw [mkFEnv_rulesFor_fun]
+  rw [mkFEnv_rulesFor_fun, unfoldableHeadC_spec]
   cases e.getAppFn with
-  | const c ls => exact rewriteRulesC_spec ih henv hw _ hs
+  | const c ls =>
+    by_cases hg : (!stuck && unfoldableHead env e) = true
+    · simp only [hg, ↓reduceIte]
+      sym only [conleche_grind] => vcgen <;> finish
+    · simp only [hg, Bool.false_eq_true, ↓reduceIte]
+      exact rewriteRulesC_spec ih henv hw _ hs
   | _ => sym only [conleche_grind] => vcgen <;> finish
+
+/-- Noting an origin at a well-scoped term keeps the origin well scoped. -/
+theorem OptWS.note {d : Nat} {o : Option Expr} {e : Expr} (ho : OptWS d o)
+    (he : Expr.WScoped d e) : OptWS d (noteOrigin env o e) := by
+  cases hn : noteOrigin env o e with
+  | none => trivial
+  | some o' =>
+    rcases noteOrigin_cases hn with rfl | rfl
+    · exact ho
+    · exact he
+grind_pattern [conleche_grind] OptWS.note => OptWS d (noteOrigin env o e)
+
+@[conleche_grind =] theorem noteOriginC_eq (env : Env) (o : Option Expr) (e : Expr) :
+    noteOriginC (mkFEnv env) o e = noteOrigin env o e := noteOriginC_spec
+
+@[conleche_grind =] theorem isStuckResultC_eq (env : Env) (e : Expr) :
+    isStuckResultC (mkFEnv env) e = isStuckResult env e := isStuckResultC_spec
+
+@[conleche_grind =] theorem unfoldableHeadC_eq (env : Env) (e : Expr) :
+    unfoldableHeadC (mkFEnv env) e = unfoldableHead env e := unfoldableHeadC_spec
+
+/-- The rules at an origin simulate their specification. -/
+theorem originFireC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d : Nat}
+    {o : Option Expr} {e : Expr} {s₀ : CState} (hs : CSOK mode eager env s₀)
+    (ho : OptWS d o) :
+    ⦃fun s => s = s₀⦄ originFireI mode (mkFEnv env) eager f d o e
+    ⦃fun r s' => CSOK mode eager env s' ∧
+      Runs (originFire (fueledFns mode eager env) env d o e) r ∧ RuleWS d r; ⊤⦄ := by
+  unfold originFireI originFire
+  cases o with
+  | none => sym only [conleche_grind] => vcgen <;> finish
+  | some o' =>
+    dsimp only
+    rw [isStuckResultC_spec]
+    by_cases hst : isStuckResult env e = true
+    · simp only [hst, ↓reduceIte]
+      exact rewriteStepC_spec ih henv hs ho
+    · simp only [hst, Bool.false_eq_true, ↓reduceIte]
+      sym only [conleche_grind] => vcgen <;> finish
 
 
 /-! ### The argument loop, by `vcgen` and `grind`
@@ -674,9 +742,18 @@ theorem whnfAppRuleC_spec (ih : SSimC .verified eager env f) (henv : EnvWF env) 
         Runs (whnfAppRuleW .verified (fueledFns .verified eager env) env d fa
           (args.toList.drop (i + 1))) w ∧
         StepWS d w; ⊤⦄ := by
-  sym only [conleche_grind, whnfAppRuleW_eq, rewriteStep_headIs (r := fueledFns .verified eager env)
-      (d := d) hfa, mkFEnv_rulesFor] =>
-    vcgen [whnfAppRuleI.eq_def, rewriteRulesC_spec ih henv hw, happ] <;> finish
+  cases hg : unfoldableHead env fa with
+  | true =>
+    -- δ comes first: the rules of a head that unfolds do not fire here
+    sym only [conleche_grind, whnfAppRuleW_eq, rewriteStep_gate (r := fueledFns .verified eager env)
+        (d := d) hg] =>
+      vcgen [whnfAppRuleI.eq_def, rewriteRulesC_spec ih henv hw, happ] <;> finish
+  | false =>
+    have hg' : (!false && unfoldableHead env fa) = false := by
+      rw [hg]; rfl
+    sym only [conleche_grind, whnfAppRuleW_eq, rewriteStep_headIs (r := fueledFns .verified eager env)
+        (d := d) hfa hg', mkFEnv_rulesFor] =>
+      vcgen [whnfAppRuleI.eq_def, rewriteRulesC_spec ih henv hw, happ] <;> finish
 
 /-- The bulk-beta argument loop simulates its pure mirror. -/
 theorem whnfAppC_spec (ih : SSimC .verified eager env f)
@@ -1092,6 +1169,17 @@ theorem CSOK.tickRule {s : CState} (hs : CSOK mode eager env s) :
   { hs with }
 grind_pattern [conleche_grind] CSOK.tickRule => CSOK mode eager env s, s.tickRule
 
+/-- Entering and leaving a rules-last restart keeps the invariant: no clause reads the count. -/
+theorem CSOK.nestEnter {s : CState} (hs : CSOK mode eager env s) :
+    CSOK mode eager env s.nestEnter :=
+  { hs with }
+grind_pattern [conleche_grind] CSOK.nestEnter => CSOK mode eager env s, s.nestEnter
+
+theorem CSOK.nestLeave {s : CState} (hs : CSOK mode eager env s) :
+    CSOK mode eager env s.nestLeave :=
+  { hs with }
+grind_pattern [conleche_grind] CSOK.nestLeave => CSOK mode eager env s, s.nestLeave
+
 /-- The head-normalization *loop* answers the chained `whnfCore` of its
 term, by induction on the shared step budget (task #106); a step's
 outcome is the same on both sides, a continuation re-enters the loop
@@ -1136,22 +1224,47 @@ section Walks2
 
 variable {env : Env} {f : Nat}
 
+/-- The loop's fixpoint where no rule fired at the origin: the stuck term. -/
+theorem Runs.whnfFix_none_eq {k : Option Expr → Expr → FueledM Expr} {d : Nat}
+    {o : Option Expr} {e₁ : Expr} (v : Expr)
+    (h : Runs (originFire (fueledFns mode eager env) env d o e₁) none) :
+    Runs (whnfFix (fueledFns mode eager env) env d k o e₁) v = (e₁ = v) := by
+  unfold whnfFix
+  rw [Runs.bind_eq v h]
+  exact Runs.pure_eq e₁ v
+grind_pattern [conleche_grind] Runs.whnfFix_none_eq =>
+  Runs (originFire (fueledFns mode eager env) env d o e₁) none,
+  Runs (whnfFix (fueledFns mode eager env) env d k o e₁) v
+
+/-- The loop's fixpoint where a rule fired at the origin: the loop goes on from the reduct. -/
+theorem Runs.whnfFix_some_eq {k : Option Expr → Expr → FueledM Expr} {d : Nat}
+    {o : Option Expr} {e₁ e₂ : Expr} {t : Name} (v : Expr)
+    (h : Runs (originFire (fueledFns mode eager env) env d o e₁) (some (t, e₂))) :
+    Runs (whnfFix (fueledFns mode eager env) env d k o e₁) v = Runs (k none e₂) v := by
+  unfold whnfFix
+  rw [Runs.bind_eq v h]
+grind_pattern [conleche_grind] Runs.whnfFix_some_eq =>
+  Runs (originFire (fueledFns mode eager env) env d o e₁) (some (t, e₂)),
+  Runs (whnfFix (fueledFns mode eager env) env d k o e₁) v
+
 /-- The reduction loop simulates its specification, by induction on the
 shared step budget (task #106). -/
 theorem whnfLoopC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d : Nat} (n : Nat) :
-    ∀ {i : Expr} {s₀ : CState}, CSOK mode eager env s₀ → Expr.WScoped d i →
-      ⦃fun s => s = s₀⦄ whnfLoopI mode (mkFEnv env) eager f d n i
+    ∀ {fires : Nat} {o : Option Expr} {i : Expr} {s₀ : CState}, CSOK mode eager env s₀ →
+      OptWS d o → Expr.WScoped d i →
+      ⦃fun s => s = s₀⦄ whnfLoopI mode (mkFEnv env) eager f d n fires o i
       ⦃fun v s' => CSOK mode eager env s' ∧
-        Runs (whnfLoop (fueledFns mode eager env) env d n i) v ∧ Expr.WScoped d v; ⊤⦄ := by
+        Runs (whnfLoop (fueledFns mode eager env) env d n o i) v ∧ Expr.WScoped d v; ⊤⦄ := by
   induction n with
   | zero =>
-    intro i s₀ hs hw
+    intro fires o i s₀ hs ho hw
     sym only [conleche_grind] => vcgen [whnfLoopI.eq_def] <;> finish
   | succ n ihn =>
-    intro i s₀ hs hw
+    intro fires o i s₀ hs ho hw
     sym only [conleche_grind, whnfLoop, whnfStep, unfoldDefinition_WScoped henv] =>
       vcgen [whnfLoopI.eq_def, ih.whnfCore_spec, reduceNatC_spec ih,
-        unfoldDefinitionC_spec (mode := mode) (eager := eager) (env := env), ihn] <;> finish
+        unfoldDefinitionC_spec (mode := mode) (eager := eager) (env := env),
+        originFireC_spec ih henv, tickRuleI, ihn] <;> finish
 
 theorem whnfBodyC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) :
     BodySpec mode eager env (whnfBodyI mode (mkFEnv env) eager f)

@@ -1978,16 +1978,76 @@ private theorem rewriteRules_shift (henv : EnvWF env)
 /-- The rewrite step commutes with the shift. -/
 private theorem rewriteStep_shift (henv : EnvWF env)
     (ih : ShiftClaims mode eager env fuel) {p d : Nat} (hpd : p ≤ d) {e : Expr}
-    (hw : WScoped d e) :
-    rewriteStep (pureFns mode eager env fuel) env (d + 1) (shiftFrom p e) =
-      (rewriteStep (pureFns mode eager env fuel) env d e).map
+    (hw : WScoped d e) (stuck : Bool) :
+    rewriteStep (pureFns mode eager env fuel) env (d + 1) stuck (shiftFrom p e) =
+      (rewriteStep (pureFns mode eager env fuel) env d stuck e).map
         (Option.map fun te => (te.1, shiftFrom p te.2)) := by
   unfold rewriteStep
-  rw [getAppFn_shiftFrom]
+  rw [getAppFn_shiftFrom, unfoldableHead_shiftFrom]
   cases e.getAppFn with
-  | const c ls => exact rewriteRules_shift henv ih hpd hw _
+  | const c ls =>
+    exact ite_rel _ (fun _ => rfl) (fun _ => rewriteRules_shift henv ih hpd hw _)
   | fvar i ty => rw [shiftFrom_fvar]; rfl
   | _ => rfl
+
+/-- The stuck test only reads binder, sort and literal shapes and head constants. -/
+private theorem isStuckResult_shiftFrom {env : Env} (p : Nat) (e : Expr) :
+    isStuckResult env (shiftFrom p e) = isStuckResult env e := by
+  have h := isCtorApp_shiftFrom (env := env) p e
+  cases e with
+  | fvar idx ty =>
+    rw [shiftFrom_fvar] at h ⊢
+    exact congrArg (!·) h
+  | _ => first | rfl | exact congrArg (!·) h
+
+/-- Noting an origin commutes with the shift. -/
+private theorem noteOrigin_shiftFrom {env : Env} (p : Nat) (o : Option Expr) (e : Expr) :
+    noteOrigin env (o.map (shiftFrom p)) (shiftFrom p e) =
+      (noteOrigin env o e).map (shiftFrom p) := by
+  cases o with
+  | some o => rfl
+  | none =>
+    show noteOrigin env none (shiftFrom p e) = (noteOrigin env none e).map (shiftFrom p)
+    unfold noteOrigin
+    rw [getAppFn_shiftFrom, unfoldableHead_shiftFrom]
+    generalize e.getAppFn = f
+    cases f <;> try rfl
+    case const c us =>
+      show (if !(env.rulesFor c).isEmpty && unfoldableHead env e then some (shiftFrom p e)
+          else none) = (if !(env.rulesFor c).isEmpty && unfoldableHead env e then some e
+          else none).map (shiftFrom p)
+      split <;> rfl
+    case fvar => rw [shiftFrom_fvar]; try rfl
+
+private theorem noteOrigin_none_shiftFrom {env : Env} (p : Nat) (e : Expr) :
+    noteOrigin env none (shiftFrom p e) = (noteOrigin env none e).map (shiftFrom p) :=
+  noteOrigin_shiftFrom p none e
+
+/-- The rules at an origin commute with the shift. -/
+private theorem originFire_shift (henv : EnvWF env)
+    (ih : ShiftClaims mode eager env fuel) {p d : Nat} (hpd : p ≤ d) {o : Option Expr}
+    {e : Expr} (ho : OriginP (WScoped d) o) :
+    originFire (pureFns mode eager env fuel) env (d + 1) (o.map (shiftFrom p)) (shiftFrom p e) =
+      (originFire (pureFns mode eager env fuel) env d o e).map
+        (Option.map fun te => (te.1, shiftFrom p te.2)) := by
+  cases o with
+  | none => rfl
+  | some o =>
+    show (if isStuckResult env (shiftFrom p e) = true then
+        rewriteStep (pureFns mode eager env fuel) env (d + 1) true (shiftFrom p o)
+        else pure none) =
+      (if isStuckResult env e = true then rewriteStep (pureFns mode eager env fuel) env d true o
+        else pure none).map (Option.map fun te => (te.1, shiftFrom p te.2))
+    rw [isStuckResult_shiftFrom]
+    exact ite_rel _ (fun _ => rewriteStep_shift henv ih hpd (ho _ rfl) true) (fun _ => rfl)
+
+/-- A rule's right side at an origin is scoped where the origin is. -/
+private theorem originFire_WScoped (henv : EnvWF env) {d : Nat} {o : Option Expr}
+    {e e₂ : Expr} {t : Name}
+    (h : originFire (pureFns mode eager env fuel) env d o e = .ok (some (t, e₂)))
+    (ho : OriginP (WScoped d) o) : WScoped d e₂ := by
+  obtain ⟨o', rfl, -, hrw⟩ := originFire_inv h
+  exact rewriteStep_WScoped henv (fun h hx => whnf_WScoped henv fuel h hx) hrw (ho _ rfl)
 
 /-- ι, then the rules, commutes with the shift. -/
 private theorem iotaThenRule_shift (henv : EnvWF env)
@@ -2002,7 +2062,7 @@ private theorem iotaThenRule_shift (henv : EnvWF env)
   cases o with
   | some e'' => rfl
   | none =>
-    refine bind_rel _ _ (rewriteStep_shift henv ih hpd hw) ?_
+    refine bind_rel _ _ (rewriteStep_shift henv ih hpd hw false) ?_
     intro o' _
     cases o' with
     | some te => rfl
@@ -2027,7 +2087,7 @@ private theorem whnfCore_step (henv : EnvWF env)
     show whnfCoreBody mode (pureFns mode eager env fuel) env c (d + 1) (.const n us) =
       (whnfCoreBody mode (pureFns mode eager env fuel) env c d (.const n us)).map (shiftFrom p)
     simp only [whnfCoreBody]
-    have h := rewriteStep_shift henv ih hpd (e := .const n us) hw
+    have h := rewriteStep_shift henv ih hpd (e := .const n us) hw false
     rw [show shiftFrom p (Expr.const n us) = .const n us from rfl] at h
     refine bind_rel _ _ h ?_
     intro o ho
@@ -2136,15 +2196,16 @@ own step budget (task #106); the per-step head normalization comes
 from the knot hypothesis `ih`. -/
 theorem whnfLoop_shift (henv : EnvWF env)
     (ih : ShiftClaims mode eager env fuel) :
-    ∀ (n : Nat) {p d : Nat}, p ≤ d → ∀ {e : Expr}, WScoped d e →
-      whnfLoop (pureFns mode eager env fuel) env (d + 1) n (shiftFrom p e) =
-        (whnfLoop (pureFns mode eager env fuel) env d n e).map (shiftFrom p) := by
+    ∀ (n : Nat) {p d : Nat}, p ≤ d → ∀ {o : Option Expr} {e : Expr}, OriginP (WScoped d) o →
+      WScoped d e →
+      whnfLoop (pureFns mode eager env fuel) env (d + 1) n (o.map (shiftFrom p)) (shiftFrom p e) =
+        (whnfLoop (pureFns mode eager env fuel) env d n o e).map (shiftFrom p) := by
   intro n
   induction n with
-  | zero => intro p d hpd e hw; rfl
+  | zero => intro p d hpd o e hor hw; rfl
   | succ n ihN =>
-  intro p d hpd e hw
-  simp only [whnfLoop, whnfStep]
+  intro p d hpd o e hor hw
+  simp only [whnfLoop, whnfStep, whnfFix]
   refine bind_rel _ _ (ih.whnfCore hpd hw) ?_
   intro e₁ he₁
   have hwe₁ : WScoped d e₁ := whnfCore_WScoped henv fuel he₁ hw
@@ -2159,20 +2220,27 @@ theorem whnfLoop_shift (henv : EnvWF env)
     rw [isLit_shiftFrom]
     by_cases hl : e₂.isLit = true
     · rw [ite_eq_left hl, ite_eq_left hl]; rfl
-    · rw [ite_eq_right hl, ite_eq_right hl]; exact ihN hpd hwe₂
+    · rw [ite_eq_right hl, ite_eq_right hl]; exact ihN hpd hor hwe₂
   | none =>
-    rw [unfoldDefinition_shiftFrom henv]
+    rw [unfoldDefinition_shiftFrom henv, noteOrigin_shiftFrom]
     cases hu : unfoldDefinition env e₁ with
-    | none => rfl
+    | none =>
+      refine bind_rel _ _ (originFire_shift henv ih hpd hor) ?_
+      intro ro hro
+      cases ro with
+      | none => rfl
+      | some te =>
+        obtain ⟨t, e₂⟩ := te
+        exact ihN hpd (o := none) (OriginP.none _) (originFire_WScoped henv hro hor)
     | some e₂ =>
       simp only [Option.map_some]
-      exact ihN hpd (unfoldDefinition_WScoped henv hu hwe₁)
+      exact ihN hpd (hor.note hwe₁) (unfoldDefinition_WScoped henv hu hwe₁)
 
 private theorem whnf_step (henv : EnvWF env)
     (ih : ShiftClaims mode eager env fuel) : WhnfShift mode eager env (fuel + 1) := by
   intro p d hpd e hw
   rw [whnf_succ, whnf_succ]
-  exact whnfLoop_shift henv ih whnfLoopFuel hpd hw
+  exact whnfLoop_shift henv ih whnfLoopFuel hpd (o := none) (OriginP.none _) hw
 
 private theorem infer_step (henv : EnvWF env)
     (ih : ShiftClaims mode eager env fuel) : InferShift mode eager env (fuel + 1) := by
@@ -2580,7 +2648,7 @@ private def DeltaStep.mapE (σ : Expr → Expr) : DeltaStep → DeltaStep
 /-- The lazy-delta loop's outcome under a map of its stuck pair. -/
 private def LazyRes.mapE (σ : Expr → Expr) : LazyRes → LazyRes
   | .verdict v => .verdict v
-  | .unknown a b => .unknown (σ a) (σ b)
+  | .unknown oa ob a b => .unknown (oa.map σ) (ob.map σ) (σ a) (σ b)
 
 private theorem headIsProj_shiftFrom {p : Nat} {e : Expr} :
     (shiftFrom p e).headIsProj = e.headIsProj := by
@@ -2795,12 +2863,14 @@ private theorem lazyDeltaStep_WScoped (henv : EnvWF env) {d : Nat} {a b a' b' : 
     (fun hc hx => whnfCore_WScoped henv fuel hc hx) h hwa hwb
 
 private theorem lazyDeltaReduction_WScoped (henv : EnvWF env) {d n : Nat}
-    {a b a₁ b₁ : Expr}
-    (h : lazyDeltaReduction mode eager (pureFns mode eager env fuel) env d n a b =
-      .ok (.unknown a₁ b₁))
-    (hwa : WScoped d a) (hwb : WScoped d b) : WScoped d a₁ ∧ WScoped d b₁ :=
+    {oa ob oa₁ ob₁ : Option Expr} {a b a₁ b₁ : Expr}
+    (h : lazyDeltaReduction mode eager (pureFns mode eager env fuel) env d n oa ob a b =
+      .ok (.unknown oa₁ ob₁ a₁ b₁))
+    (hoa : OriginP (WScoped d) oa) (hob : OriginP (WScoped d) ob)
+    (hwa : WScoped d a) (hwb : WScoped d b) :
+    WScoped d a₁ ∧ WScoped d b₁ ∧ OriginP (WScoped d) oa₁ ∧ OriginP (WScoped d) ob₁ :=
   lazyDeltaReduction_pres (WScoped d) (fun hu hx => unfoldDefinition_WScoped henv hu hx)
-    (fun hc hx => whnfCore_WScoped henv fuel hc hx) n h hwa hwb
+    (fun hc hx => whnfCore_WScoped henv fuel hc hx) n h hoa hob hwa hwb
 
 /-- One unfolding put through the cheap `whnfCore`, then the step's end,
 commutes with the shift. -/
@@ -2935,16 +3005,17 @@ private theorem lazyDeltaStep_shift (henv : EnvWF env)
 own step budget. -/
 private theorem lazyDeltaReduction_shift (henv : EnvWF env)
     (ih : ShiftClaims mode eager env fuel) :
-    ∀ (n : Nat) {p d : Nat}, p ≤ d → ∀ {a b : Expr}, WScoped d a → WScoped d b →
-      lazyDeltaReduction mode eager (pureFns mode eager env fuel) env (d + 1) n (shiftFrom p a)
-          (shiftFrom p b) =
-        (lazyDeltaReduction mode eager (pureFns mode eager env fuel) env d n a b).map
+    ∀ (n : Nat) {p d : Nat}, p ≤ d → ∀ {qa qb : Option Expr} {a b : Expr},
+      OriginP (WScoped d) qa → OriginP (WScoped d) qb → WScoped d a → WScoped d b →
+      lazyDeltaReduction mode eager (pureFns mode eager env fuel) env (d + 1) n
+          (qa.map (shiftFrom p)) (qb.map (shiftFrom p)) (shiftFrom p a) (shiftFrom p b) =
+        (lazyDeltaReduction mode eager (pureFns mode eager env fuel) env d n qa qb a b).map
           (LazyRes.mapE (shiftFrom p)) := by
   intro n
   induction n with
-  | zero => intro p d _ a b _ _; rfl
+  | zero => intro p d _ qa qb a b _ _ _ _; rfl
   | succ n ihN =>
-  intro p d hpd a b hwa hwb
+  intro p d hpd qa qb a b hqa hqb hwa hwb
   simp only [lazyDeltaReduction]
   refine bind_rel_eq _ (defeqOffset_shift ih hpd hwa hwb) ?_
   intro o _
@@ -2993,10 +3064,33 @@ private theorem lazyDeltaReduction_shift (henv : EnvWF env)
   cases st with
   | cont a' b' =>
     obtain ⟨hwa', hwb'⟩ := lazyDeltaStep_WScoped henv hst hwa hwb
-    exact ihN hpd hwa' hwb'
+    show lazyDeltaReduction mode eager (pureFns mode eager env fuel) env (d + 1) n
+        (noteOrigin env (qa.map (shiftFrom p)) (shiftFrom p a'))
+        (noteOrigin env (qb.map (shiftFrom p)) (shiftFrom p b')) (shiftFrom p a') (shiftFrom p b') = _
+    rw [noteOrigin_shiftFrom, noteOrigin_shiftFrom]
+    exact ihN hpd (hqa.note hwa') (hqb.note hwb') hwa' hwb'
   | eq => rfl
   | diff => rfl
   | unknown => rfl
+
+/-- The rules last commute with the shift. -/
+private theorem rulesLast_shift (henv : EnvWF env)
+    (ih : ShiftClaims mode eager env fuel) {p d : Nat} (hpd : p ≤ d) {oa ob : Option Expr}
+    {a b : Expr} (hoa : OriginP (WScoped d) oa) (hob : OriginP (WScoped d) ob)
+    (hwa : WScoped d a) (hwb : WScoped d b) :
+    rulesLast (pureFns mode eager env fuel) env (d + 1) (oa.map (shiftFrom p))
+        (ob.map (shiftFrom p)) (shiftFrom p a) (shiftFrom p b) =
+      rulesLast (pureFns mode eager env fuel) env d oa ob a b := by
+  unfold rulesLast
+  refine bind_congr _ (originFire_shift henv ih hpd hoa) ?_
+  intro ra hra
+  refine bind_congr _ (originFire_shift henv ih hpd hob) ?_
+  intro rb hrb
+  rcases ra with _ | ⟨t, a₂⟩ <;> rcases rb with _ | ⟨t', b₂⟩
+  · rfl
+  · exact ih.defeq hpd hwa (originFire_WScoped henv hrb hob)
+  · exact ih.defeq hpd (originFire_WScoped henv hra hoa) hwb
+  · exact ih.defeq hpd (originFire_WScoped henv hra hoa) (originFire_WScoped henv hrb hob)
 
 /-- `lazy_delta_proj_reduction` is shift-invariant. -/
 private theorem lazyDeltaProjReduction_shift (henv : EnvWF env)
@@ -3292,27 +3386,34 @@ private theorem defeqLazy_shift (henv : EnvWF env)
   | some v => rfl
   | none =>
   dsimp only
+  rw [noteOrigin_none_shiftFrom, noteOrigin_none_shiftFrom]
+  have hno : ∀ {x : Expr}, WScoped d x → OriginP (WScoped d) (noteOrigin env none x) :=
+    fun hx => (OriginP.none _).note hx
   refine bind_congr (LazyRes.mapE (shiftFrom p))
-    (lazyDeltaReduction_shift henv ih _ hpd hwwa hwwb) ?_
+    (lazyDeltaReduction_shift henv ih _ hpd (hno hwwa) (hno hwwb) hwwa hwwb) ?_
   intro lr hlr
   cases lr with
   | verdict v => rfl
-  | unknown a₁ b₁ =>
-  obtain ⟨hwa₁, hwb₁⟩ := lazyDeltaReduction_WScoped henv hlr hwwa hwwb
+  | unknown oa ob a₁ b₁ =>
+  obtain ⟨hwa₁, hwb₁, hoa, hob⟩ :=
+    lazyDeltaReduction_WScoped henv hlr (hno hwwa) (hno hwwb) hwwa hwwb
   simp only [LazyRes.mapE]
+  have hrl := rulesLast_shift henv ih hpd hoa hob hwa₁ hwb₁
   refine bind_congr_eq (defeqProjPair_shift henv ih hpd hwa₁ hwb₁) ?_
   rintro rp -
   refine ite_congr' (fun _ => rfl) (fun _ => ?_)
   rw [headIsProj_shiftFrom, headIsProj_shiftFrom]
-  refine ite_congr' (fun _ => defeqStuck_shift henv ih hpd hwa₁ hwb₁) (fun _ => ?_)
+  refine ite_congr' (fun _ => bind_congr_eq (defeqStuck_shift henv ih hpd hwa₁ hwb₁)
+    fun _ _ => ite_congr' (fun _ => rfl) (fun _ => hrl)) (fun _ => ?_)
   refine bind_congr _ (ih.whnfCore hpd hwa₁) ?_
   intro a₂ ha₂
   refine bind_congr _ (ih.whnfCore hpd hwb₁) ?_
   intro b₂ hb₂
   rw [shiftFrom_beq, shiftFrom_beq]
-  exact ite_congr' (fun _ => defeqStuck_shift henv ih hpd hwa₁ hwb₁)
-    (fun _ => ih.defeq hpd (whnfCore_WScoped henv fuel ha₂ hwa₁)
-      (whnfCore_WScoped henv fuel hb₂ hwb₁))
+  exact ite_congr' (fun _ => bind_congr_eq (defeqStuck_shift henv ih hpd hwa₁ hwb₁)
+      fun _ _ => ite_congr' (fun _ => rfl) (fun _ => hrl))
+    (fun _ => bind_congr_eq (ih.defeq hpd (whnfCore_WScoped henv fuel ha₂ hwa₁)
+      (whnfCore_WScoped henv fuel hb₂ hwb₁)) fun _ _ => ite_congr' (fun _ => rfl) (fun _ => hrl))
 
 private theorem defeq_step (henv : EnvWF env)
     (ih : ShiftClaims mode eager env fuel) : DefEqShift mode eager env (fuel + 1) := by

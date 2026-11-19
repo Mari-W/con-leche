@@ -362,6 +362,18 @@ theorem unfoldableHead_ext {e : Expr} (he : Res env₁ e) :
   dsimp only
   rw [hx.find_of_isSome (res_head he hfn)]
 
+theorem isStuckResult_ext {e : Expr} (he : Res env₁ e) :
+    isStuckResult env₂ e = isStuckResult env₁ e := by
+  cases e <;> first | rfl | exact congrArg (!·) (isCtorApp_ext hx he)
+
+theorem noteOrigin_ext {o : Option Expr} {e : Expr} (he : Res env₁ e) :
+    noteOrigin env₂ o e = noteOrigin env₁ o e := by
+  unfold noteOrigin
+  cases o <;> try rfl
+  cases hfn : e.getAppFn <;> try rfl
+  dsimp only
+  rw [hx.rules, unfoldableHead_ext hx he]
+
 theorem headHint_ext {e : Expr} (he : Res env₁ e) : headHint env₂ e = headHint env₁ e := by
   unfold headHint
   cases hfn : e.getAppFn <;> try rfl

@@ -415,8 +415,8 @@ certificates and the match through the bridges, and `rewriteStep_mem` the rule's
 table. -/
 theorem rewriteStep_bridge (hw : WhnfBridge μ eager env fuel) (hd : DefEqBridge μ eager env fuel)
     (hi : InferBridge μ eager env fuel)
-    {d : Nat} {e e₂ : Expr} {t : Name}
-    (h : rewriteStep (pureFns μ eager env fuel) env d e = .ok (some (t, e₂))) :
+    {d : Nat} {stuck : Bool} {e e₂ : Expr} {t : Name}
+    (h : rewriteStep (pureFns μ eager env fuel) env d stuck e = .ok (some (t, e₂))) :
     Red env d e e₂ := by
   obtain ⟨cv, args, us, u, A, c, ls, e₁, hf, hm, hres, -, hlen, hsub, hleaf, hcert⟩ :=
     rewriteAttempt_inv (rewriteStep_inv h)
@@ -474,38 +474,55 @@ theorem whnfCore_bridge_succ (hwc : WhnfCoreBridge .verified eager env fuel)
     · exact .refl
     · exact .trans hR (.trans (reduceProjCore_bridge hw hr) (hwc hcont))
 
-/-- One `whnfStep` under a bridged continuation is a `Red` chain
-(`whnfStep_inv`: `whnfCore`, then acceleration (a literal is final) or δ
-into `k`, or the fixpoint). -/
+/-- The rules at an origin the chain from `e₀` passed through reduce `e₀` (`Red.rewrite` at the
+origin). -/
+theorem originFire_bridge (hw : WhnfBridge μ eager env fuel) (hd : DefEqBridge μ eager env fuel)
+    (hi : InferBridge μ eager env fuel) {d : Nat} {o : Option Expr} {e₀ e e₂ : Expr} {t : Name}
+    (h : originFire (pureFns μ eager env fuel) env d o e = .ok (some (t, e₂)))
+    (ho : OriginP (Red env d e₀) o) : Red env d e₀ e₂ := by
+  obtain ⟨o', rfl, -, hrw⟩ := originFire_inv h
+  exact .trans (ho _ rfl) (rewriteStep_bridge hw hd hi hrw)
+
+/-- One `whnfStep` under a bridged continuation is a `Red` chain from the loop's input `e₀`
+(`whnfStep_inv`: `whnfCore`, then acceleration (a literal is final) or δ into `k`, the fixpoint,
+or the rules at the origin into `k`).  The origin, a term of the chain, is a reduct of `e₀`, and
+so is the rule's right side there. -/
 theorem whnfStep_bridge (hwc : WhnfCoreBridge μ eager env fuel) (hw : WhnfBridge μ eager env fuel)
-    {d : Nat} {k : Expr → CheckM Expr}
-    (hk : ∀ {e e' : Expr}, k e = .ok e' → Red env d e e')
-    {e e' : Expr}
-    (h : whnfStep (pureFns μ eager env fuel) env d k e = .ok e') :
-    Red env d e e' := by
+    (hd : DefEqBridge μ eager env fuel) (hi : InferBridge μ eager env fuel)
+    {d : Nat} {e₀ : Expr} {k : Option Expr → Expr → CheckM Expr}
+    (hk : ∀ {o : Option Expr} {e e' : Expr}, k o e = .ok e' → Red env d e₀ e →
+      OriginP (Red env d e₀) o → Red env d e₀ e')
+    {o : Option Expr} {e e' : Expr}
+    (h : whnfStep (pureFns μ eager env fuel) env d k o e = .ok e')
+    (he : Red env d e₀ e) (ho : OriginP (Red env d e₀) o) :
+    Red env d e₀ e' := by
   obtain ⟨e₁, hwc₁, hrest⟩ := whnfStep_inv h
-  have h₁ : Red env d e e₁ := hwc hwc₁
-  rcases hrest with ⟨e₂, hnat, ⟨-, rfl⟩ | hk₂⟩ | ⟨-, e₂, hδ, hk₂⟩ | ⟨-, -, rfl⟩
+  have h₁ : Red env d e₀ e₁ := .trans he (hwc hwc₁)
+  rcases hrest with ⟨e₂, hnat, ⟨-, rfl⟩ | hk₂⟩ | ⟨-, e₂, hδ, hk₂⟩ |
+    ⟨-, -, ⟨-, rfl⟩ | ⟨t, e₂, hof, hk₂⟩⟩
   · exact .trans h₁ (reduceNat_bridge hw hnat)
-  · exact .trans h₁ (.trans (reduceNat_bridge hw hnat) (hk hk₂))
-  · exact .trans h₁ (.trans (.delta hδ) (hk hk₂))
+  · exact hk hk₂ (.trans h₁ (reduceNat_bridge hw hnat)) ho
+  · exact hk hk₂ (.trans h₁ (.delta hδ)) (ho.note h₁)
   · exact h₁
+  · exact hk hk₂ (originFire_bridge hw hd hi hof ho) (OriginP.none _)
 
 /-- The loop at every budget. -/
 theorem whnfLoop_bridge (hwc : WhnfCoreBridge μ eager env fuel) (hw : WhnfBridge μ eager env fuel)
-    {d : Nat} : ∀ (n : Nat) {e e' : Expr},
-      whnfLoop (pureFns μ eager env fuel) env d n e = .ok e' →
-      Red env d e e'
-  | 0, _, _, h => by
+    (hd : DefEqBridge μ eager env fuel) (hi : InferBridge μ eager env fuel)
+    {d : Nat} {e₀ : Expr} : ∀ (n : Nat) {o : Option Expr} {e e' : Expr},
+      whnfLoop (pureFns μ eager env fuel) env d n o e = .ok e' →
+      Red env d e₀ e → OriginP (Red env d e₀) o → Red env d e₀ e'
+  | 0, _, _, _, h, _, _ => by
     simp [whnfLoop, throw, throwThe, MonadExceptOf.throw] at h
-  | n + 1, _, _, h => whnfStep_bridge hwc hw (whnfLoop_bridge hwc hw n) h
+  | n + 1, _, _, _, h, he, ho =>
+    whnfStep_bridge hwc hw hd hi (whnfLoop_bridge hwc hw hd hi n) h he ho
 
-/-- **`whnf` at `fuel + 1`**: the loop at its budget. -/
+/-- **`whnf` at `fuel + 1`**: the loop at its budget, from the input with no origin. -/
 theorem whnf_bridge_succ (hwc : WhnfCoreBridge μ eager env fuel) (hw : WhnfBridge μ eager env fuel)
-    :
+    (hd : DefEqBridge μ eager env fuel) (hi : InferBridge μ eager env fuel) :
     WhnfBridge μ eager env (fuel + 1) := by
   intro d e e' h
   rw [whnf_succ] at h
-  exact whnfLoop_bridge hwc hw _ h
+  exact whnfLoop_bridge hwc hw hd hi _ h .refl (OriginP.none _)
 
 end ConLeche.Rules

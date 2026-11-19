@@ -50,6 +50,20 @@ if sys.argv[1] == "match":
     stmt_patch(sys.argv[2], f"{sys.argv[3]}/rewrite_rule_nonlinear_diff.ndjson", [("nl_diff", "nlDiffTgt")])
     sys.exit(0)
 
+if sys.argv[1] == "order":
+    # RrOrder.lean: the reduction order (δ first, the rules where the unfolding gets stuck)
+    swap, stuck, cat, out = sys.argv[2:6]
+    open(f"{out}/rewrite_rule_order_swap.ndjson", "w").write(open(swap).read())
+    open(f"{out}/rewrite_rule_order_stuck.ndjson", "w").write(open(stuck).read())
+    # the same theorem with no rule in force
+    recs = [json.loads(l) for l in open(stuck).read().splitlines()]
+    for r in recs:
+        if "thm" in r: r["thm"].pop("rewrites", None)
+    J = lambda r: json.dumps(r, separators=(",", ":"))
+    open(f"{out}/rewrite_rule_order_stuck_norule.ndjson", "w").write("\n".join(J(r) for r in recs) + "\n")
+    stmt_patch(cat, f"{out}/rewrite_rule_order_global.ndjson", [("cat_nil'", "catNilTgt")])
+    sys.exit(0)
+
 if sys.argv[1] == "loop":
     # RrLoop.lean: a rule whose right side unfolds back to its left side, in a false conversion
     stmt_patch(sys.argv[2], f"{sys.argv[3]}/rewrite_rule_decl_budget.ndjson", [("loopBad", "loopTgt")])

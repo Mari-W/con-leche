@@ -569,8 +569,8 @@ member, so its type is member free, and the arguments are subterms of the term. 
 theorem rewriteStep_occDeep {env : Env} {names : List Name} (hN : WhnfNamesFree env names)
     {r : CoreFns CheckM} {d : Nat}
     (hwh : ∀ {a w : Expr}, r.whnf d a = .ok w → a.occDeep names = false → w.occDeep names = false)
-    {e e₂ : Expr} {t : Name}
-    (hrw : rewriteStep r env d e = .ok (some (t, e₂))) (h0 : e.occDeep names = false) :
+    {stuck : Bool} {e e₂ : Expr} {t : Name}
+    (hrw : rewriteStep r env d stuck e = .ok (some (t, e₂))) (h0 : e.occDeep names = false) :
     e₂.occDeep names = false := by
   obtain ⟨cv, args, us, u, A, c, ls, e₁, hf, hm, hres, -, -, hsub, -⟩ :=
     rewriteAttempt_inv (rewriteStep_inv hrw)
@@ -693,17 +693,19 @@ theorem whnfPres_occDeep {env : Env} {names : List Name} (hN : WhnfNamesFree env
             Expr.occDeep_getAppArgs ihLoop
             (fun s hs => strLitToConstructor_occDeep hN hs s) hr h2)
     · -- whnf: the loop's own step budget
-      have hloop : ∀ (n : Nat) {d : Nat} {e e' : Expr},
-          whnfLoop (pureFns mode false env fuel) env d n e = .ok e' →
+      have hloop : ∀ (n : Nat) {d : Nat} {o : Option Expr} {e e' : Expr},
+          whnfLoop (pureFns mode false env fuel) env d n o e = .ok e' →
+          OriginP (fun x => x.occDeep names = false) o →
           e.occDeep names = false → e'.occDeep names = false := by
         intro n
         induction n with
-        | zero => intro _ _ _ h _; exact nomatch h
+        | zero => intro _ _ _ _ h _ _; exact nomatch h
         | succ n ihN =>
-          intro d e e' h he
+          intro d o e e' h ho he
           obtain ⟨e₁, hwc, hcase⟩ := whnfStep_inv h
           have h1 := ihCore hwc he
-          rcases hcase with ⟨e₂, hrn, hfin⟩ | ⟨-, e₂, hu, hcont⟩ | ⟨-, -, rfl⟩
+          rcases hcase with ⟨e₂, hrn, hfin⟩ | ⟨-, e₂, hu, hcont⟩ |
+            ⟨-, -, ⟨-, rfl⟩ | ⟨t, e₂, hof, hcont⟩⟩
           · have h₂ : e₂.occDeep names = false := by
               rcases reduceNat_inv_bool hrn with ⟨k, rfl⟩ | ⟨bn, rfl, hbn⟩
               · rfl
@@ -713,11 +715,13 @@ theorem whnfPres_occDeep {env : Env} {names : List Name} (hN : WhnfNamesFree env
                 · exact Expr.occDeep_const hf
             rcases hfin with ⟨-, rfl⟩ | hcont
             · exact h₂
-            · exact ihN hcont h₂
-          · exact ihN hcont (unfoldDefinition_occDeep hN hu h1)
+            · exact ihN hcont ho h₂
+          · exact ihN hcont (ho.note h1) (unfoldDefinition_occDeep hN hu h1)
           · exact h1
+          · obtain ⟨o', rfl, -, hrw⟩ := originFire_inv hof
+            exact ihN hcont (OriginP.none _) (rewriteStep_occDeep hN ihLoop hrw (ho _ rfl))
       intro d e e' h he
-      exact hloop whnfLoopFuel h he
+      exact hloop whnfLoopFuel h (OriginP.none _) he
     · -- inferTypeCore
       intro d e t h he
       cases e with

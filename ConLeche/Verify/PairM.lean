@@ -614,18 +614,42 @@ theorem rewriteRules_snd_proj (d : Nat) (e : Expr) :
     | some e₂ => rfl
     | none => exact rewriteRules_snd_proj d e ts
 
-theorem rewriteStep_fst_proj (d : Nat) (e : Expr) :
-    (rewriteStep (pairFns r₁ r₂ h) env d e).val.1 = rewriteStep r₁ env d e := by
+theorem rewriteStep_fst_proj (d : Nat) (stuck : Bool) (e : Expr) :
+    (rewriteStep (pairFns r₁ r₂ h) env d stuck e).val.1 =
+      rewriteStep r₁ env d stuck e := by
   unfold rewriteStep
   split
-  · exact rewriteRules_fst_proj d e _
+  · split
+    · rfl
+    · exact rewriteRules_fst_proj d e _
   · rfl
 
-theorem rewriteStep_snd_proj (d : Nat) (e : Expr) :
-    (rewriteStep (pairFns r₁ r₂ h) env d e).val.2 = rewriteStep r₂ env d e := by
+theorem rewriteStep_snd_proj (d : Nat) (stuck : Bool) (e : Expr) :
+    (rewriteStep (pairFns r₁ r₂ h) env d stuck e).val.2 =
+      rewriteStep r₂ env d stuck e := by
   unfold rewriteStep
   split
-  · exact rewriteRules_snd_proj d e _
+  · split
+    · rfl
+    · exact rewriteRules_snd_proj d e _
+  · rfl
+
+theorem originFire_fst_proj (d : Nat) (o : Option Expr) (e : Expr) :
+    (originFire (pairFns r₁ r₂ h) env d o e).val.1 = originFire r₁ env d o e := by
+  unfold originFire
+  split
+  · split
+    · exact rewriteStep_fst_proj d true _
+    · rfl
+  · rfl
+
+theorem originFire_snd_proj (d : Nat) (o : Option Expr) (e : Expr) :
+    (originFire (pairFns r₁ r₂ h) env d o e).val.2 = originFire r₂ env d o e := by
+  unfold originFire
+  split
+  · split
+    · exact rewriteStep_snd_proj d true _
+    · rfl
   · rfl
 
 theorem ensureSort_fst_proj (d : Nat) (e : Expr) :
@@ -820,6 +844,7 @@ macro "fst_step2" : tactic =>
     | (rw [defEqList_fst])
     | (rw [reduceNat_fst_proj])
     | (rw [rewriteStep_fst_proj])
+    | (rw [originFire_fst_proj])
     | (rw [ensureSort_fst_proj])
     | (rw [proofIrrel_fst_proj])
     | (rw [propIrrel_fst_proj])
@@ -849,6 +874,7 @@ macro "snd_step2" : tactic =>
     | (rw [defEqList_snd])
     | (rw [reduceNat_snd_proj])
     | (rw [rewriteStep_snd_proj])
+    | (rw [originFire_snd_proj])
     | (rw [ensureSort_snd_proj])
     | (rw [proofIrrel_snd_proj])
     | (rw [propIrrel_snd_proj])
@@ -1195,6 +1221,7 @@ macro "fst_core3" x:tactic : tactic =>
     | (rw [defEqList_fst])
     | (rw [reduceNat_fst_proj])
     | (rw [rewriteStep_fst_proj])
+    | (rw [originFire_fst_proj])
     | (rw [ensureSort_fst_proj])
     | (rw [proofIrrel_fst_proj])
     | (rw [structEtaCertWith_fst_proj])
@@ -1232,6 +1259,7 @@ macro "snd_core3" x:tactic : tactic =>
     | (rw [defEqList_snd])
     | (rw [reduceNat_snd_proj])
     | (rw [rewriteStep_snd_proj])
+    | (rw [originFire_snd_proj])
     | (rw [ensureSort_snd_proj])
     | (rw [proofIrrel_snd_proj])
     | (rw [structEtaCertWith_snd_proj])
@@ -1375,20 +1403,20 @@ theorem lazyDeltaStep_snd_proj (d : Nat) (a b : Expr) :
   snd_core3 (first | rw [deltaQuick_snd_proj] | rw [tryUnfoldProjApp_snd_proj] | rw [defeqSpine_snd])
 
 theorem lazyDeltaReduction_fst_proj (d : Nat) :
-    ∀ (n : Nat) (a b : Expr),
-      (lazyDeltaReduction mode eager (pairFns r₁ r₂ h) env d n a b).val.1 =
-        lazyDeltaReduction mode eager r₁ env d n a b
-  | 0, _, _ => rfl
-  | n + 1, a, b => by
+    ∀ (n : Nat) (oa ob : Option Expr) (a b : Expr),
+      (lazyDeltaReduction mode eager (pairFns r₁ r₂ h) env d n oa ob a b).val.1 =
+        lazyDeltaReduction mode eager r₁ env d n oa ob a b
+  | 0, _, _, _, _ => rfl
+  | n + 1, oa, ob, a, b => by
     unfold lazyDeltaReduction
     fst_core3 (first | rw [lazyDeltaStep_fst_proj] | rw [defeqOffset_fst_proj] | rw [lazyDeltaReduction_fst_proj d n])
 
 theorem lazyDeltaReduction_snd_proj (d : Nat) :
-    ∀ (n : Nat) (a b : Expr),
-      (lazyDeltaReduction mode eager (pairFns r₁ r₂ h) env d n a b).val.2 =
-        lazyDeltaReduction mode eager r₂ env d n a b
-  | 0, _, _ => rfl
-  | n + 1, a, b => by
+    ∀ (n : Nat) (oa ob : Option Expr) (a b : Expr),
+      (lazyDeltaReduction mode eager (pairFns r₁ r₂ h) env d n oa ob a b).val.2 =
+        lazyDeltaReduction mode eager r₂ env d n oa ob a b
+  | 0, _, _, _, _ => rfl
+  | n + 1, oa, ob, a, b => by
     unfold lazyDeltaReduction
     snd_core3 (first | rw [lazyDeltaStep_snd_proj] | rw [defeqOffset_snd_proj] | rw [lazyDeltaReduction_snd_proj d n])
 
@@ -1454,6 +1482,7 @@ macro "fst_core4" x:tactic : tactic =>
     | (rw [defEqList_fst])
     | (rw [reduceNat_fst_proj])
     | (rw [rewriteStep_fst_proj])
+    | (rw [originFire_fst_proj])
     | (rw [ensureSort_fst_proj])
     | (rw [proofIrrel_fst_proj])
     | (rw [propIrrel_fst_proj])
@@ -1518,6 +1547,7 @@ macro "snd_core4" x:tactic : tactic =>
     | (rw [defEqList_snd])
     | (rw [reduceNat_snd_proj])
     | (rw [rewriteStep_snd_proj])
+    | (rw [originFire_snd_proj])
     | (rw [ensureSort_snd_proj])
     | (rw [proofIrrel_snd_proj])
     | (rw [propIrrel_snd_proj])
@@ -1579,43 +1609,45 @@ parameterized over their continuation exactly as over the record, so
 each gets one projection lemma with a continuation hypothesis and the
 loop lemma is a plain induction on the step budget. -/
 
-theorem whnfStep_fst_proj (d : Nat) (k : Expr → PairM rel Expr)
-    (k₁ : Expr → M₁ Expr) (hk : ∀ e, (k e).val.1 = k₁ e) (e : Expr) :
-    (whnfStep (pairFns r₁ r₂ h) env d k e).val.1 =
-      whnfStep r₁ env d k₁ e := by
-  unfold whnfStep
+theorem whnfStep_fst_proj (d : Nat) (k : Option Expr → Expr → PairM rel Expr)
+    (k₁ : Option Expr → Expr → M₁ Expr) (hk : ∀ o e, (k o e).val.1 = k₁ o e)
+    (o : Option Expr) (e : Expr) :
+    (whnfStep (pairFns r₁ r₂ h) env d k o e).val.1 =
+      whnfStep r₁ env d k₁ o e := by
+  unfold whnfStep whnfFix
   fst_tac4k hk
 
-theorem whnfStep_snd_proj (d : Nat) (k : Expr → PairM rel Expr)
-    (k₂ : Expr → M₂ Expr) (hk : ∀ e, (k e).val.2 = k₂ e) (e : Expr) :
-    (whnfStep (pairFns r₁ r₂ h) env d k e).val.2 =
-      whnfStep r₂ env d k₂ e := by
-  unfold whnfStep
+theorem whnfStep_snd_proj (d : Nat) (k : Option Expr → Expr → PairM rel Expr)
+    (k₂ : Option Expr → Expr → M₂ Expr) (hk : ∀ o e, (k o e).val.2 = k₂ o e)
+    (o : Option Expr) (e : Expr) :
+    (whnfStep (pairFns r₁ r₂ h) env d k o e).val.2 =
+      whnfStep r₂ env d k₂ o e := by
+  unfold whnfStep whnfFix
   snd_tac4k hk
 
 theorem whnfLoop_fst_proj (d : Nat) :
-    ∀ (n : Nat) (e : Expr),
-      (whnfLoop (pairFns r₁ r₂ h) env d n e).val.1 = whnfLoop r₁ env d n e
-  | 0, _ => rfl
-  | n + 1, e =>
-    whnfStep_fst_proj d _ _ (fun e' => whnfLoop_fst_proj d n e') e
+    ∀ (n : Nat) (o : Option Expr) (e : Expr),
+      (whnfLoop (pairFns r₁ r₂ h) env d n o e).val.1 = whnfLoop r₁ env d n o e
+  | 0, _, _ => rfl
+  | n + 1, o, e =>
+    whnfStep_fst_proj d _ _ (fun o' e' => whnfLoop_fst_proj d n o' e') o e
 
 theorem whnfLoop_snd_proj (d : Nat) :
-    ∀ (n : Nat) (e : Expr),
-      (whnfLoop (pairFns r₁ r₂ h) env d n e).val.2 = whnfLoop r₂ env d n e
-  | 0, _ => rfl
-  | n + 1, e =>
-    whnfStep_snd_proj d _ _ (fun e' => whnfLoop_snd_proj d n e') e
+    ∀ (n : Nat) (o : Option Expr) (e : Expr),
+      (whnfLoop (pairFns r₁ r₂ h) env d n o e).val.2 = whnfLoop r₂ env d n o e
+  | 0, _, _ => rfl
+  | n + 1, o, e =>
+    whnfStep_snd_proj d _ _ (fun o' e' => whnfLoop_snd_proj d n o' e') o e
 
 theorem whnfBody_fst_proj (d : Nat) (e : Expr) :
     (whnfBody (pairFns r₁ r₂ h) env d e).val.1 =
       whnfBody r₁ env d e :=
-  whnfLoop_fst_proj d whnfLoopFuel e
+  whnfLoop_fst_proj d whnfLoopFuel none e
 
 theorem whnfBody_snd_proj (d : Nat) (e : Expr) :
     (whnfBody (pairFns r₁ r₂ h) env d e).val.2 =
       whnfBody r₂ env d e :=
-  whnfLoop_snd_proj d whnfLoopFuel e
+  whnfLoop_snd_proj d whnfLoopFuel none e
 
 theorem inferBody_fst_proj (d : Nat) (e : Expr) :
     (inferBody (pairFns r₁ r₂ h) env d e).val.1 =
@@ -1646,17 +1678,39 @@ theorem inferBodyIO_snd_proj (d : Nat) (e : Expr) :
   unfold inferBodyIO
   snd_tac4
 
+theorem rulesLast_fst_proj (d : Nat) (oa ob : Option Expr) (a b : Expr) :
+    (rulesLast (pairFns r₁ r₂ h) env d oa ob a b).val.1 = rulesLast r₁ env d oa ob a b := by
+  unfold rulesLast
+  rw [PairM.fst_bind, originFire_fst_proj]
+  congr 1
+  funext ra
+  rw [PairM.fst_bind, originFire_fst_proj]
+  congr 1
+  funext rb
+  rcases ra with _ | ⟨_, _⟩ <;> rcases rb with _ | ⟨_, _⟩ <;> rfl
+
 theorem defeqLazy_fst_proj (d : Nat) (a b : Expr) :
     (defeqLazy mode eager (pairFns r₁ r₂ h) env d a b).val.1 =
       defeqLazy mode eager r₁ env d a b := by
   unfold defeqLazy
-  fst_tac4
+  fst_tac4k rulesLast_fst_proj
+
+theorem rulesLast_snd_proj (d : Nat) (oa ob : Option Expr) (a b : Expr) :
+    (rulesLast (pairFns r₁ r₂ h) env d oa ob a b).val.2 = rulesLast r₂ env d oa ob a b := by
+  unfold rulesLast
+  rw [PairM.snd_bind, originFire_snd_proj]
+  congr 1
+  funext ra
+  rw [PairM.snd_bind, originFire_snd_proj]
+  congr 1
+  funext rb
+  rcases ra with _ | ⟨_, _⟩ <;> rcases rb with _ | ⟨_, _⟩ <;> rfl
 
 theorem defeqLazy_snd_proj (d : Nat) (a b : Expr) :
     (defeqLazy mode eager (pairFns r₁ r₂ h) env d a b).val.2 =
       defeqLazy mode eager r₂ env d a b := by
   unfold defeqLazy
-  snd_tac4
+  snd_tac4k rulesLast_snd_proj
 
 theorem defeqBody_fst_proj (d : Nat) (a b : Expr) :
     (defeqBody mode eager (pairFns r₁ r₂ h) env d a b).val.1 =

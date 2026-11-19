@@ -2,7 +2,6 @@ module
 
 public import ConLeche.Verify.EnvExt.Whnf
 public import ConLeche.Kernel.Inductives.BlockTail
-import ConLeche.Verify.Knot
 
 /-!
 # A run does not see an extension of the environment (task #480)
@@ -30,7 +29,7 @@ def DeltaRes (env : Env) : DeltaStep → Prop
 
 /-- What the lazy-delta loop hands on resolves. -/
 def LazyResRes (env : Env) : LazyRes → Prop
-  | .unknown a b => Res env a ∧ Res env b
+  | .unknown oa ob a b => Res env a ∧ Res env b ∧ OriginP (Res env) oa ∧ OriginP (Res env) ob
   | _ => True
 
 theorem res_natPred {x e : Expr} (he : Res env₁ e) (h : e.natPred? = some x) : Res env₁ x := by
@@ -266,11 +265,12 @@ theorem lazyDeltaStep_rel {a b : Expr} (ha : Res env₁ a) (hb : Res env₁ b) :
 omit K hx in
 theorem lazyDeltaReduction_rel (K : KR env₁ r₂ r₁) (d : Nat) (mode : CheckMode)
     (hx : EnvExt env₁ env₂) (eager : Bool) :
-    ∀ (n : Nat) {a b : Expr}, Res env₁ a → Res env₁ b →
-      Rel (LazyResRes env₁) (lazyDeltaReduction mode eager r₂ env₂ d n a b)
-        (lazyDeltaReduction mode eager r₁ env₁ d n a b)
-  | 0, _, _, _, _ => Rel.err _
-  | n + 1, a, b, ha, hb => by
+    ∀ (n : Nat) {oa ob : Option Expr} {a b : Expr}, OriginP (Res env₁) oa →
+      OriginP (Res env₁) ob → Res env₁ a → Res env₁ b →
+      Rel (LazyResRes env₁) (lazyDeltaReduction mode eager r₂ env₂ d n oa ob a b)
+        (lazyDeltaReduction mode eager r₁ env₁ d n oa ob a b)
+  | 0, _, _, _, _, _, _, _, _ => Rel.err _
+  | n + 1, oa, ob, a, b, hoa, hob, ha, hb => by
     simp only [lazyDeltaReduction]
     refine Rel.bind (defeqOffset_rel K d ha hb) fun o _ => ?_
     cases o with
@@ -293,10 +293,14 @@ theorem lazyDeltaReduction_rel (K : KR env₁ r₂ r₁) (d : Nat) (mode : Check
           dsimp only
           refine Rel.bind (lazyDeltaStep_rel K d mode hx ha hb) fun st hst => ?_
           cases st with
-          | cont a' b' => exact lazyDeltaReduction_rel K d mode hx eager n hst.1 hst.2
+          | cont a' b' =>
+            dsimp only
+            rw [noteOrigin_ext hx hst.1, noteOrigin_ext hx hst.2]
+            exact lazyDeltaReduction_rel K d mode hx eager n (hoa.note hst.1) (hob.note hst.2)
+              hst.1 hst.2
           | eq => exact Rel.ok trivial
           | diff => exact Rel.ok trivial
-          | unknown => exact Rel.ok ⟨ha, hb⟩
+          | unknown => exact Rel.ok ⟨ha, hb, hoa, hob⟩
 
 omit K hx in
 theorem lazyDeltaProjReduction_rel (K : KR env₁ r₂ r₁) (d : Nat) (mode : CheckMode)
@@ -422,6 +426,18 @@ theorem defeqStuck_rel {a b : Expr} (ha : Res env₁ a) (hb : Res env₁ b) :
     | lam t body => exact hlam' (res_lam.mp hb).1 (res_lam.mp hb).2 ha
     | _ => exact hst ha hb
 
+theorem rulesLast_rel {oa ob : Option Expr} {a b : Expr} (hoa : OriginP (Res env₁) oa)
+    (hob : OriginP (Res env₁) ob) (ha : Res env₁ a) (hb : Res env₁ b) :
+    Rel TT (rulesLast r₂ env₂ d oa ob a b) (rulesLast r₁ env₁ d oa ob a b) := by
+  unfold rulesLast
+  refine Rel.bind (originFire_rel K d hx hoa ha) fun ra hra => ?_
+  refine Rel.bind (originFire_rel K d hx hob hb) fun rb hrb => ?_
+  rcases ra with _ | ⟨t, a₂⟩ <;> rcases rb with _ | ⟨t', b₂⟩
+  · exact Rel.ok trivial
+  · exact K.defeq d ha (hrb _ _ rfl)
+  · exact K.defeq d (hra _ _ rfl) hb
+  · exact K.defeq d (hra _ _ rfl) (hrb _ _ rfl)
+
 theorem defeqLazy_rel (eager : Bool) {a b : Expr} (ha : Res env₁ a) (hb : Res env₁ b) :
     Rel TT (defeqLazy mode eager r₂ env₂ d a b) (defeqLazy mode eager r₁ env₁ d a b) := by
   unfold defeqLazy
@@ -438,18 +454,25 @@ theorem defeqLazy_rel (eager : Bool) {a b : Expr} (ha : Res env₁ a) (hb : Res 
     | some v => exact Rel.ok trivial
     | none =>
       dsimp only
-      refine Rel.bind (lazyDeltaReduction_rel K d mode hx eager _ ha' hb') fun lz hlz => ?_
+      rw [noteOrigin_ext hx ha', noteOrigin_ext hx hb']
+      refine Rel.bind (lazyDeltaReduction_rel K d mode hx eager _
+        ((OriginP.none _).note ha') ((OriginP.none _).note hb') ha' hb') fun lz hlz => ?_
       cases lz with
       | verdict v => exact Rel.ok trivial
-      | unknown a₁ b₁ =>
-        obtain ⟨ha₁, hb₁⟩ := hlz
+      | unknown oa ob a₁ b₁ =>
+        obtain ⟨ha₁, hb₁, hoa, hob⟩ := hlz
         dsimp only
+        have hrl := rulesLast_rel K d hx hoa hob ha₁ hb₁
         refine Rel.bind (defeqProjPair_rel K d mode hx ha₁ hb₁) fun q _ => ?_
         refine Rel.iteB q (fun _ => Rel.ok trivial) fun _ => ?_
-        refine Rel.ite (fun _ => defeqStuck_rel K d mode hx ha₁ hb₁) fun _ => ?_
+        refine Rel.ite (fun _ => Rel.bind (defeqStuck_rel K d mode hx ha₁ hb₁) fun v _ =>
+          Rel.iteB v (fun _ => Rel.ok trivial) fun _ => hrl) fun _ => ?_
         refine Rel.bind (K.whnfCore false d ha₁) fun a₂ ha₂ =>
           Rel.bind (K.whnfCore false d hb₁) fun b₂ hb₂ => ?_
-        exact Rel.ite (fun _ => defeqStuck_rel K d mode hx ha₁ hb₁) fun _ => K.defeq d ha₂ hb₂
+        exact Rel.ite (fun _ => Rel.bind (defeqStuck_rel K d mode hx ha₁ hb₁) fun v _ =>
+            Rel.iteB v (fun _ => Rel.ok trivial) fun _ => hrl)
+          fun _ => Rel.bind (K.defeq d ha₂ hb₂) fun v _ =>
+            Rel.iteB v (fun _ => Rel.ok trivial) fun _ => hrl
 
 theorem defeqBody_rel (eager : Bool) {a b : Expr} (ha : Res env₁ a) (hb : Res env₁ b) :
     Rel TT (defeqBody mode eager r₂ env₂ d a b) (defeqBody mode eager r₁ env₁ d a b) := by
@@ -492,7 +515,7 @@ theorem knot_ext (mode : CheckMode) (hx : EnvExt env₁ env₂) :
     have K := knot_ext mode hx fuel eager
     have KE := knot_ext mode hx fuel true
     { whnfCore := fun c d _ he => whnfCoreBody_rel K d hx mode c he
-      whnf := fun d _ he => whnfLoop_rel K d hx _ he
+      whnf := fun d _ he => whnfLoop_rel K d hx _ (OriginP.none _) he
       infer := fun d _ he => inferBody_rel K hx d he
       inferIO := fun d _ he => inferBodyIO_rel K hx d he
       defeq := fun d _ _ ha hb => defeqBody_rel K d mode hx eager ha hb

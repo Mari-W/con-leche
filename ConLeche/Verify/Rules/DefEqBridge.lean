@@ -357,25 +357,27 @@ theorem lazyDeltaStep_bridge (hwc : WhnfCoreBridge .verified eager env fuel)
     rw [hwb] at h
     exact deltaQuick_bridge hd hi h (unfold_bridge hwc hua hwa) (unfold_bridge hwc hub hwb)
 
-/-- What the lazy-delta loop's outcome says about the pair it started
-from: a `true` verdict is an equation, the stuck pair a pair of
-reductions. -/
-@[expose] def LazySound (env : Env) (d : Nat) (a b : Expr) : LazyRes → Prop
+/-- What the lazy-delta loop's outcome says about the pair `a`, `b` it started
+from, reached from `a₀`, `b₀`: a `true` verdict is an equation, the stuck pair a pair of
+reductions of `a₀`, `b₀`, and the origins reducts of them too. -/
+@[expose] def LazySound (env : Env) (d : Nat) (a₀ b₀ a b : Expr) : LazyRes → Prop
   | .verdict v => v = true → DefEq env d a b
-  | .unknown a₁ b₁ => Red env d a a₁ ∧ Red env d b b₁
+  | .unknown oa ob a₁ b₁ => Red env d a₀ a₁ ∧ Red env d b₀ b₁ ∧
+      OriginP (Red env d a₀) oa ∧ OriginP (Red env d b₀) ob
 
 /-- **The lazy-delta loop** is sound, at every budget. -/
 theorem lazyDeltaReduction_bridge (hwc : WhnfCoreBridge .verified eager env
     fuel)
     (hw : WhnfBridge .verified eager env fuel) (hd : DefEqBridge .verified eager env fuel) (hi : InferBridge .verified
-        eager env fuel) {d : Nat} :
-    ∀ (n : Nat) {a b : Expr} {r : LazyRes},
-      lazyDeltaReductionFueled .verified eager env fuel d n a b = .ok r →
-      LazySound env d a b r
-  | 0, _, _, _, h => by
+        eager env fuel) {d : Nat} {a₀ b₀ : Expr} :
+    ∀ (n : Nat) {oa ob : Option Expr} {a b : Expr} {r : LazyRes},
+      lazyDeltaReductionFueled .verified eager env fuel d n oa ob a b = .ok r →
+      Red env d a₀ a → Red env d b₀ b → OriginP (Red env d a₀) oa → OriginP (Red env d b₀) ob →
+      LazySound env d a₀ b₀ a b r
+  | 0, _, _, _, _, _, h, _, _, _, _ => by
     simp [lazyDeltaReductionFueled, lazyDeltaReduction, throw, throwThe,
       MonadExceptOf.throw] at h
-  | n + 1, a, b, r, h => by
+  | n + 1, oa, ob, a, b, r, h, ha₀, hb₀, hoa, hob => by
     simp only [lazyDeltaReductionFueled, lazyDeltaReduction, Bind.bind, Except.bind,
       defeqOffset_fold, reduceNat_fold, lazyDeltaStep_fold, defeq_def] at h
     cases ho : defeqOffsetFueled .verified eager env fuel d a b with
@@ -449,10 +451,11 @@ theorem lazyDeltaReduction_bridge (hwc : WhnfCoreBridge .verified eager env
     cases st with
     | cont a' b' =>
       obtain ⟨ha, hb⟩ := hss
-      have ih := lazyDeltaReduction_bridge hwc hw hd hi n h
+      have ih := lazyDeltaReduction_bridge hwc hw hd hi n h (.trans ha₀ ha) (.trans hb₀ hb)
+        (hoa.note (.trans ha₀ ha)) (hob.note (.trans hb₀ hb))
       cases r with
       | verdict v => exact fun hv => .redBoth ha hb (ih hv)
-      | unknown a₁ b₁ => exact ⟨.trans ha ih.1, .trans hb ih.2⟩
+      | unknown oa₁ ob₁ a₁ b₁ => exact ih
     | eq =>
       simp only [pure, Except.pure, Except.ok.injEq] at h
       subst h
@@ -465,7 +468,7 @@ theorem lazyDeltaReduction_bridge (hwc : WhnfCoreBridge .verified eager env
     | unknown =>
       simp only [pure, Except.pure, Except.ok.injEq] at h
       subst h
-      exact ⟨.refl, .refl⟩
+      exact ⟨ha₀, hb₀, hoa, hob⟩
 
 /-- **`a.i =?= b.i` by the scrutinees** (`lazyDeltaProjReduction`) is
 sound, at every budget. -/
@@ -550,6 +553,33 @@ theorem defeqStuck_bridge (hw : WhnfBridge .verified eager env fuel) (hd :
   | etaL he => exact etaCert_bridge hw hd hi hio he
   | etaR he => exact (etaCert_bridge hw hd hi hio he).symm
 
+/-- **The rules last**: a side whose origin fired is a reduct of its start (`originFire_bridge`),
+so the comparison of the reducts equates the starts. -/
+theorem rulesLast_bridge (hw : WhnfBridge .verified eager env fuel)
+    (hd : DefEqBridge .verified eager env fuel) (hi : InferBridge .verified eager env fuel)
+    {d : Nat} {oa ob : Option Expr} {a₀ b₀ a b : Expr}
+    (h : rulesLastFueled .verified eager env fuel d oa ob a b = .ok true)
+    (ha : Red env d a₀ a) (hb : Red env d b₀ b)
+    (hoa : OriginP (Red env d a₀) oa) (hob : OriginP (Red env d b₀) ob) :
+    DefEq env d a₀ b₀ := by
+  simp only [rulesLastFueled, rulesLast, Bind.bind, Except.bind, defeq_def] at h
+  cases hfa : originFire (pureFns .verified eager env fuel) env d oa a with
+  | error err => rw [hfa] at h; exact nomatch h
+  | ok ra =>
+  rw [hfa] at h
+  dsimp only at h
+  cases hfb : originFire (pureFns .verified eager env fuel) env d ob b with
+  | error err => rw [hfb] at h; exact nomatch h
+  | ok rb =>
+  rw [hfb] at h
+  dsimp only at h
+  rcases ra with _ | ⟨t, a₂⟩ <;> rcases rb with _ | ⟨t', b₂⟩
+  · simp [pure, Except.pure] at h
+  · exact .redL ha (.redR (originFire_bridge hw hd hi hfb hob) (hd h))
+  · exact .redL (originFire_bridge hw hd hi hfa hoa) (.redR hb (hd h))
+  · exact .redL (originFire_bridge hw hd hi hfa hoa)
+      (.redR (originFire_bridge hw hd hi hfb hob) (hd h))
+
 /-- **The lazy comparison**, piece by piece. -/
 theorem defeqLazy_bridge (hwc : WhnfCoreBridge .verified eager env fuel)
     (hw : WhnfBridge .verified eager env fuel)
@@ -561,15 +591,17 @@ theorem defeqLazy_bridge (hwc : WhnfCoreBridge .verified eager env fuel)
   · exact quickDefEq_bridge hd hi hq₀
   · exact propIrrel_bridge hw hio hpi
   refine DefEq.redBoth (hwc hwa) (hwc hwb) ?_
-  rcases hrest with hq | hl | ⟨a₁, b₁, hl, hpp | hst | ⟨a₂, b₂, hwa₂, hwb₂, hre⟩⟩
+  rcases hrest with hq | hl | ⟨oa, ob, a₁, b₁, hl, hpp | hst | hrl | ⟨a₂, b₂, hwa₂, hwb₂, hre⟩⟩
   · exact quickDefEq_bridge hd hi hq
-  · exact lazyDeltaReduction_bridge hwc hw hd hi _ hl rfl
-  · obtain ⟨ha, hb⟩ := lazyDeltaReduction_bridge hwc hw hd hi _ hl
-    exact .redBoth ha hb (defeqProjPair_bridge hwc hw hd hi hio hpp)
-  · obtain ⟨ha, hb⟩ := lazyDeltaReduction_bridge hwc hw hd hi _ hl
-    exact .redBoth ha hb (defeqStuck_bridge hw hd hi hio hst)
-  · obtain ⟨ha, hb⟩ := lazyDeltaReduction_bridge hwc hw hd hi _ hl
-    exact .redBoth ha hb (.redBoth (hwc hwa₂) (hwc hwb₂) (hd hre))
+  · exact lazyDeltaReduction_bridge hwc hw hd hi _ hl .refl .refl
+      ((OriginP.none _).note .refl) ((OriginP.none _).note .refl) rfl
+  all_goals
+    obtain ⟨ha, hb, hoa, hob⟩ := lazyDeltaReduction_bridge hwc hw hd hi _ hl .refl .refl
+      ((OriginP.none _).note .refl) ((OriginP.none _).note .refl)
+  · exact .redBoth ha hb (defeqProjPair_bridge hwc hw hd hi hio hpp)
+  · exact .redBoth ha hb (defeqStuck_bridge hw hd hi hio hst)
+  · exact rulesLast_bridge hw hd hi hrl ha hb hoa hob
+  · exact .redBoth ha hb (.redBoth (hwc hwa₂) (hwc hwb₂) (hd hre))
 
 /-- **`isDefEqCore` at `fuel + 1`**: the syntactic fast path, the
 constructor shortcut (a side's head normal form is its reduct) and the

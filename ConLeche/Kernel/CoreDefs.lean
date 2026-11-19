@@ -139,6 +139,25 @@ def unfoldableHead (env : Env) (e : Expr) : Bool :=
     | _ => false
   | _ => false
 
+/-- **Is `e`, a term no further reduction applies to, stuck rather than a value** (official
+`is_stuck_result`)?  A λ, a Π, a sort, a literal and a spine headed by a stored constructor are
+values; everything else is stuck.  A user rewrite rule on a head that unfolds fires only when its
+unfolding ends stuck (`whnfStep`, `rulesLast`). -/
+def isStuckResult (env : Env) : Expr → Bool
+  | .lam .. | .forallE .. | .sort _ | .lit _ => false
+  | e => !isCtorApp env e
+
+/-- **The term whose rules get their turn if an unfolding ends stuck** (official
+`note_rewrite_origin`): the origin `o` if one is set, the outermost term first; otherwise `e`
+itself when its head constant has rules and unfolds (`unfoldableHead`). -/
+def noteOrigin (env : Env) (o : Option Expr) (e : Expr) : Option Expr :=
+  match o with
+  | some o => some o
+  | none =>
+    match e.getAppFn with
+    | .const c _ => if !(env.rulesFor c).isEmpty && unfoldableHead env e then some e else none
+    | _ => none
+
 /-- The reducibility hint of the constant at the head of `e` (`opaque`
 when the head is not a stored definition — a theorem included, which
 never unfolds). -/

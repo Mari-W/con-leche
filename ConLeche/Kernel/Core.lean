@@ -1129,12 +1129,27 @@ def rewriteRules (r : CoreFns m) (env : Env) (depth : Nat) (e : Expr) :
     | some e₂ => pure (some (t, e₂))
     | none => rewriteRules r env depth e ts
 
-/-- **The rewrite step**: the rules registered for the term's head constant (`Env.rulesFor`), in
-the table's order. -/
-def rewriteStep (r : CoreFns m) (env : Env) (depth : Nat) (e : Expr) : m (Option (Name × Expr)) :=
+/-- **The rewrite step** (official `reduce_rewrite_step`): the rules registered for the term's
+head constant (`Env.rulesFor`), in the table's order.  `stuck` says that the caller unfolded `e`
+and the unfolding ended stuck (`whnfStep`, `rulesLast`); otherwise a rule on a head that unfolds
+(`unfoldableHead`) does not fire, so δ comes first. -/
+def rewriteStep (r : CoreFns m) (env : Env) (depth : Nat) (stuck : Bool) (e : Expr) :
+    m (Option (Name × Expr)) :=
   match e.getAppFn with
-  | .const c _ => rewriteRules r env depth e (env.rulesFor c)
+  | .const c _ =>
+    if !stuck && unfoldableHead env e then pure none
+    else rewriteRules r env depth e (env.rulesFor c)
   | _ => pure none
+
+/-- **The rules at an origin** (official `whnf`'s and `is_def_eq_core`'s
+`reduce_rewrite(origin, true)`): when the unfolding that started at the origin `o`
+(`noteOrigin`) ended at the stuck term `e` (`isStuckResult`), the first rule of `o`'s head that
+fires there, with its theorem. -/
+def originFire (r : CoreFns m) (env : Env) (depth : Nat) (o : Option Expr) (e : Expr) :
+    m (Option (Name × Expr)) :=
+  match o with
+  | some o' => if isStuckResult env e then rewriteStep r env depth true o' else pure none
+  | none => pure none
 
 /-- **ι, then the user rewrite rules** (official `reduce_recursor`: ι, then `reduce_rewrite`):
 the reduct of the first that fires at the stuck application `e`. -/
@@ -1142,13 +1157,14 @@ def iotaThenRule (r : CoreFns m) (env : Env) (depth : Nat) (e : Expr) : m (Optio
   match ← iotaRec mode r env depth e with
   | some e'' => pure (some e'')
   | none =>
-    match ← rewriteStep r env depth e with
+    match ← rewriteStep r env depth false e with
     | some (_, e₂) => pure (some e₂)
     | none => pure none
 
 /-- **How many rewrite rules one head-normalization loop may fire** (official: per outermost
-`whnf_core`/`whnf` call, `LEAN_REWRITE_FIRE_BUDGET`).  The cached loop (`whnfCoreLoopI`) counts
-its firings and rejects past the budget, at the rule that would fire next; the specification
+`whnf_core`/`whnf` call, `LEAN_REWRITE_FIRE_BUDGET`).  The cached loops (`whnfCoreLoopI`,
+`whnfLoopI`) count their firings and reject past the budget, at the rule that would fire next, and
+the cached rules last bound their nested restarts by it (`nestEnterI`); the specification
 has no budget (its knot fuel bounds it).  A placeholder for a static termination check. -/
 @[irreducible, noinline] def ruleFireBudget : Nat := 65536  -- 2^16
 
@@ -1191,7 +1207,7 @@ def whnfCoreBody (r : CoreFns m) (env : Env) : Bool → Nat → Expr → m Expr 
     | .lam ty body => pure (.lam ty body)
     | .const n us => do
       -- a rule whose left side is a bare constant (official `whnf_core`'s `Const` case)
-      match ← rewriteStep r env depth (.const n us) with
+      match ← rewriteStep r env depth false (.const n us) with
       | some (_, e₂) => r.whnfCore cheap depth e₂
       | none => pure (.const n us)
     | .lit l => pure (.lit l)
@@ -1274,6 +1290,16 @@ def Expr.isLit : Expr → Bool
   | .lit _ => true
   | _ => false
 
+/-- **The reduction loop's fixpoint** (official `whnf`'s last arms): the unfolding of a head
+with rules got stuck, so its rules get their turn at the origin (`originFire`); a firing hands
+the reduct to the loop's continuation `k` with no origin, and otherwise the stuck term `e₁` is
+the answer. -/
+def whnfFix (r : CoreFns m) (env : Env) (depth : Nat) (k : Option Expr → Expr → m Expr)
+    (o : Option Expr) (e₁ : Expr) : m Expr := do
+  match ← originFire r env depth o e₁ with
+  | some (_, e₂) => k none e₂
+  | none => pure e₁
+
 /-- One iteration of the reduction loop (the official kernel's `whnf`
 body, lean4lean's `whnf'` loop body): head-normalize, try literal
 acceleration, unfold one definition — and hand the reduct to the
@@ -1281,31 +1307,38 @@ loop's continuation `k`.  A computed literal is the answer at once
 (official `whnf`: `if (auto v = reduce_nat(t)) return *v;`): it is its
 own head normal form.  A `Bool` constructor computed by `Nat.beq` or
 `Nat.ble` goes to `k`, which answers it unchanged unless the
-environment stores its name as a definition.  As everywhere in this
+environment stores its name as a definition.  The unfolding records
+its origin (`noteOrigin`); at the fixpoint (`whnfFix`), a stuck term
+whose chain started at an origin gives the origin's rules their turn,
+and a firing continues from the reduct with no origin (official `whnf`,
+the rules when stuck).  As everywhere in this
 module, the body never calls itself: the continuation is abstracted
 exactly like the record `r`, so every lemma about the body is proven
 once, with a hypothesis about `k`, and the loop lemma is one induction
 on the budget. -/
 def whnfStep (r : CoreFns m) (env : Env) (depth : Nat)
-    (k : Expr → m Expr) (e : Expr) : m Expr := do
+    (k : Option Expr → Expr → m Expr) (o : Option Expr) (e : Expr) : m Expr := do
   let e₁ ← r.whnfCore false depth e
   match ← reduceNat r env depth e₁ with
-  | some e₂ => if e₂.isLit then pure e₂ else k e₂
+  | some e₂ => if e₂.isLit then pure e₂ else k o e₂
   | none =>
     match unfoldDefinition env e₁ with
-    | some e₂ => k e₂
-    | none => pure e₁
+    | some e₂ => k (noteOrigin env o e₁) e₂
+    | none => whnfFix r env depth k o e₁
 
 /-- The reduction loop: iterate `whnfStep` on its own step budget, so
-the whole chain costs one knot level however many steps it takes. -/
+the whole chain costs one knot level however many steps it takes.  The
+loop carries the origin (`noteOrigin`): the outermost term with rules it
+unfolded since the last firing. -/
 def whnfLoop (r : CoreFns m) (env : Env) (depth : Nat) :
-    Nat → Expr → m Expr
-  | 0, _ => throw (.internal "fuel exhausted: whnf loop")
-  | n + 1, e => whnfStep r env depth (whnfLoop r env depth n) e
+    Nat → Option Expr → Expr → m Expr
+  | 0, _, _ => throw (.internal "fuel exhausted: whnf loop")
+  | n + 1, o, e => whnfStep r env depth (whnfLoop r env depth n) o e
 
-/-- The reduction loop's body: run `whnfLoop` at its own step budget. -/
+/-- The reduction loop's body: run `whnfLoop` at its own step budget,
+with no origin. -/
 def whnfBody (r : CoreFns m) (env : Env) : Nat → Expr → m Expr :=
-  fun depth e => whnfLoop r env depth whnfLoopFuel e
+  fun depth e => whnfLoop r env depth whnfLoopFuel none e
 
 /-- Ensure `e` (the type of some expression) is a sort, returning its
 level. -/
@@ -1785,11 +1818,11 @@ def lazyDeltaStep (r : CoreFns m) (env : Env) (depth : Nat) (a b : Expr) :
       | _, _ => pure .unknown
 
 /-- The outcome of the lazy-delta loop: a verdict, or the pair it got
-stuck on (official `lazy_delta_reduction` returns `l_undef` and updates
-`t_n`, `s_n`). -/
+stuck on with the two sides' origins (official `lazy_delta_reduction`
+returns `l_undef` and updates `t_n`, `s_n`, `t_origin`, `s_origin`). -/
 inductive LazyRes where
   | verdict (v : Bool)
-  | unknown (a b : Expr)
+  | unknown (oa ob : Option Expr) (a b : Expr)
 
 /-- Step budget of the two lazy-delta loops (lean4lean's
 `FuelConfig.lazyDelta`, generously sized).  Exhaustion is an internal
@@ -1810,11 +1843,13 @@ eager flag is set (`eager`, task #353: official's
 reduct restarts the comparison (`defeq`, official `is_def_eq_core`),
 then one `lazyDeltaStep`.  Each unfolding is one iteration of this
 loop on its own step budget (task #106: not one unit of the knot's
-recursion depth). -/
+recursion depth).  The loop carries each side's origin (`noteOrigin`,
+official `note_rewrite_origin` at the top of every iteration): the
+caller notes the entry pair, the loop every continuation. -/
 def lazyDeltaReduction (eager : Bool) (r : CoreFns m) (env : Env) (depth : Nat) :
-    Nat → Expr → Expr → m LazyRes
-  | 0, _, _ => throw (.internal "fuel exhausted: defeq loop")
-  | n + 1, a, b => do
+    Nat → Option Expr → Option Expr → Expr → Expr → m LazyRes
+  | 0, _, _, _, _ => throw (.internal "fuel exhausted: defeq loop")
+  | n + 1, oa, ob, a, b => do
     match ← defeqOffset r depth a b with
     | some v => pure (.verdict v)
     | none =>
@@ -1831,10 +1866,11 @@ def lazyDeltaReduction (eager : Bool) (r : CoreFns m) (env : Env) (depth : Nat) 
       pure (.verdict v)
     | none =>
     match ← lazyDeltaStep mode r env depth a b with
-    | .cont a' b' => lazyDeltaReduction eager r env depth n a' b'
+    | .cont a' b' =>
+      lazyDeltaReduction eager r env depth n (noteOrigin env oa a') (noteOrigin env ob b') a' b'
     | .eq => pure (.verdict true)
     | .diff => pure (.verdict false)
-    | .unknown => pure (.unknown a b)
+    | .unknown => pure (.unknown oa ob a b)
 
 /-- **`a.i =?= b.i` by its scrutinees** (the official kernel's
 `lazy_delta_proj_reduction`): lazy-delta steps on the two scrutinees;
@@ -1936,6 +1972,20 @@ def defeqStuck (r : CoreFns m) (env : Env) (depth : Nat) (a b : Expr) :
   -- equate them; `false` is always sound.
   | e₁, e₂ => stuckIrrel r env depth e₁ e₂
 
+/-- **The rules last** (official `is_def_eq_core`'s `rules_last`): each side whose unfolding
+started at an origin and ended stuck gets the origin's rules (`originFire`); if either fires, the
+comparison restarts on the reducts, and otherwise fails.  It runs only after every other check
+failed, so a rule never pre-empts a comparison that succeeds without it. -/
+def rulesLast (r : CoreFns m) (env : Env) (depth : Nat) (oa ob : Option Expr) (a b : Expr) :
+    m Bool := do
+  let ra ← originFire r env depth oa a
+  let rb ← originFire r env depth ob b
+  match ra, rb with
+  | none, none => pure false
+  | some (_, a₂), none => r.defeq depth a₂ b
+  | none, some (_, b₂) => r.defeq depth a b₂
+  | some (_, a₂), some (_, b₂) => r.defeq depth a₂ b₂
+
 /-- **The lazy comparison**: the official kernel's `is_def_eq_core` past
 its syntactic fast path and its eq-true clause, clause for clause except
 one deliberate reordering: `quickDefEq` and proof irrelevance
@@ -1943,7 +1993,9 @@ one deliberate reordering: `quickDefEq` and proof irrelevance
 normalization of both sides (`whnfCore` with `cheap_proj`); `quickDefEq`
 again; the lazy-delta loop (`lazyDeltaReduction`); the proj/proj check
 (`defeqProjPair`); the FULL `whnfCore` of both sides and, if either
-changed, a restart; and the stuck comparison (`defeqStuck`).
+changed, a restart; and the stuck comparison (`defeqStuck`).  Where
+the restart or the stuck comparison fails, the rules come last
+(`rulesLast`).
 
 **The deviation (task #333).**  The official kernel runs proof
 irrelevance after the cheap `whnfCore`; here it runs before it, so two
@@ -1975,19 +2027,25 @@ def defeqLazy (eager : Bool) (r : CoreFns m) (env : Env) (depth : Nat) (a b : Ex
   match ← quickDefEq mode r depth a' b' with
   | some v => pure v
   | none =>
-  match ← lazyDeltaReduction mode eager r env depth defeqLoopFuel a' b' with
+  match ← lazyDeltaReduction mode eager r env depth defeqLoopFuel
+      (noteOrigin env none a') (noteOrigin env none b') a' b' with
   | .verdict v => pure v
-  | .unknown a₁ b₁ =>
+  | .unknown oa ob a₁ b₁ =>
   if ← defeqProjPair mode r env depth a₁ b₁ then pure true else
   -- the full `whnfCore` can only differ from the cheap one where the
   -- cheap mode left a projection stuck, which is then the spine head
   -- (`whnfCore` stops there); without one, the restart's test
   -- would find both sides unchanged, so it is skipped (cost only)
-  if !a₁.headIsProj && !b₁.headIsProj then defeqStuck mode r env depth a₁ b₁ else
+  if !a₁.headIsProj && !b₁.headIsProj then
+    if ← defeqStuck mode r env depth a₁ b₁ then pure true
+    else rulesLast r env depth oa ob a₁ b₁ else
   let a₂ ← r.whnfCore false depth a₁
   let b₂ ← r.whnfCore false depth b₁
-  if a₂ == a₁ && b₂ == b₁ then defeqStuck mode r env depth a₁ b₁
-  else r.defeq depth a₂ b₂
+  if a₂ == a₁ && b₂ == b₁ then
+    if ← defeqStuck mode r env depth a₁ b₁ then pure true
+    else rulesLast r env depth oa ob a₁ b₁
+  else if ← r.defeq depth a₂ b₂ then pure true
+  else rulesLast r env depth oa ob a₁ b₁
 
 /-- **The definitional-equality body** (the official kernel's
 `is_def_eq_core`): the syntactic fast path, the constructor shortcut,

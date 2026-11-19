@@ -298,7 +298,7 @@ abbrev lazyDeltaStepFueled (mode : CheckMode) (eager : Bool) (env : Env) (fuel :
     CheckM DeltaStep := lazyDeltaStep mode (pureFns mode eager env fuel) env
 
 abbrev lazyDeltaReductionFueled (mode : CheckMode) (eager : Bool) (env : Env) (fuel : Nat) : Nat →
-    Nat →
+    Nat → Option Expr → Option Expr →
     Expr → Expr → CheckM LazyRes := lazyDeltaReduction mode eager (pureFns mode eager env fuel) env
 
 abbrev lazyDeltaProjReductionFueled (mode : CheckMode) (eager : Bool) (env : Env) (fuel : Nat) :
@@ -313,6 +313,14 @@ abbrev defeqProjPairFueled (mode : CheckMode) (eager : Bool) (env : Env) (fuel :
 abbrev defeqStuckFueled (mode : CheckMode) (eager : Bool) (env : Env) (fuel : Nat) : Nat → Expr →
     Expr →
     CheckM Bool := defeqStuck mode (pureFns mode eager env fuel) env
+
+abbrev originFireFueled (mode : CheckMode) (eager : Bool) (env : Env) (fuel : Nat) : Nat →
+    Option Expr → Expr → CheckM (Option (Name × Expr)) :=
+  originFire (pureFns mode eager env fuel) env
+
+abbrev rulesLastFueled (mode : CheckMode) (eager : Bool) (env : Env) (fuel : Nat) : Nat →
+    Option Expr → Option Expr → Expr → Expr → CheckM Bool :=
+  rulesLast (pureFns mode eager env fuel) env
 
 abbrev defeqLazyFueled (mode : CheckMode) (eager : Bool) (env : Env) (fuel : Nat) : Nat → Expr →
     Expr → CheckM Bool := defeqLazy mode eager (pureFns mode eager env fuel) env
@@ -394,8 +402,38 @@ theorem defeqProjPair_fold (env : Env) (fuel : Nat) :
         := rfl
 theorem defeqStuck_fold (env : Env) (fuel : Nat) :
     defeqStuck mode (pureFns mode eager env fuel) env = defeqStuckFueled mode eager env fuel := rfl
+theorem originFire_fold (env : Env) (fuel : Nat) :
+    originFire (pureFns mode eager env fuel) env = originFireFueled mode eager env fuel := rfl
+theorem rulesLast_fold (env : Env) (fuel : Nat) :
+    rulesLast (pureFns mode eager env fuel) env = rulesLastFueled mode eager env fuel := rfl
 theorem defeqLazy_fold (env : Env) (fuel : Nat) :
     defeqLazy mode eager (pureFns mode eager env fuel) env = defeqLazyFueled mode eager env fuel :=
         rfl
+
+/-- **Every origin in `o` satisfies `P`** (the reduction loops' origin invariant, `noteOrigin`:
+an origin is a term the chain passed through). -/
+@[expose] def OriginP (P : Expr → Prop) (o : Option Expr) : Prop := ∀ o', o = some o' → P o'
+
+theorem OriginP.none (P : Expr → Prop) : OriginP P none := fun _ h => nomatch h
+
+/-- A noted origin is the old one or the term itself. -/
+theorem noteOrigin_cases {env : Env} {o : Option Expr} {e o' : Expr}
+    (h : noteOrigin env o e = some o') : o = some o' ∨ o' = e := by
+  unfold noteOrigin at h
+  split at h
+  · exact .inl h
+  · split at h
+    · split at h
+      · exact .inr (Option.some.inj h).symm
+      · exact nomatch h
+    · exact nomatch h
+
+/-- Noting an origin keeps the invariant where the term satisfies it. -/
+theorem OriginP.note {P : Expr → Prop} {env : Env} {o : Option Expr} {e : Expr}
+    (ho : OriginP P o) (he : P e) : OriginP P (noteOrigin env o e) := by
+  intro o' h
+  rcases noteOrigin_cases h with h' | rfl
+  · exact ho _ h'
+  · exact he
 
 end ConLeche

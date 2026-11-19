@@ -1,6 +1,7 @@
 module
 
 public import ConLeche.Verify.EnvExt.Rel
+public import ConLeche.Verify.Knot
 import ConLeche.Verify.InferLemmas
 import ConLeche.Verify.IotaReduct
 import ConLeche.Verify.Inductives.NestedRead
@@ -681,14 +682,27 @@ theorem rewriteRules_rel {e : Expr} (he : Res env₁ e) :
     | none =>
       exact rewriteRules_rel he ts fun t' ht' => hts t' (List.mem_cons_of_mem _ ht')
 
-theorem rewriteStep_rel {e : Expr} (he : Res env₁ e) :
-    Rel (ResOR env₁) (rewriteStep r₂ env₂ d e) (rewriteStep r₁ env₁ d e) := by
+theorem rewriteStep_rel (stuck : Bool) {e : Expr} (he : Res env₁ e) :
+    Rel (ResOR env₁) (rewriteStep r₂ env₂ d stuck e) (rewriteStep r₁ env₁ d stuck e) := by
   unfold rewriteStep
   split
   · rename_i c ls hfn
-    rw [hx.rules c]
+    rw [hx.rules c, unfoldableHead_ext hx he]
+    refine Rel.ite (fun _ => Rel.ok fun _ _ h => nomatch h) fun _ => ?_
     exact rewriteRules_rel K d hx he _ fun t ht => find_of_mem_rulesFor ht
   · exact Rel.ok fun _ _ h => nomatch h
+
+theorem originFire_rel {o : Option Expr} {e : Expr} (ho : OriginP (Res env₁) o)
+    (he : Res env₁ e) :
+    Rel (ResOR env₁) (originFire r₂ env₂ d o e) (originFire r₁ env₁ d o e) := by
+  unfold originFire
+  cases o with
+  | none => exact Rel.ok fun _ _ h => nomatch h
+  | some o' =>
+    dsimp only
+    rw [isStuckResult_ext hx he]
+    exact Rel.ite (fun _ => rewriteStep_rel K d hx true (ho _ rfl))
+      fun _ => Rel.ok fun _ _ h => nomatch h
 
 theorem iotaThenRule_rel (mode : CheckMode) {e : Expr} (he : Res env₁ e) :
     Rel (ResO env₁) (iotaThenRule mode r₂ env₂ d e) (iotaThenRule mode r₁ env₁ d e) := by
@@ -697,7 +711,7 @@ theorem iotaThenRule_rel (mode : CheckMode) {e : Expr} (he : Res env₁ e) :
   cases o with
   | some e'' => exact Rel.ok ho
   | none =>
-    refine Rel.bind (rewriteStep_rel K d hx he) fun ro hro => ?_
+    refine Rel.bind (rewriteStep_rel K d hx false he) fun ro hro => ?_
     cases ro with
     | some te => exact Rel.ok fun x h => (Option.some.inj h) ▸ hro te.1 te.2 rfl
     | none => exact Rel.ok resO_none
@@ -708,7 +722,7 @@ theorem whnfCoreBody_rel (mode : CheckMode) (c : Bool) {e : Expr} (he : Res env�
   | .sort _, he | .fvar _ _, he | .forallE _ _, he | .lam _ _, he
   | .lit _, he => exact Rel.ok he
   | .const n us, he =>
-    refine Rel.bind (rewriteStep_rel K d hx he) fun ro hro => ?_
+    refine Rel.bind (rewriteStep_rel K d hx false he) fun ro hro => ?_
     cases ro with
     | some te => exact K.whnfCore c d (hro te.1 te.2 rfl)
     | none => exact Rel.ok he
@@ -751,25 +765,30 @@ theorem whnfCoreBody_rel (mode : CheckMode) (c : Bool) {e : Expr} (he : Res env�
     | true => exact Rel.bind (K.whnfCore true d hpe) hrest
     | false => exact Rel.bind (K.whnf d hpe) hrest
 
-theorem whnfLoop_rel : ∀ (n : Nat) {e : Expr}, Res env₁ e →
-    Rel (Res env₁) (whnfLoop r₂ env₂ d n e) (whnfLoop r₁ env₁ d n e)
-  | 0, _, _ => Rel.err _
-  | n + 1, e, he => by
-    simp only [whnfLoop, whnfStep]
+theorem whnfLoop_rel : ∀ (n : Nat) {o : Option Expr} {e : Expr}, OriginP (Res env₁) o →
+    Res env₁ e → Rel (Res env₁) (whnfLoop r₂ env₂ d n o e) (whnfLoop r₁ env₁ d n o e)
+  | 0, _, _, _, _ => Rel.err _
+  | n + 1, o, e, hor, he => by
+    simp only [whnfLoop, whnfStep, whnfFix]
     refine Rel.bind (K.whnfCore false d he) fun e₁ he₁ => ?_
-    refine Rel.bind (reduceNat_rel K d hx he₁) fun o ho => ?_
-    cases o with
+    refine Rel.bind (reduceNat_rel K d hx he₁) fun o' ho => ?_
+    cases o' with
     | some e₂ =>
       dsimp only
       split
       · exact Rel.ok (ho _ rfl)
-      · exact whnfLoop_rel n (ho _ rfl)
+      · exact whnfLoop_rel n hor (ho _ rfl)
     | none =>
       dsimp only
-      rw [unfoldDefinition_ext hx he₁]
+      rw [unfoldDefinition_ext hx he₁, noteOrigin_ext hx he₁]
       cases hu : unfoldDefinition env₁ e₁ with
-      | none => exact Rel.ok he₁
-      | some e₂ => exact whnfLoop_rel n (res_unfoldDefinition hx he₁ hu)
+      | none =>
+        dsimp only
+        refine Rel.bind (originFire_rel K d hx hor he₁) fun ro hro => ?_
+        cases ro with
+        | none => exact Rel.ok he₁
+        | some te => exact whnfLoop_rel n (OriginP.none _) (hro te.1 te.2 rfl)
+      | some e₂ => exact whnfLoop_rel n (hor.note he₁) (res_unfoldDefinition hx he₁ hu)
 
 omit hx in
 theorem ensureSort_rel {e : Expr} (he : Res env₁ e) :

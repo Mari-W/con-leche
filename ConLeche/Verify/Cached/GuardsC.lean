@@ -823,6 +823,55 @@ theorem unfoldableHeadC_spec {env : Env} {e : Expr} :
     | some ci => cases ci <;> rfl
   | _ => rfl
 
+/-- The constructor-head test through the index is the spec's `isCtorApp`. -/
+theorem isCtorAppC_spec {env : Env} {e : Expr} :
+    isCtorAppC (mkFEnv env) e = isCtorApp env e := by
+  show (match Expr.getAppFn e with
+      | .const c _ =>
+        match (mkFEnv env).find? c with
+        | some (.ctorInfo ..) => true
+        | _ => false
+      | _ => false) = _
+  rw [isCtorApp]
+  cases Expr.getAppFn e with
+  | const nm us =>
+    dsimp only
+    rw [mkFEnv_find?]
+    cases env.find? nm with
+    | none => rfl
+    | some ci => cases ci <;> rfl
+  | _ => rfl
+
+/-- The stuck test through the index is the spec's `isStuckResult`. -/
+theorem isStuckResultC_spec {env : Env} {e : Expr} :
+    isStuckResultC (mkFEnv env) e = isStuckResult env e := by
+  cases e <;> first | rfl | exact congrArg (!·) isCtorAppC_spec
+
+/-- Noting an origin through the index is the spec's `noteOrigin`. -/
+theorem noteOriginC_spec {env : Env} {o : Option Expr} {e : Expr} :
+    noteOriginC (mkFEnv env) o e = noteOrigin env o e := by
+  unfold noteOriginC noteOrigin
+  cases o with
+  | some o => rfl
+  | none =>
+    dsimp only
+    by_cases hr : (mkFEnv env).base.rls.isEmpty = true
+    · -- the fast path: an empty table has no rules for the head
+      simp only [hr, ↓reduceIte]
+      cases Expr.getAppFn e with
+      | const c us =>
+        have h0 : env.rulesFor c = [] := by
+          rw [← mkFEnv_rulesFor]
+          unfold FEnv.rulesFor
+          rw [Std.HashMap.getD_eq_fallback ((Std.HashMap.isEmpty_iff_forall_not_mem.mp hr) c)]
+          rfl
+        simp [h0]
+      | _ => rfl
+    · simp only [hr, Bool.false_eq_true, ↓reduceIte]
+      cases Expr.getAppFn e with
+      | const c us => simp only [mkFEnv_rulesFor, unfoldableHeadC_spec]
+      | _ => rfl
+
 /-- **The `And`-rescue gate through the index is the spec's gate**:
 both sides are `andRescueSlotsOf` at a lookup, and the index's lookup
 is `Env.findProj?` (`mkFEnv_findProj?`). -/
