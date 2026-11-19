@@ -50,6 +50,8 @@ structure EnvExt (env₁ env₂ : Env) : Prop where
   table : ∀ T, (env₁.find? T).isSome = true → env₂.findTable? T = env₁.findTable? T
   /-- the same rules fire at every head -/
   rules : ∀ c, env₂.rulesFor c = env₁.rulesFor c
+  /-- the same abstract definitions are blocked -/
+  blocked : env₂.blocked = env₁.blocked
   facts : StoredFacts env₁
 
 /-- Resolution in `env`. -/
@@ -353,14 +355,14 @@ theorem unfoldDefinition_ext {e : Expr} (he : Res env₁ e) :
   unfold unfoldDefinition
   cases hfn : e.getAppFn <;> try rfl
   dsimp only
-  rw [hx.find_of_isSome (res_head he hfn)]
+  rw [hx.find_of_isSome (res_head he hfn), hx.blocked]
 
 theorem unfoldableHead_ext {e : Expr} (he : Res env₁ e) :
     unfoldableHead env₂ e = unfoldableHead env₁ e := by
   unfold unfoldableHead
   cases hfn : e.getAppFn <;> try rfl
   dsimp only
-  rw [hx.find_of_isSome (res_head he hfn)]
+  rw [hx.find_of_isSome (res_head he hfn), hx.blocked]
 
 theorem isStuckResult_ext {e : Expr} (he : Res env₁ e) :
     isStuckResult env₂ e = isStuckResult env₁ e := by

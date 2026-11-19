@@ -64,6 +64,34 @@ if sys.argv[1] == "order":
     stmt_patch(cat, f"{out}/rewrite_rule_order_global.ndjson", [("cat_nil'", "catNilTgt")])
     sys.exit(0)
 
+if sys.argv[1] == "abstract":
+    # RrAbstract.lean: an abstract definition, unfolded by a member only
+    member, outs, rules, zero, out = sys.argv[2:7]
+    J = lambda r: json.dumps(r, separators=(",", ":"))
+    def put(name, recs): open(f"{out}/{name}.ndjson", "w").write("\n".join(J(r) for r in recs) + "\n")
+    load = lambda f: [json.loads(l) for l in open(f).read().splitlines()]
+    open(f"{out}/abstract_block_member.ndjson", "w").write(open(member).read())
+    open(f"{out}/abstract_block_rules.ndjson", "w").write(open(rules).read())
+    open(f"{out}/abstract_block_rule_stuck.ndjson", "w").write(open(zero).read())
+    stmt_patch(outs, f"{out}/abstract_block_outside.ndjson", [("abs_out", "outTgt")])
+    recs = load(member)
+    names = {r["in"]: r for r in recs if "in" in r}
+    nid = lambda s: next(k for k, r in names.items() if r.get("str", {}).get("str") == s)
+    ai = next(i for i, r in enumerate(recs) if "abstract" in r)
+    # the member dropped from the member list
+    dropped = json.loads(J(recs))
+    dropped[ai]["abstract"]["members"].remove(nid("double_two"))
+    put("abstract_block_member_dropped", dropped)
+    # the abstract line twice
+    put("abstract_block_twice", recs[:ai + 1] + [recs[ai]] + recs[ai + 1:])
+    # an abstract line naming a theorem, after it
+    put("abstract_block_not_def", recs + [{"abstract": {"name": nid("double_two"), "members": []}}])
+    # the abstract line right before its definition, listing only names declared by then
+    di = next(i for i, r in enumerate(recs) if "def" in r and r["def"]["name"] == nid("double"))
+    early = {"abstract": {"name": nid("double"), "members": [nid("double")]}}
+    put("abstract_block_before_def", recs[:di] + [early] + recs[di:ai] + recs[ai + 1:])
+    sys.exit(0)
+
 if sys.argv[1] == "loop":
     # RrLoop.lean: a rule whose right side unfolds back to its left side, in a false conversion
     stmt_patch(sys.argv[2], f"{sys.argv[3]}/rewrite_rule_decl_budget.ndjson", [("loopBad", "loopTgt")])

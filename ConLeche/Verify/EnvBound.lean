@@ -25,16 +25,24 @@ namespace ConLeche
   simp [FBase.find?]
 
 /-- `mkFEnv` has the empty base layer. -/
-@[simp] theorem mkFEnv_base (env : Env) : (mkFEnv env).base = { rls := mkRlsGo env.rules.active } := rfl
+@[simp] theorem mkFEnv_base (env : Env) : (mkFEnv env).base =
+    { rls := mkRlsGo env.rules.active, abs := env.rules.abstracts, blks := env.rules.blks,
+      blk := blkHead env.rules.blks } := rfl
+
+/-- `mkFEnv`'s blocked set is the environment's. -/
+@[simp] theorem mkFEnv_blk_elem (env : Env) (n : Name) :
+    List.elem n (mkFEnv env).base.blk = env.blocked n := rfl
 
 /-- A base layer carrying only rules answers no constant. -/
-@[simp] theorem FBase.find?_rls (r : Std.HashMap Name (List Name)) (n : Name) :
-    ({ rls := r } : FBase).find? n = none := by
+@[simp] theorem FBase.find?_rls (r : Std.HashMap Name (List Name)) (a : List (Name × List Name))
+    (b : List (Nat × List Name)) (k : List Name) (n : Name) :
+    ({ rls := r, abs := a, blks := b, blk := k } : FBase).find? n = none := by
   simp [FBase.find?]
 
 /-- A base layer carrying only rules answers no table. -/
-@[simp] theorem FBase.findTable?_rls (r : Std.HashMap Name (List Name)) (T : Name) :
-    ({ rls := r } : FBase).findTable? T = none := by
+@[simp] theorem FBase.findTable?_rls (r : Std.HashMap Name (List Name)) (a : List (Name × List Name))
+    (b : List (Nat × List Name)) (k : List Name) (T : Name) :
+    ({ rls := r, abs := a, blks := b, blk := k } : FBase).findTable? T = none := by
   simp [FBase.findTable?]
 
 /-- The index's specification: `List.find?` (the build inserts from the back, so the newest constant
@@ -54,18 +62,70 @@ theorem mkFEnv_find? (env : Env) (n : Name) :
   rw [FEnv.lookup_eq]
   show (match (mkIdxGo env.consts)[n]? with
         | some ci => some ci
-        | none => ({ rls := mkRlsGo env.rules.active } : FBase).find? n) = _
+        | none => ({ rls := mkRlsGo env.rules.active, abs := env.rules.abstracts, blks := env.rules.blks, blk := blkHead env.rules.blks } : FBase).find? n) = _
   rw [mkIdxGo_getElem?, FBase.find?_rls, Env.find?]
   cases env.consts.find? (·.name == n) <;> rfl
 
+/-- **Entering changes nothing where nothing is blocked** (`FEnv.quiet`), for a record whose rule
+effect is the declaration arm of `RuleTable.step`. -/
+theorem FEnv.enterRec_quiet {fe : FEnv} (h : fe.quiet = true) (d : Declaration)
+    (hd : fe.env.rules.step fe.env.consts.length d = { fe.env.rules with
+      blks := pushBlkOn fe.env.rules.blks fe.env.consts.length
+        (blockedFor fe.env.rules.abstracts d.mainName) }) :
+    fe.enterRec d = fe := by
+  simp only [FEnv.quiet, Bool.and_eq_true, List.isEmpty_iff] at h
+  obtain ⟨⟨⟨⟨ha, hb⟩, hh⟩, hea⟩, heh⟩ := h
+  have hrt : fe.env.rules.step fe.env.consts.length d = fe.env.rules := by
+    rw [hd, hea]
+    simp only [blockedFor, List.filterMap_nil, pushBlkOn, heh, ↓reduceIte]
+  have hbase : { fe.base with
+      blks := pushBlkOn fe.base.blks fe.cnt (blockedFor fe.base.abs d.mainName),
+      blk := blkHead (pushBlkOn fe.base.blks fe.cnt (blockedFor fe.base.abs d.mainName)) } =
+      fe.base := by
+    simp only [ha, blockedFor, List.filterMap_nil, pushBlkOn, hh, ↓reduceIte]
+    rw [← hb, ← ha]
+  rcases fe with ⟨⟨cs, ts, rt⟩, idx, base, ovl, tbls, nl, sl, hnl, hsl⟩
+  simp only [FEnv.enterRec, Env.stepRules] at hrt hbase ⊢
+  simp only [hrt]
+  congr
+
+/-- `stepRules` on a declaration record is `enterRec`: the skip it makes where nothing is blocked
+(`FEnv.quiet`) returns what `enterRec` would. -/
+theorem FEnv.stepRules_enterRec (fe : FEnv) (d : Declaration)
+    (hd : fe.env.rules.step fe.env.consts.length d = { fe.env.rules with
+      blks := pushBlkOn fe.env.rules.blks fe.env.consts.length
+        (blockedFor fe.env.rules.abstracts d.mainName) }) :
+    (if fe.quiet then fe else fe.enterRec d) = fe.enterRec d := by
+  split
+  · next h => exact (FEnv.enterRec_quiet h d hd).symm
+  · rfl
+
+/-- **The index a record is checked at**, with the skip folded away. -/
+theorem FEnv.enter_eq (fe : FEnv) (d : Declaration) :
+    fe.enter d = match d with
+      | .rewriteDecl .. | .useRules _ | .abstractDecl .. => fe
+      | _ => fe.enterRec d := by
+  cases d <;> first | rfl | exact FEnv.stepRules_enterRec fe _ rfl
+
 /-- A record's rule effect on the index is its rule effect on the environment. -/
 theorem stepRules_env (fe : FEnv) (pd : Declaration) : (fe.stepRules pd).env = fe.env.stepRules pd := by
-  cases pd <;> rfl
+  cases pd <;> first | rfl | exact congrArg FEnv.env (FEnv.stepRules_enterRec fe _ rfl)
 
 /-- A canonical index stays canonical across a record's rule effect. -/
 theorem stepRules_mkFEnv (env : Env) (pd : Declaration) :
     (mkFEnv env).stepRules pd = mkFEnv (env.stepRules pd) := by
-  cases pd <;> first | rfl | exact FEnv.ext_parts rfl rfl rfl rfl rfl
+  cases pd <;> first | rfl | exact FEnv.ext_parts rfl rfl rfl rfl rfl |
+    exact (FEnv.stepRules_enterRec _ _ rfl).trans (FEnv.ext_parts rfl rfl (by
+      simp only [FEnv.enterRec, mkFEnv_base, FEnv.cnt, Nat.zero_add]
+      rfl) rfl rfl)
+
+/-- `mkFEnv`'s abstract definitions are the environment's. -/
+@[simp] theorem mkFEnv_abs (env : Env) : (mkFEnv env).base.abs = env.rules.abstracts := rfl
+
+/-- A canonical index stays canonical when a record is entered. -/
+theorem enter_mkFEnv (env : Env) (pd : Declaration) :
+    (mkFEnv env).enter pd = mkFEnv (env.enter pd) := by
+  cases pd <;> first | rfl | (dsimp only [FEnv.enter, Env.enter]; exact stepRules_mkFEnv env _)
 
 /-! ## The rule map agrees with `Env.rulesFor` -/
 
@@ -127,7 +187,7 @@ theorem mkFEnv_rawTable? (env : Env) (T : Name) :
     (mkFEnv env).rawTable? T = env.tables.find? (·.structName == T) := by
   show (match (mkTblsGo env.tables)[T]? with
     | some t => some t
-    | none => ({ rls := mkRlsGo env.rules.active } : FBase).findTable? T) = _
+    | none => ({ rls := mkRlsGo env.rules.active, abs := env.rules.abstracts, blks := env.rules.blks, blk := blkHead env.rules.blks } : FBase).findTable? T) = _
   rw [mkTblsGo_getElem?, FBase.findTable?_rls]
   cases env.tables.find? (·.structName == T) <;> rfl
 

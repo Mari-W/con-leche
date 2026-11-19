@@ -2467,8 +2467,8 @@
    124  /-- Store one more constant. -/
    125  def add (env : Env) (n : Name) (ci : ConstInfo) : Env := ⟨(n, ci) :: env.consts⟩
 
-== ConLeche/Kernel/Env.lean#L548
-   548  structure Env where
+== ConLeche/Kernel/Env.lean#L592
+   592  structure Env where
 
 == whitepaper/Fragment/Env.lean#L63-L100
     63  /-- What kind of constant a name is stored as. -/
@@ -2850,9 +2850,9 @@
    142    obtain ⟨hw, he⟩ := m.unfold c ci v hfind hv φ ρ ls hls
    143    exact ⟨hw, by rw [interp_const, he]⟩
 
-== ConLeche/Model/Rules/RedSound.lean#L252-L253
-   252  theorem Red.delta_soundU (hin : RulesInputs V m φ) {d : Nat} {e e' : Expr}
-   253      (h : ConLeche.unfoldDefinition env e = some e') : RedSemU m φ d e e' := by
+== ConLeche/Model/Rules/RedSound.lean#L261-L262
+   261  theorem Red.delta_soundU (hin : RulesInputs V m φ) {d : Nat} {e e' : Expr}
+   262      (h : ConLeche.unfoldDefinition env e = some e') : RedSemU m φ d e e' :=
 
 == whitepaper/Fragment/Sound.lean#L170-L172
    170  theorem const_sound [LevelOracle] {Γ : List Expr} {c : Name} {ls ls' : List Level}
@@ -5210,12 +5210,12 @@
    180      ∃ m' : EnvModel V (S.install env), ∀ n, (env.find? n).isSome → ∀ ls, m'.M n ls = m.M n ls :=
    181    ⟨S.mInstall hpl hs m hok, fun n hn ls => (S.agree_M₃ hok m.M n hn ls).symm⟩
 
-== ConLeche/Model/Inductives/DeclBlockStep.lean#L105-L109
-   105  `BlockCtorsCore` → (at the recursors) `BlockTablesCore`. -/
-   106  theorem declBlockAt {F : Nat} {env env₂ : Env}
-   107      {block : List ConstantInfo} {p₀ : BlockShape}
-   108      (mp : EnvModelM V env)
-   109      (hlps₀ : ∀ ms ∈ p₀.members, ms.cvT.levelParams = p₀.lps)
+== ConLeche/Model/Inductives/DeclBlockStep.lean#L106-L110
+   106  `BlockCtorsCore` → (at the recursors) `BlockTablesCore`. -/
+   107  theorem declBlockAt {F : Nat} {env env₂ : Env}
+   108      {block : List ConstantInfo} {p₀ : BlockShape}
+   109      (mp : EnvModelM V env)
+   110      (hlps₀ : ∀ ms ∈ p₀.members, ms.cvT.levelParams = p₀.lps)
 
 == whitepaper/Fragment/Consistency.lean#L89-L98
     89  /-- **No closed term inhabits an empty inductive type.**  For a block
@@ -5236,20 +5236,20 @@
    137    no_empty_inductive_inhabitant V hacc (S := IndSpec.falseSpec name recName elim) rfl rfl rfl rfl
    138      hrec e
 
-== ConLeche/Model/Fold.lean#L458-L465
-   458  theorem no_proof_of_False_pure (V : Type w) [SetTheory V]
-   459      {F : Nat}
-   460      {ds : List Declaration} {env' : Env}
-   461      (h : checkDeclsPure .verified (fueledOps .verified F) pins ds = .ok env') :
-   462      ∀ c ∈ env'.consts,
-   463        c.toConstantVal.type = .const falseName [] → False := by
-   464    obtain ⟨mp⟩ := checkDeclsPure_sound_of (V := V) h
-   465    exact fun c hc hty => no_constant_of_False mp c hc hty
+== ConLeche/Model/Fold.lean#L478-L485
+   478  theorem no_proof_of_False_pure (V : Type w) [SetTheory V]
+   479      {F : Nat}
+   480      {ds : List Declaration} {env' : Env}
+   481      (h : checkDeclsPure .verified (fueledOps .verified F) pins ds = .ok env') :
+   482      ∀ c ∈ env'.consts,
+   483        c.toConstantVal.type = .const falseName [] → False := by
+   484    obtain ⟨mp⟩ := checkDeclsPure_sound_of (V := V) h
+   485    exact fun c hc hty => no_constant_of_False mp c hc hty
 
-== ConLeche/Model/Fold.lean#L387-L389
-   387  theorem foldPM {F : Nat} :
-   388      ∀ (ds : List Declaration) (env : Env) {env' : Env},
-   389        EnvModelOk V env →
+== ConLeche/Model/Fold.lean#L407-L409
+   407  theorem foldPM {F : Nat} :
+   408      ∀ (ds : List Declaration) (env : Env) {env' : Env},
+   409        EnvModelOk V env →
 
 >>> whitepaper/sections/05-nested.typ
 
@@ -5659,18 +5659,18 @@
    454      rules.map fun rl => { rl with fire := fire }
    455    | some _ => rules
 
-== ConLeche/Kernel/CoreDefs.lean#L1151-L1161
-  1151      (rP : Nat) : List Level × List Expr :=
-  1152    match rl.fire with
-  1153    | .nested lvls pins =>
-  1154      (lvls.map (Level.subst lps us),
-  1155       pins.map fun p => Expr.instSpine (args.take rP) (rP - 1)
-  1156         (p.instantiateLevelParams lps us))
-  1157    | .plain =>
-  1158      (cvjLps.map fun p => Level.subst lps us (.param p),
-  1159       args.take cnP)
-  1160    | .levels lvls =>
-  1161      (lvls.map (Level.subst lps us), args.take cnP)
+== ConLeche/Kernel/CoreDefs.lean#L1168-L1178
+  1168      (rP : Nat) : List Level × List Expr :=
+  1169    match rl.fire with
+  1170    | .nested lvls pins =>
+  1171      (lvls.map (Level.subst lps us),
+  1172       pins.map fun p => Expr.instSpine (args.take rP) (rP - 1)
+  1173         (p.instantiateLevelParams lps us))
+  1174    | .plain =>
+  1175      (cvjLps.map fun p => Level.subst lps us (.param p),
+  1176       args.take cnP)
+  1177    | .levels lvls =>
+  1178      (lvls.map (Level.subst lps us), args.take cnP)
 
 == ConLeche/Rules/Rel.lean#L250-L261
    250        IotaCaseS env isK induct (recFireComparands rl cnP cv.levelParams us cvj.levelParams
@@ -6394,13 +6394,13 @@
     83  /-- **The declaration fold.**
     84  
 
-== ConLeche/Cached/StreamIndex.lean#L65
-    65  after it. -/
+== ConLeche/Cached/StreamIndex.lean#L69
+    69  after it. -/
 
-== ConLeche/Verify/Cached/StreamIndex.lean#L794-L796
-   794  theorem checkDecls_of_jobs {ds : Array Declaration}
-   795      (h : ∀ k (hk : k < ds.size), recordJob mode pins maxNatSize (buildIndex ds).freeze k ds[k] = .ok ()) :
-   796      checkDecls mode pins maxNatSize ds = .ok (streamEnv ds.toList) := by
+== ConLeche/Verify/Cached/StreamIndex.lean#L898-L900
+   898  theorem checkDecls_of_jobs {ds : Array Declaration}
+   899      (h : ∀ k (hk : k < ds.size), recordJob mode pins maxNatSize (buildIndex ds).freeze k ds[k] = .ok ()) :
+   900      checkDecls mode pins maxNatSize ds = .ok (streamEnv ds.toList) := by
 
 == ConLeche/Kernel/Expr.lean#L435-L437
    435  inductive Expr where

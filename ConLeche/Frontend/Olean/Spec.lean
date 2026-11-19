@@ -423,17 +423,20 @@ structure ModSkel where
   imports : List (ImportF UInt64)
   consts : List Nat
 
-/-- **A `ModuleRewrite` holding no rule and no rule set** (`notes/format.md`): the object at
-`ModuleData`'s sixth field, a constructor with its four arrays empty. -/
+/-- **A `ModuleRewrite` holding no rule, no rule set and no abstract definition**
+(`notes/format.md`): the object at `ModuleData`'s sixth field, a constructor with its four
+arrays empty, or five where the toolchain stores abstract definitions. -/
 def Region.noRewrites (r : Region) (g : Nat) : Bool :=
   match r.down g (r.fld g 5) with
-  | some x => r.isCtor x 0 4 &&
-      (List.range 4).all fun i => (r.objArray x (r.fld x i)).map (·.size) == some 0
+  | some x => (r.isCtor x 0 4 || r.isCtor x 0 5) &&
+      (List.range (if r.isCtor x 0 5 then 5 else 4)).all fun i =>
+        (r.objArray x (r.fld x i)).map (·.size) == some 0
   | none => false
 
 /-- **The `ModuleData` constructor**: five object fields, or six where the toolchain stores the
-module's rewrite rules (`ModuleRewrite`, `notes/format.md`).  A module that registers a rule
-or stores a rule set is not read: rules reach the checker through the NDJSON stream only. -/
+module's rewrite rules (`ModuleRewrite`, `notes/format.md`).  A module that registers a rule,
+stores a rule set or registers an abstract definition is not read: those reach the checker
+through the NDJSON stream only. -/
 def Region.moduleDataOk (r : Region) (g : Nat) : Bool :=
   r.isCtor g 0 5 || (r.isCtor g 0 6 && r.noRewrites g)
 

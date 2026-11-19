@@ -348,11 +348,15 @@ def checkDeclKindC (pins : List NatOpPinSet) (fe : FEnv) (pd : Declaration) :
       checkRuleLawC mode fe thm
       pure (fe.stepRules pd)
   | .useRules _ => pure (fe.stepRules pd)
+  | .abstractDecl c _ =>
+    match abstractDeclError? fe.find? fe.base.abs c with
+    | some e => throw e
+    | none => pure (fe.stepRules pd)
 
 /-- **One declaration** (`checkDecl`'s twin): its own checks, then the reserved names'. -/
 def checkDeclC (pins : List NatOpPinSet) (fe : FEnv) (pd : Declaration) :
     CheckCM FEnv := do
-  let fe₂ ← checkDeclKindC mode pins fe pd
+  let fe₂ ← checkDeclKindC mode pins (fe.enter pd) pd
   unless basisNamesOk pd do
     throw (basisNamesError pd)
   pure fe₂
@@ -375,6 +379,7 @@ def declCLabel : Declaration → String
   | .quotDecl _ cv => s!"quot {cv.name}"
   | .rewriteDecl thm _ _ => s!"rewrite {thm}"
   | .useRules S => s!"rewrite rules ({S.length})"
+  | .abstractDecl c _ => s!"abstract {c}"
 
 /-- The check of one record: flush, then check. -/
 def checkDeclStepC (pins : List NatOpPinSet) (fe : FEnv) (pd : Declaration) :

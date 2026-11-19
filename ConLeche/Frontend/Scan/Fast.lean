@@ -238,6 +238,9 @@ def keyAt (b : @& ByteArray) (i : USize) (kl : USize) : Key :=
     else if kl == 5 then
       if lit4 b j 120 105 111 109 then .kAxiom  -- "axiom"
       else .kUnknown
+    else if kl == 8 then
+      if lit7 b j 98 115 116 114 97 99 116 then .kAbstract  -- "abstract"
+      else .kUnknown
     else .kUnknown
   | 98 =>   -- 'b'
     if kl == 4 then
@@ -337,6 +340,9 @@ def keyAt (b : @& ByteArray) (i : USize) (kl : USize) : Key :=
       else .kUnknown
     else if kl == 4 then
       if lit3 b j 101 116 97 then .kMeta  -- "meta"
+      else .kUnknown
+    else if kl == 7 then
+      if lit6 b j 101 109 98 101 114 115 then .kMembers  -- "members"
       else .kUnknown
     else .kUnknown
   | 110 =>   -- 'n'
@@ -2523,6 +2529,62 @@ def scanRuleDecl (b : @& ByteArray) (i : USize) : ScanRes DeclRec :=
     scanRuleDeclLoop b (i + 1) true 0 0 0 0
   else .err ⟨i.toNat, .expectedObject⟩
 
+def scanAbstractDeclLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
+    (seen : UInt32)
+    (ms : List Nat)
+    (nm : Nat) : ScanRes DeclRec :=
+  if h : i < b.usize then
+    let c := b.uget i (usizeInBounds b i h)
+    if isWs c then scanAbstractDeclLoop b (i + 1) wantMember seen ms nm
+    else if c == 125 then
+      if wantMember && seen != 0 then .err ⟨i.toNat, .expectedKey⟩
+      else if (seen &&& 3) != 3 then .err ⟨i.toNat, .missingKey⟩
+      else .ok (.abstr nm ms) (i + 1)
+    else if c == 44 then
+      if wantMember then .err ⟨i.toNat, .expectedKey⟩
+      else scanAbstractDeclLoop b (i + 1) true seen ms nm
+    else if c == 34 then
+      if !wantMember then .err ⟨i.toNat, .expectedComma⟩
+      else
+        let ke := keyEnd b (i + 1)
+        let v := valueAt b i ke
+        if ke == 0 then .err ⟨i.toNat, .expectedKey⟩
+        else if v == i then .err ⟨i.toNat, .expectedColon⟩
+        else
+        match keyAt b i (ke - (i + 1)) with
+        | .kMembers =>
+          if (seen &&& 1) != 0 then .err ⟨i.toNat, .duplicateKey⟩
+          else
+            match scanNatList b v with
+            | .err err => .err err
+            | .ok x e =>
+              if _hj : i < e then
+                scanAbstractDeclLoop b e false (seen ||| 1) x nm
+              else .err ⟨i.toNat, .noProgress⟩
+        | .kName =>
+          if (seen &&& 2) != 0 then .err ⟨i.toNat, .duplicateKey⟩
+          else
+            let e := numEnd b v
+            if e == v then .err ⟨v.toNat, .expectedNat⟩
+            else if _hj : i < e then
+              scanAbstractDeclLoop b e false (seen ||| 2) ms (readNatAt b v e)
+            else .err ⟨i.toNat, .noProgress⟩
+        | _ => .err ⟨i.toNat, .unknownKey⟩
+    else .err ⟨i.toNat, .expectedComma⟩
+  else .err ⟨i.toNat, .expectedComma⟩
+termination_by b.size - i.toNat
+decreasing_by
+  all_goals
+    first
+      | (have := usizeInBounds b i h; have := usizeStep b i h; omega)
+      | exact Nat.sub_lt_sub_left (usizeInBounds b i h) (USize.lt_iff_toNat_lt.mp _hj)
+
+/-- An `abstract` record: an abstract definition's registration (lean4 `abstract_block`). -/
+def scanAbstractDecl (b : @& ByteArray) (i : USize) : ScanRes DeclRec :=
+  if byteAt b i == 123 then
+    scanAbstractDeclLoop b (i + 1) true 0 [] 0
+  else .err ⟨i.toNat, .expectedObject⟩
+
 /-! ## The line
 
 A line carries at most one index key (`in`/`il`/`ie`) and exactly one
@@ -2661,7 +2723,8 @@ def scanLineLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
                 if _hj : i < e then
                   scanLineLoop b e false idxKind idx (.expr (.strVal str))
                 else .err ⟨i.toNat, .noProgress⟩
-          | .kAxiom | .kDef | .kThm | .kOpaque | .kQuot | .kInductive | .kRewrite =>
+          | .kAxiom | .kDef | .kThm | .kOpaque | .kQuot | .kInductive | .kRewrite
+          | .kAbstract =>
             if !pl.isAbsent then .err ⟨i.toNat, .duplicateKey⟩
             else
               match (match k with
@@ -2671,6 +2734,7 @@ def scanLineLoop (b : @& ByteArray) (i : USize) (wantMember : Bool)
                      | .kOpaque => scanOpaqueDecl b v
                      | .kQuot => scanQuotDecl b v
                      | .kRewrite => scanRuleDecl b v
+                     | .kAbstract => scanAbstractDecl b v
                      | _ => scanIndDecl b v) with
               | .err err => .err err
               | .ok d e =>

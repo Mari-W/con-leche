@@ -249,14 +249,18 @@ theorem Red.zeta_sound {d : Nat} {ty v body : Expr} :
 
 /-- The δ identity (the unfolding has the same reading,
 `denote_unfoldDefinition`) + `unfoldDefinition_WScoped`. -/
-theorem Red.delta_soundU (hin : RulesInputs V m φ) {d : Nat} {e e' : Expr}
-    (h : ConLeche.unfoldDefinition env e = some e') : RedSemU m φ d e e' := by
+theorem Red.delta_soundU_raw (hin : RulesInputs V m φ) {d : Nat} {e e' : Expr}
+    (h : ConLeche.unfoldDefinitionRaw env e = some e') : RedSemU m φ d e e' := by
   intro hf Δa ea _ hea
-  refine ⟨⟨ConLeche.unfoldDefinition_WScoped m.wf h hf.1,
-      ConLeche.unfoldDefinition_looseBVars m.wf h hf.2.1,
-      fun l hl => hf.2.2 l (ConLeche.unfoldDefinition_fvarLeaves m.wf h l hl)⟩,
-    fun l hl => ConLeche.unfoldDefinition_fvarLeaves m.wf h l hl,
-    ea, denote_unfoldDefinition hin.defn h hea, fun _ _ _ hg => ⟨hg, rfl⟩⟩
+  refine ⟨⟨ConLeche.unfoldDefinition_WScoped_raw m.wf h hf.1,
+      ConLeche.unfoldDefinition_looseBVars_raw m.wf h hf.2.1,
+      fun l hl => hf.2.2 l (ConLeche.unfoldDefinition_fvarLeaves_raw m.wf h l hl)⟩,
+    fun l hl => ConLeche.unfoldDefinition_fvarLeaves_raw m.wf h l hl,
+    ea, denote_unfoldDefinitionRaw hin.defn h hea, fun _ _ _ hg => ⟨hg, rfl⟩⟩
+
+theorem Red.delta_soundU (hin : RulesInputs V m φ) {d : Nat} {e e' : Expr}
+    (h : ConLeche.unfoldDefinition env e = some e') : RedSemU m φ d e e' :=
+  Red.delta_soundU_raw hin (ConLeche.unfoldDefinition_raw h)
 
 theorem Red.delta_sound (hin : RulesInputs V m φ) {d : Nat} {e e' : Expr}
     (h : ConLeche.unfoldDefinition env e = some e') : RedSem m φ d e e' :=

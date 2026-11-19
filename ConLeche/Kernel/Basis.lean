@@ -149,7 +149,7 @@ def basisNamesOk : Declaration → Bool
   | .axiomDecl cv => cv.name == quotSoundName || !reservedBasisNames.contains cv.name
   | .quotDecl _ _ => true
   | .defnDecl cv .. | .thmDecl cv .. | .opaqueDecl cv .. => !reservedBasisNames.contains cv.name
-  | .rewriteDecl .. | .useRules _ => true
+  | .rewriteDecl .. | .useRules _ | .abstractDecl .. => true
 
 /-- What a failed `basisNamesOk` reports. -/
 def basisNamesError : Declaration → CheckError
@@ -160,7 +160,7 @@ def basisNamesError : Declaration → CheckError
         {(block.head?.map (·.name)).getD .anonymous}"
   | .axiomDecl cv | .quotDecl _ cv | .defnDecl cv .. | .thmDecl cv .. | .opaqueDecl cv .. =>
     .invalid s!"reserved basis name {cv.name}"
-  | .rewriteDecl .. | .useRules _ => .invalid "reserved basis name"
+  | .rewriteDecl .. | .useRules _ | .abstractDecl .. => .invalid "reserved basis name"
 
 /-- The pinned quotient package's constant at a slot. -/
 def quotPin (k : QuotKind) : ConstantInfo :=
@@ -214,6 +214,6 @@ def andPinOk : Declaration → Bool
       (nP == 2 && canonEqList block andPin)
   | .axiomDecl cv | .defnDecl cv .. | .thmDecl cv .. | .opaqueDecl cv ..
   | .quotDecl _ cv => !andPinNames.contains cv.name
-  | .rewriteDecl .. | .useRules _ => true
+  | .rewriteDecl .. | .useRules _ | .abstractDecl .. => true
 
 end ConLeche

@@ -229,6 +229,9 @@ inductive DeclRec where
   /-- a rewrite rule's registration, `{"rewrite":{"name":t,"head":h,"prio":p}}` (lean4export
   3.2) -/
   | rule (name head prio : Nat)
+  /-- an abstract definition's registration, `{"abstract":{"name":c,"members":[m…]}}`
+  (lean4 `abstract_block`) -/
+  | abstr (name : Nat) (members : List Nat)
   /-- a declaration record with a non-empty `rewrites` field: the rule set `R(D)` it is checked
   under, as name indices -/
   | underRules (rewrites : List Nat) (d : DeclRec)
@@ -260,6 +263,7 @@ not know. -/
 inductive Key where
   /-- not a key of the dialect -/
   | kUnknown
+  | kAbstract
   | kAll
   | kApp
   | kArg
@@ -293,6 +297,7 @@ inductive Key where
   | kLetE
   | kLevelParams
   | kMax
+  | kMembers
   | kMeta
   | kName
   | kNatVal

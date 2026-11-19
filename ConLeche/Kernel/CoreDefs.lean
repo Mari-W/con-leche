@@ -111,8 +111,25 @@ anticipates https://github.com/leanprover/lean4/pull/14896 (theorems
 become opaque to the kernel: `is_delta` stops unfolding them).  The
 one known input whose typing needs a theorem to unfold, the arena's
 `subject-reduction-redex`, is rejected (an accept-subset of the
-reference kernels until that PR lands). -/
+reference kernels until that PR lands).  **An abstract definition unfolds only while one of its
+members is checked** (`Env.blocked`, official `is_abstract_blocked`). -/
 def unfoldDefinition (env : Env) (e : Expr) : Option Expr :=
+  match e.getAppFn with
+  | .const n us =>
+    match env.find? n with
+    | some (.defnInfo cv value _) =>
+      if us.length = cv.levelParams.length ∧ env.blocked n = false then
+        some (Expr.mkAppN (value.instantiateLevelParams cv.levelParams us)
+          e.getAppArgs)
+      else none
+    | _ => none
+  | _ => none
+
+/-- **The unfolding without the abstract gate**: `unfoldDefinition` before it asks
+`Env.blocked`.  The kernel never runs it; the identity-wrapper reader's soundness
+(`redSem_unwrapIdDefs`) reads a wrapper's δ through it, a reduction whether the wrapper is
+abstract or not. -/
+def unfoldDefinitionRaw (env : Env) (e : Expr) : Option Expr :=
   match e.getAppFn with
   | .const n us =>
     match env.find? n with
@@ -135,7 +152,7 @@ def unfoldableHead (env : Env) (e : Expr) : Bool :=
   match e.getAppFn with
   | .const n us =>
     match env.find? n with
-    | some (.defnInfo cv _ _) => us.length == cv.levelParams.length
+    | some (.defnInfo cv _ _) => us.length == cv.levelParams.length && !env.blocked n
     | _ => false
   | _ => false
 
@@ -1236,6 +1253,16 @@ def ruleLhsParams : Expr → List Name
     | _ => none
   | .app f a => ruleLhsParams f ++ ruleLhsParams a
   | _ => []
+
+/-- **Why an abstract record is invalid**, if it is (official `addAbstract`): its name holds no
+stored definition, or the definition is abstract already. -/
+def abstractDeclError? (find? : Name → Option ConstantInfo) (abs : List (Name × List Name))
+    (c : Name) : Option CheckError :=
+  match find? c with
+  | some (.defnInfo ..) =>
+    if (abs.lookup c).isSome then some (.invalid s!"'{c}' is already abstract")
+    else none
+  | _ => some (.invalid s!"invalid abstract definition '{c}', it is not a definition")
 
 /-- **What a rule's registration is told**, or `none` when it passes (the checks of the C++
 kernel's `addRewriteRule`): the theorem is stored, its statement is `∀ xs, @Eq A l r`, `l` is

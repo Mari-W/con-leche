@@ -82,6 +82,7 @@ theorem consBlockInds_famBelow {q : BlockShape} {isRec : Bool} :
         exact hne cv' hcv')
       (by rw [consBlockInds_tables]; rfl)
       (ConLeche.Env.find?_cons_self _ env) (fun t ht => nomatch ht) (newS := [])
+      (by rw [consBlockInds_rules]; rfl) (fun _ h => nomatch h) (newB := [])
       (by rw [consBlockInds_rules]; rfl) (fun _ h => nomatch h)]
     unfold Env.famBelow
     rw [show Env.find? ⟨.indInfo c (ConLeche.blockCapsAt q i isRec) :: env.consts, env.tables, env.rules⟩ c.name
@@ -157,6 +158,7 @@ theorem declBlockAt {F : Nat} {env env₂ : Env}
       (p₀.members.map (·.declared)) 0 env
     refine ⟨⟨newI₀, by rw [hcons]; exact hnewI₀, fun c hc => ?_⟩,
       ⟨[], by rw [hcons, consBlockInds_tables _ 0 env]; rfl, fun _ h => nomatch h⟩,
+      ⟨[], by rw [hcons, consBlockInds_rules _ 0 env]; rfl, fun _ h => nomatch h⟩,
       ⟨[], by rw [hcons, consBlockInds_rules _ 0 env]; rfl, fun _ h => nomatch h⟩⟩
     obtain ⟨cv, hcv, -, rfl⟩ := hnewI₀all c hc
     exact hndDcl cv hcv
@@ -676,7 +678,7 @@ theorem declBlockAt {F : Nat} {env env₂ : Env}
       exact (hAt ms hms).name.symm
     rw [he]; exact hndM
   have hranAll : ∀ {env' : Env} {new : List ConstantInfo} {newT : List ProjTable},
-      FreshExt env env' → env'.rules.snaps = env.rules.snaps →
+      FreshExt env env' → env'.rules.snaps = env.rules.snaps → env'.rules.blks = env.rules.blks →
       env'.consts = new ++ (ConLeche.consBlockCtors p₁.nP p₁.ctorGroups env₁).consts →
       (∀ c ∈ new, ∀ cv caps, c ≠ .indInfo cv caps) →
       env'.tables = newT ++ env.tables → (∀ t ∈ newT, env.find? t.structName = none) →
@@ -684,7 +686,7 @@ theorem declBlockAt {F : Nat} {env env₂ : Env}
         ∀ (cv : ConstantVal) (caps : IndCaps), env'.find? (D.member mm) = some (.indInfo cv caps) →
         ConLeche.formerDefHeaded cv = true →
         ∃ F' : Nat, ConLeche.familyTelescope (fueledOps .verified F') env' cv caps = .ok f.type := by
-    intro env' new newT hx' hsn hcs hni hts hnewT D hD mm f hmm hs cv caps hf hdh
+    intro env' new newT hx' hsn hsb hcs hni hts hnewT D hD mm f hmm hs cv caps hf hdh
     have hcvn : env'.find? cv.name = some (.indInfo cv caps) := by
       rw [← ConLeche.Env.find?_name hf] at hf; exact hf
     rcases List.mem_cons.mp hD with rfl | hD₀
@@ -732,6 +734,7 @@ theorem declBlockAt {F : Nat} {env env₂ : Env}
           refine Env.famBelow_push (newT := []) (consBlockCtors_consts _ _ _) ?_
             (by rw [consBlockCtors_tables]; rfl) hfI
             (fun t ht => nomatch ht) (newS := []) (by rw [consBlockCtors_rules]; rfl)
+            (fun _ h => nomatch h) (newB := []) (by rw [consBlockCtors_rules]; rfl)
             (fun _ h => nomatch h)
           intro c hc he
           obtain ⟨m, ctor, -, hctor, _, rfl⟩ := hnewC c hc
@@ -743,7 +746,8 @@ theorem declBlockAt {F : Nat} {env env₂ : Env}
         have hbE : env'.famBelow ms.declared.name = some (env.cutAt env.consts) := by
           rw [← hbC]
           refine Env.famBelow_push hcs hneN (by rw [hts, htabsC]) hfC ?_ (newS := [])
-            (by rw [hsn, consBlockCtors_rules, hrI]; rfl) (fun _ h => nomatch h)
+            (by rw [hsn, consBlockCtors_rules, hrI]; rfl) (fun _ h => nomatch h) (newB := [])
+            (by rw [hsb, consBlockCtors_rules, hrI]; rfl) (fun _ h => nomatch h)
           intro t ht E hE
           rw [hbC] at hE
           obtain rfl := Option.some.inj hE
@@ -769,9 +773,11 @@ theorem declBlockAt {F : Nat} {env env₂ : Env}
       exact hrun
   have hfxC : FreshExt env (ConLeche.consBlockCtors p₁.nP p₁.ctorGroups env₁) :=
     ⟨⟨_, hconsC, hfrE⟩, ⟨[], by rw [htabsC]; rfl, fun _ h => nomatch h⟩,
+      ⟨[], by rw [consBlockCtors_rules, hrI]; rfl, fun _ h => nomatch h⟩,
       ⟨[], by rw [consBlockCtors_rules, hrI]; rfl, fun _ h => nomatch h⟩⟩
   have hRanC : FamilyRan mpC := fun D hD mm f hmm hs cv caps hf hdh =>
-    hranAll (new := []) (newT := []) hfxC (by rw [consBlockCtors_rules, hrI]) rfl (fun _ h => nomatch h) (by rw [htabsC]; rfl)
+    hranAll (new := []) (newT := []) hfxC (by rw [consBlockCtors_rules, hrI])
+      (by rw [consBlockCtors_rules, hrI]) rfl (fun _ h => nomatch h) (by rw [htabsC]; rfl)
       (fun _ h => nomatch h) D hD mm f hmm hs cv caps hf hdh
   -- ## the positivity model at the formers' environment: the input's clauses, the members exempt, `mpC`'s leaves
   have hmkI : FormersModelAt (V := V) env₁ p₁.memberNames mpC
@@ -852,6 +858,7 @@ theorem declBlockAt {F : Nat} {env env₂ : Env}
   have hxIC : FreshExt env₁ (ConLeche.consBlockCtors p₁.nP p₁.ctorGroups env₁) := by
     refine ⟨⟨_, consBlockCtors_consts _ _ _, fun c hc => ?_⟩,
       ⟨[], by rw [consBlockCtors_tables]; rfl, fun _ h => nomatch h⟩,
+      ⟨[], by rw [consBlockCtors_rules]; rfl, fun _ h => nomatch h⟩,
       ⟨[], by rw [consBlockCtors_rules]; rfl, fun _ h => nomatch h⟩⟩
     obtain ⟨m, ctor, -, hctor, _, rfl⟩ := hnewC c hc
     obtain ⟨j, hj⟩ := List.getElem?_of_mem hctor
@@ -951,7 +958,11 @@ theorem declBlockAt {F : Nat} {env env₂ : Env}
         rw [hfin]
         show (ConLeche.consBlockRecsT _ _ _ _).rules.snaps = _
         rw [consBlockRecsT_rules, consBlockCtors_rules, hrI]
-      exact hranAll hx₂ hsn₂ hcs₂ (fun c hc cv' caps' h => by
+      have hsb₂ : env₂.rules.blks = env.rules.blks := by
+        rw [hfin]
+        show (ConLeche.consBlockRecsT _ _ _ _).rules.blks = _
+        rw [consBlockRecsT_rules, consBlockCtors_rules, hrI]
+      exact hranAll hx₂ hsn₂ hsb₂ hcs₂ (fun c hc cv' caps' h => by
           obtain ⟨r, -, mI, rP, isK, rules, rfl⟩ := hnewRall c hc
           exact nomatch h) hts₂ hQf D hDC mm f hmm hs cv caps hf hdh
     · rw [h₀] at hs; exact nomatch hs

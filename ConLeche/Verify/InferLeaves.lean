@@ -261,10 +261,10 @@ theorem litToCtorIfNat_looseBVars {env : Env} {e : Expr} {k : Nat}
 
 /-- Unfolding a definition at the head only shrinks the leaf
 closure. -/
-theorem unfoldDefinition_fvarLeaves {env : Env} (henv : EnvWF env)
-    {e e₂ : Expr} (h : unfoldDefinition env e = some e₂) :
+theorem unfoldDefinition_fvarLeaves_raw {env : Env} (henv : EnvWF env)
+    {e e₂ : Expr} (h : unfoldDefinitionRaw env e = some e₂) :
     ∀ l ∈ e₂.fvarLeaves, l ∈ e.fvarLeaves := by
-  unfold unfoldDefinition at h
+  unfold unfoldDefinitionRaw at h
   revert h
   match hfn : e.getAppFn with
   | .const n us => ?_
@@ -299,12 +299,18 @@ theorem unfoldDefinition_fvarLeaves {env : Env} (henv : EnvWF env)
     · exact fvarLeaves_getAppArgs hx l hlx
   · intro h; exact nomatch h
 
+
+theorem unfoldDefinition_fvarLeaves {env : Env} (henv : EnvWF env)
+    {e e₂ : Expr} (h : unfoldDefinition env e = some e₂) :
+    ∀ l ∈ e₂.fvarLeaves, l ∈ e.fvarLeaves :=
+  unfoldDefinition_fvarLeaves_raw henv (unfoldDefinition_raw h)
+
 /-- Unfolding a definition at the head preserves the bvar bound. -/
-theorem unfoldDefinition_looseBVars {env : Env} (henv : EnvWF env)
-    {e e₂ : Expr} (h : unfoldDefinition env e = some e₂)
+theorem unfoldDefinition_looseBVars_raw {env : Env} (henv : EnvWF env)
+    {e e₂ : Expr} (h : unfoldDefinitionRaw env e = some e₂)
     (hb : e.looseBVarsBounded 0 = true) :
     e₂.looseBVarsBounded 0 = true := by
-  unfold unfoldDefinition at h
+  unfold unfoldDefinitionRaw at h
   revert h
   match hfn : e.getAppFn with
   | .const n us => ?_
@@ -337,6 +343,13 @@ theorem unfoldDefinition_looseBVars {env : Env} (henv : EnvWF env)
     · intro x hx
       exact looseBVarsBounded_getAppArgs hb x hx
   · intro h; exact nomatch h
+
+
+theorem unfoldDefinition_looseBVars {env : Env} (henv : EnvWF env)
+    {e e₂ : Expr} (h : unfoldDefinition env e = some e₂)
+    (hb : e.looseBVarsBounded 0 = true) :
+    e₂.looseBVarsBounded 0 = true :=
+  unfoldDefinition_looseBVars_raw henv (unfoldDefinition_raw h) hb
 
 /-- Peeling a `∀`-telescope along closed arguments keeps a closed type closed. -/
 theorem piResidual_looseBVars :

@@ -81,7 +81,8 @@ macro "line_sub_suffix1" : tactic => `(tactic| first
   | exact naiveStr_rest_suffix _ | exact naiveAxiomDecl_rest_suffix _
   | exact naiveDefDecl_rest_suffix _ | exact naiveThmDecl_rest_suffix _
   | exact naiveOpaqueDecl_rest_suffix _ | exact naiveQuotDecl_rest_suffix _
-  | exact naiveIndDecl_rest_suffix _ | exact naiveRuleDecl_rest_suffix _)
+  | exact naiveIndDecl_rest_suffix _ | exact naiveRuleDecl_rest_suffix _
+  | exact naiveAbstractDecl_rest_suffix _)
 
 /-- … also through the key dispatch `match k with | .kStr => … | _ => …`. -/
 -- The line loop's inner dispatches are on a `let`-bound key; the case
@@ -94,11 +95,15 @@ macro "line_key_case" : tactic => `(tactic| first
   | (have hk : _ = Key.kConst := ‹_›; rw [hk]) | (have hk : _ = Key.kProj := ‹_›; rw [hk])
   | (have hk : _ = Key.kAxiom := ‹_›; rw [hk]) | (have hk : _ = Key.kDef := ‹_›; rw [hk]) | (have hk : _ = Key.kThm := ‹_›; rw [hk]) | (have hk : _ = Key.kOpaque := ‹_›; rw [hk])
   | (have hk : _ = Key.kQuot := ‹_›; rw [hk]) | (have hk : _ = Key.kInductive := ‹_›; rw [hk])
-  | (have hk : _ = Key.kRewrite := ‹_›; rw [hk]))
+  | (have hk : _ = Key.kRewrite := ‹_›; rw [hk]) | (have hk : _ = Key.kAbstract := ‹_›; rw [hk]))
 
 macro "line_sub_suffix" : tactic =>
   `(tactic| first | line_sub_suffix1 | (line_key_case; line_sub_suffix1))
 
+-- One goal per dispatch arm of the line loop, each running the `first` chains below: with
+-- the `abstract` record's four arms the theorem needs just over the default 200000
+-- (measured: 220000 suffices); 400000 leaves room for the next record kind.
+set_option maxHeartbeats 400000 in
 theorem naiveLineLoop_rest_suffix (l : List UInt8) (w : Bool) (idx : Option (IdxKey × Nat))
     (pl : LinePayload) : (naiveLineLoop l w idx pl).rest <:+ l := by
   fun_induction naiveLineLoop l w idx pl
@@ -490,7 +495,8 @@ macro_rules
       | rw [scanOpaqueDecl_eq, $ht:ident] at $hs:ident
       | rw [scanQuotDecl_eq, $ht:ident] at $hs:ident
       | rw [scanIndDecl_eq, $ht:ident] at $hs:ident
-      | rw [scanRuleDecl_eq, $ht:ident] at $hs:ident)
+      | rw [scanRuleDecl_eq, $ht:ident] at $hs:ident
+      | rw [scanAbstractDecl_eq, $ht:ident] at $hs:ident)
 
 macro "ln_sub_err" : tactic => `(tactic|
   (rename_i h c hws h125 h44 h34 hw ke v hke hvi k hkey hdup err hsc
@@ -712,7 +718,7 @@ macro "ln_meta_stuck" : tactic => `(tactic|
 to the same `unknownKey`. -/
 macro "ln_unknown" : tactic => `(tactic|
   (rename_i h c hws h125 h44 h34 hw ke v hke hvi k
-     _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+     _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
    intro idx hk hv2
    obtain ⟨key, r1, lv, hkb, hnv, hka, htv, hvn, hiv, hlvs, hlvlt⟩ :=
      memberFacts h rfl rfl hke hvi
@@ -852,13 +858,17 @@ theorem scanLineLoop_aux (b : ByteArray) (i : USize) (wantMember : Bool)
   case case119 => ln_sub_step
   case case120 => ln_sub_stuck
   case case121 => ln_dup
-  case case122 => ln_meta_nobrace
-  case case123 => ln_meta_none
-  case case124 => ln_meta_step
-  case case125 => ln_meta_stuck
-  case case126 => ln_unknown
-  case case127 => ln_other
-  case case128 => ln_end
+  case case122 => ln_sub_err
+  case case123 => ln_sub_step
+  case case124 => ln_sub_stuck
+  case case125 => ln_dup
+  case case126 => ln_meta_nobrace
+  case case127 => ln_meta_none
+  case case128 => ln_meta_step
+  case case129 => ln_meta_stuck
+  case case130 => ln_unknown
+  case case131 => ln_other
+  case case132 => ln_end
 
 theorem scanLineLoop_eq (b : ByteArray) (i : USize) (wantMember : Bool)
     (idx : Option (IdxKey × Nat)) (pl : LinePayload) :

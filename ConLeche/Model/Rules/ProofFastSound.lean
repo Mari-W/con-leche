@@ -224,9 +224,9 @@ theorem redSem_unwrapIdDefs (hin : RulesInputs V m φ) {d : Nat} :
       (ConLeche.Expr.mkAppN_getApp e).symm, hfn] at hea'
     obtain ⟨fa, vs, hfa, -, -⟩ := denote_mkAppN_inv hea'
     obtain ⟨hlv, -⟩ := denote_const_arityK hfc hfa
-    have hunf : ConLeche.unfoldDefinition env e = some (Expr.mkAppN
+    have hunf : ConLeche.unfoldDefinitionRaw env e = some (Expr.mkAppN
         (v.instantiateLevelParams cv.levelParams us) e.getAppArgs) := by
-      simp only [ConLeche.unfoldDefinition, hfn, hfc]
+      simp only [ConLeche.unfoldDefinitionRaw, hfn, hfc]
       dsimp only [ConLeche.ConstantInfo.toConstantVal] at hlv
       rw [ite_eq_left hlv]
     obtain ⟨n, hn, hl, hj⟩ := isLams_of_lamProj? hlp
@@ -241,7 +241,7 @@ theorem redSem_unwrapIdDefs (hin : RulesInputs V m φ) {d : Nat} :
     rw [show e.getAppArgs.getD (k - 1 - j) (v.instantiateLevelParams cv.levelParams us)
         = e.getAppArgs.getD (k - 1 - j) e by
       simp [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi]] at hchain
-    exact Red.trans_sound (Red.delta_sound hin hunf) hchain hf hC hea
+    exact Red.trans_sound (Red.delta_soundU_raw hin hunf).cond hchain hf hC hea
 
 /-- An instantiated ∀-body's frame, context discipline, reading and
 leaves, from the ∀'s and the argument's. -/

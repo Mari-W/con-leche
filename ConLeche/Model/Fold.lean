@@ -125,7 +125,7 @@ theorem PlainStep.close {env env₂ : Env} {mp : EnvModelM V env} (h : PlainStep
     (∃ mp' : EnvModelM V env₂, LfpCover mp' [] ∧ FamilyRan mp') ∧ NatFacts env₂ := by
   obtain ⟨new, hnew, htab, hrul, hres, hfr⟩ := h
   exact ⟨hstep.covered hcov hS ⟨⟨new, hnew, hfr⟩, ⟨[], by rw [htab]; rfl, fun _ h => nomatch h⟩,
-    ⟨[], by rw [hrul]; rfl, fun _ h => nomatch h⟩⟩,
+    ⟨[], by rw [hrul]; rfl, fun _ h => nomatch h⟩, ⟨[], by rw [hrul]; rfl, fun _ h => nomatch h⟩⟩,
     hN.append hnew hres⟩
 
 /-- A declaration's constant, stored under an unreserved name. -/
@@ -366,7 +366,8 @@ theorem declStep_preserves
         obtain ⟨hc, htb, hrb⟩ := basisInstallRun_consts hinst
         exact ⟨(declBasisPB_at mp hnq hok hinst hwf₂).covered hcov hS
           ⟨⟨_, hc, fun c hcm => basisInstallRun_fresh hinst c (List.mem_reverse.mp hcm)⟩,
-            ⟨[], by rw [htb]; rfl, fun _ h => nomatch h⟩, ⟨[], by rw [hrb]; rfl, fun _ h => nomatch h⟩⟩,
+            ⟨[], by rw [htb]; rfl, fun _ h => nomatch h⟩, ⟨[], by rw [hrb]; rfl, fun _ h => nomatch h⟩,
+            ⟨[], by rw [hrb]; rfl, fun _ h => nomatch h⟩⟩,
           natFacts_basis hN hk hinst⟩
       | none =>
         -- the uniform install, at any number of members, nested blocks included
@@ -382,6 +383,25 @@ theorem declStep_preserves
     subst hrun
     exact ⟨(stepRules_cover mp (.useRules S) fun _ _ _ hd => nomatch hd).covered hcov hS
       (freshExt_stepRules env _), ⟨hN.trio⟩⟩
+  | abstractDecl c ms =>
+    obtain ⟨-, rfl⟩ := hrun
+    exact ⟨(stepRules_cover mp (.abstractDecl c ms) fun _ _ _ hd => nomatch hd).covered hcov hS
+      (freshExt_stepRules env _), ⟨hN.trio⟩⟩
+
+/-- **The invariant at the environment a record is checked at** (`Env.enter`): a declaration
+record's blocked set is a rule record's effect, which keeps the model (`stepRules_cover`). -/
+theorem EnvModelOk.enter {env : Env} (hm : EnvModelOk V env) (d : Declaration) :
+    EnvModelOk V (env.enter d) := by
+  cases d with
+  | rewriteDecl _ _ _ => exact hm
+  | useRules _ => exact hm
+  | abstractDecl _ _ => exact hm
+  | _ =>
+    dsimp only [Env.enter]
+    obtain ⟨⟨mp, hcov, hS⟩, hN⟩ := hm
+    refine ⟨(stepRules_cover mp _ ?_).covered hcov hS (freshExt_stepRules env _), ⟨hN.trio⟩⟩
+    intro _ _ _ hd
+    exact nomatch hd
 
 /-- **The P fold**: the declaration fold's recursion at the P invariant. -/
 theorem foldPM {F : Nat} :
@@ -398,7 +418,7 @@ theorem foldPM {F : Nat} :
     | error e => rw [hd] at h; exact nomatch h
     | ok env1 =>
       rw [hd] at h
-      obtain ⟨⟨mp, hcov, hS⟩, hN⟩ := hm
+      obtain ⟨⟨mp, hcov, hS⟩, hN⟩ := hm.enter d
       exact foldPM ds env1
         (declStep_preserves mp hcov hS hN
           -- **the RUN bridge, from the P carrier's own `EnvFacts`**

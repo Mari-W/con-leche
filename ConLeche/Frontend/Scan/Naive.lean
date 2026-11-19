@@ -189,7 +189,7 @@ def naiveKeyBody : List UInt8 → Option (List UInt8 × List UInt8)
 
 /-- The dialect's keys, by spelling. -/
 def keyTable : List (String × Key) :=
-  [("all", .kAll), ("app", .kApp), ("arg", .kArg), ("axiom", .kAxiom),
+  [("abstract", .kAbstract), ("all", .kAll), ("app", .kApp), ("arg", .kArg), ("axiom", .kAxiom),
    ("binderInfo", .kBinderInfo), ("body", .kBody), ("bvar", .kBvar),
    ("cidx", .kCidx), ("const", .kConst), ("ctor", .kCtor), ("ctors", .kCtors),
    ("def", .kDef), ("fn", .kFn), ("forallE", .kForallE), ("head", .kHead), ("hints", .kHints),
@@ -197,7 +197,8 @@ def keyTable : List (String × Key) :=
    ("in", .kIn), ("induct", .kInduct), ("inductive", .kInductive),
    ("isRec", .kIsRec), ("isReflexive", .kIsReflexive), ("isUnsafe", .kIsUnsafe),
    ("k", .kK), ("kind", .kKind), ("lam", .kLam), ("letE", .kLetE),
-   ("levelParams", .kLevelParams), ("max", .kMax), ("meta", .kMeta),
+   ("levelParams", .kLevelParams), ("max", .kMax), ("members", .kMembers),
+   ("meta", .kMeta),
    ("name", .kName), ("natVal", .kNatVal), ("nfields", .kNfields),
    ("nondep", .kNondep), ("num", .kNum), ("numFields", .kNumFields),
    ("numIndices", .kNumIndices), ("numMinors", .kNumMinors),
@@ -639,6 +640,15 @@ def rewriteFields : Key → Option (Slot (Nat × Nat × Nat))
 def naiveRuleDecl : List UInt8 → NRes DeclRec :=
   naiveObject rewriteFields 7 (0, 0, 0) fun (h, n, p) => .rule n h p
 
+/-- `abstract`: `members`, `name`, both required — state `(members, name)`. -/
+def abstractFields : Key → Option (Slot (List Nat × Nat))
+  | .kMembers => some (.of 1 naiveNatList fun ms (_, n) => (ms, n))
+  | .kName => some (.of 2 naiveNat fun n (ms, _) => (ms, n))
+  | _ => none
+
+def naiveAbstractDecl : List UInt8 → NRes DeclRec :=
+  naiveObject abstractFields 3 ([], 0) fun (ms, n) => .abstr n ms
+
 /-! ## The line
 
 A line carries at most one index key (`in`/`il`/`ie`) and exactly one
@@ -763,7 +773,8 @@ def naiveLineLoop : List UInt8 → Bool → Option (IdxKey × Nat) → LinePaylo
                   if _h : rest.length < l.length then
                     naiveLineLoop rest false idx (.expr (.strVal s))
                   else .err .noProgress l
-            | .kAxiom | .kDef | .kThm | .kOpaque | .kQuot | .kInductive | .kRewrite =>
+            | .kAxiom | .kDef | .kThm | .kOpaque | .kQuot | .kInductive | .kRewrite
+            | .kAbstract =>
               if !pl.isAbsent then .err .duplicateKey l
               else
                 match (match k with
@@ -773,6 +784,7 @@ def naiveLineLoop : List UInt8 → Bool → Option (IdxKey × Nat) → LinePaylo
                        | .kOpaque => naiveOpaqueDecl lv
                        | .kQuot => naiveQuotDecl lv
                        | .kRewrite => naiveRuleDecl lv
+                       | .kAbstract => naiveAbstractDecl lv
                        | _ => naiveIndDecl lv) with
                 | .err t r => .err t r
                 | .ok d rest =>

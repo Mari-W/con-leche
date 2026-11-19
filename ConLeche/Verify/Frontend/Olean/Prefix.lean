@@ -1075,14 +1075,23 @@ theorem noRewrites_sub (hs : Region.Sub P r n) {g : Nat} (hg : P.Good g) (hgn : 
     have hx := hs.good_of_down hd
     have hxn : x ≤ n := by have := Region.down_lt hd; omega
     dsimp only
-    rw [hs.isCtor hx]
-    by_cases hc : P.isCtor x 0 4 = true
-    · obtain ⟨-, hN', hF'⟩ := isCtor_parts hc
-      simp only [hc, Bool.true_and, show List.range 4 = [0, 1, 2, 3] from rfl, List.all_cons,
+    rw [hs.isCtor hx, hs.isCtor hx]
+    by_cases hc5 : P.isCtor x 0 5 = true
+    · obtain ⟨-, hN', hF'⟩ := isCtor_parts hc5
+      simp only [hc5, Bool.or_true, Bool.true_and, ↓reduceIte,
+        show List.range 5 = [0, 1, 2, 3, 4] from rfl, List.all_cons,
         List.all_nil, hs.fld hx hF' (show 0 < P.nobjs x by omega),
         hs.fld hx hF' (show 1 < P.nobjs x by omega), hs.fld hx hF' (show 2 < P.nobjs x by omega),
-        hs.fld hx hF' (show 3 < P.nobjs x by omega), hs.objArray_sub hxn]
-    · simp [hc]
+        hs.fld hx hF' (show 3 < P.nobjs x by omega), hs.fld hx hF' (show 4 < P.nobjs x by omega),
+        hs.objArray_sub hxn]
+    · by_cases hc : P.isCtor x 0 4 = true
+      · obtain ⟨-, hN', hF'⟩ := isCtor_parts hc
+        simp only [hc, hc5, Bool.true_or, Bool.true_and, Bool.false_eq_true, ↓reduceIte,
+          show List.range 4 = [0, 1, 2, 3] from rfl, List.all_cons,
+          List.all_nil, hs.fld hx hF' (show 0 < P.nobjs x by omega),
+          hs.fld hx hF' (show 1 < P.nobjs x by omega), hs.fld hx hF' (show 2 < P.nobjs x by omega),
+          hs.fld hx hF' (show 3 < P.nobjs x by omega), hs.objArray_sub hxn]
+      · simp [hc, hc5]
 
 /-- A `ModuleData`'s constructor reads alike through a prefix. -/
 theorem moduleDataOk_sub (hs : Region.Sub P r n) {g : Nat} (hg : P.Good g) (hgn : g ≤ n) :

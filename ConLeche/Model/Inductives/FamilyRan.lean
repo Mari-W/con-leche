@@ -77,6 +77,9 @@ structure FreshExt (env env' : Env) : Prop where
   tables : ∃ newT, env'.tables = newT ++ env.tables ∧ ∀ t ∈ newT, env.find? t.structName = none
   snaps : ∃ newS, env'.rules.snaps = newS ++ env.rules.snaps ∧
     ∀ s ∈ newS, env.consts.length ≤ s.1
+  /-- the blocked sets recorded since, at its number of constants or later (`Env.cutAt`) -/
+  blks : ∃ newB, env'.rules.blks = newB ++ env.rules.blks ∧
+    ∀ s ∈ newB, env.consts.length ≤ s.1
 
 /-- A stored name keeps its constant across fresh pushes. -/
 theorem FreshExt.find {env env' : Env} (hx : FreshExt env env') {n : Name} {ci : ConstantInfo}
@@ -104,11 +107,14 @@ theorem FreshExt.trans {env₁ env₂ env₃ : Env} (h₁ : FreshExt env₁ env�
     | some ci => rw [h₁.find hc] at h; exact nomatch h
   obtain ⟨S₁, hs₁, hk₁⟩ := h₁.snaps
   obtain ⟨S₂, hs₂, hk₂⟩ := h₂.snaps
+  obtain ⟨B₁, hb₁, hbk₁⟩ := h₁.blks
+  obtain ⟨B₂, hb₂, hbk₂⟩ := h₂.blks
   have hlen : env₁.consts.length ≤ env₂.consts.length := by
     rw [hc₁, List.length_append]; exact Nat.le_add_left _ _
   refine ⟨⟨new₂ ++ new₁, by rw [hc₂, hc₁, List.append_assoc], fun c hc => ?_⟩,
     ⟨T₂ ++ T₁, by rw [ht₂, ht₁, List.append_assoc], fun t ht => ?_⟩,
-    ⟨S₂ ++ S₁, by rw [hs₂, hs₁, List.append_assoc], fun s hs => ?_⟩⟩
+    ⟨S₂ ++ S₁, by rw [hs₂, hs₁, List.append_assoc], fun s hs => ?_⟩,
+    ⟨B₂ ++ B₁, by rw [hb₂, hb₁, List.append_assoc], fun s hs => ?_⟩⟩
   · rcases List.mem_append.mp hc with hc | hc
     · exact hnone _ (hf₂ c hc)
     · exact hf₁ c hc
@@ -118,6 +124,9 @@ theorem FreshExt.trans {env₁ env₂ env₃ : Env} (h₁ : FreshExt env₁ env�
   · rcases List.mem_append.mp hs with hs | hs
     · exact Nat.le_trans hlen (hk₂ s hs)
     · exact hk₁ s hs
+  · rcases List.mem_append.mp hs with hs | hs
+    · exact Nat.le_trans hlen (hbk₂ s hs)
+    · exact hbk₁ s hs
 
 /-- **The environment below a stored family's block across pushes**: constants under fresh names,
 tables of structures outside the cut. -/
@@ -127,7 +136,9 @@ theorem Env.famBelow_push {env env' : Env} {new : List ConstantInfo} {newT : Lis
     {ci : ConstantInfo} (h : env.find? n = some ci)
     (hT : ∀ t ∈ newT, ∀ E, env.famBelow n = some E → E.consts.find? (·.name == t.structName) = none)
     {newS : List (Nat × List (Name × Name))} (hS : env'.rules.snaps = newS ++ env.rules.snaps)
-    (hSk : ∀ s ∈ newS, env.consts.length ≤ s.1) :
+    (hSk : ∀ s ∈ newS, env.consts.length ≤ s.1)
+    {newB : List (Nat × List Name)} (hB : env'.rules.blks = newB ++ env.rules.blks)
+    (hBk : ∀ s ∈ newB, env.consts.length ≤ s.1) :
     env'.famBelow n = env.famBelow n := by
   have hlt0 : (Env.suffixAfter env.consts n).length < env.consts.length := Env.suffixAfter_length_lt h
   have hfind : env'.find? n = env.find? n := by
@@ -145,7 +156,8 @@ theorem Env.famBelow_push {env env' : Env} {new : List ConstantInfo} {newT : Lis
     rw [hc, Env.suffixAfter_append_of_ne _ hne, ht]
     have hlt : ((Env.suffixAfter env.consts n).drop caps.blockPos).length < env.consts.length :=
       Nat.lt_of_le_of_lt ((by simp)) hlt0
-    rw [RuleTable.cut_append_gt hS (fun s hs => Nat.lt_of_lt_of_le hlt (hSk s hs))]
+    rw [RuleTable.cut_append_gt hS (fun s hs => Nat.lt_of_lt_of_le hlt (hSk s hs)) hB
+      (fun s hs => Nat.lt_of_lt_of_le hlt (hBk s hs))]
     congr 1
     exact Env.liveTables_append_dead _ fun t htm => hT' t htm _ rfl
   all_goals rfl
@@ -156,6 +168,7 @@ theorem FreshExt.famBelow {env env' : Env} (hx : FreshExt env env') {n : Name} {
   obtain ⟨new, hc, hfr⟩ := hx.consts
   obtain ⟨newT, ht, hgt⟩ := hx.tables
   obtain ⟨newS, hS, hSk⟩ := hx.snaps
+  obtain ⟨newB, hB, hBk⟩ := hx.blks
   have hne : ∀ c ∈ new, c.name ≠ n := fun c hc' he => by
     have := hfr c hc'
     rw [he, h] at this
@@ -179,11 +192,12 @@ theorem FreshExt.famBelow {env env' : Env} (hx : FreshExt env env') {n : Name} {
       rw [hm] at hfound
       exact nomatch hfound
     all_goals exact nomatch hE
-  exact Env.famBelow_push hc hne ht h (fun t htm => hcut _ (hgt t htm)) hS hSk
+  exact Env.famBelow_push hc hne ht h (fun t htm => hcut _ (hgt t htm)) hS hSk hB hBk
 
 /-- No push is an extension under fresh names. -/
 theorem FreshExt.refl (env : Env) : FreshExt env env :=
-  ⟨⟨[], rfl, fun _ h => nomatch h⟩, ⟨[], rfl, fun _ h => nomatch h⟩, ⟨[], rfl, fun _ h => nomatch h⟩⟩
+  ⟨⟨[], rfl, fun _ h => nomatch h⟩, ⟨[], rfl, fun _ h => nomatch h⟩, ⟨[], rfl, fun _ h => nomatch h⟩,
+    ⟨[], rfl, fun _ h => nomatch h⟩⟩
 
 /-- Head normalization's equations do not see the environment where `whnf` does not. -/
 theorem whnfTelescope_congr_whnf {ops₁ ops₂ : ConLeche.CheckerOps ConLeche.CheckM}
@@ -252,6 +266,11 @@ theorem envExt_cutAt_self {env : Env} (hsf : StoredFacts env) :
   rules := fun c => by
     simp only [Env.rulesFor, Env.cutAt, RuleTable.cut, hsf.wf.ruleSnaps.active]
     rfl
+  blocked := by
+    funext c
+    have hf : env.rules.blks.filter (fun s => decide (s.1 ≤ env.consts.length)) = env.rules.blks :=
+      List.filter_eq_self.mpr (fun s hs => decide_eq_true (hsf.wf.ruleSnaps.ble s hs))
+    simp only [Env.blocked, Env.cutAt, RuleTable.cut, hf]
   facts := hsf
 
 /-- **The reductions behind a carrier's recorded telescopes**: a member whose declared type does

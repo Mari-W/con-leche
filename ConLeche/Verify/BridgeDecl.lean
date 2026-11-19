@@ -1299,6 +1299,11 @@ theorem checkDeclKind_datF (env : Env) (d : Declaration) (F : Nat) :
     · rw [FueledM.atF_bind, checkRuleLaw_datF]
       rfl
   | useRules S => simp only [FueledM.atF_pure]
+  | abstractDecl c ms =>
+    dsimp only
+    split
+    · simp only [FueledM.atF_throw]
+    · simp only [FueledM.atF_pure]
 
 theorem checkDecl_datF (env : Env) (d : Declaration) (F : Nat) :
     (checkDecl mode (fueledOpsM mode) pins env d).val F =
@@ -1309,12 +1314,13 @@ theorem checkDecl_datF (env : Env) (d : Declaration) (F : Nat) :
   funext env₂
   simp only [FueledM.atF_bind, FueledM.atF_ite, FueledM.atF_pure, FueledM.atF_throw]
 
-/-- **A declaration's check, inverted**: its own checks, then the reserved names'. -/
+/-- **A declaration's check, inverted**: its own checks at the environment it is checked at
+(`Env.enter`), then the reserved names'. -/
 theorem checkDecl_inv {ops : CheckerOps CheckM} {pins : List NatOpPinSet} {env env₂ : Env}
     {d : Declaration} (h : checkDecl mode ops pins env d = .ok env₂) :
-    checkDeclKind ops pins env d = .ok env₂ ∧ basisNamesOk d = true := by
+    checkDeclKind ops pins (env.enter d) d = .ok env₂ ∧ basisNamesOk d = true := by
   simp only [checkDecl, Bind.bind, Except.bind] at h
-  cases hk : checkDeclKind ops pins env d with
+  cases hk : checkDeclKind ops pins (env.enter d) d with
   | error e => rw [hk] at h; exact nomatch h
   | ok env₁ =>
     rw [hk] at h
@@ -1326,7 +1332,7 @@ theorem checkDecl_inv {ops : CheckerOps CheckM} {pins : List NatOpPinSet} {env e
 
 /-- **A declaration's check from its parts**: its own checks, then the reserved names'. -/
 theorem checkDecl_of_kind {ops : CheckerOps CheckM} {env env₂ : Env} {d : Declaration}
-    (h : checkDeclKind ops pins env d = .ok env₂) (hb : basisNamesOk d = true) :
+    (h : checkDeclKind ops pins (env.enter d) d = .ok env₂) (hb : basisNamesOk d = true) :
     checkDecl mode ops pins env d = .ok env₂ := by
   simp only [checkDecl, Bind.bind, Except.bind, h, hb]
   rfl

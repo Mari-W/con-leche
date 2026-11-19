@@ -3555,3 +3555,21 @@
 # the global rule `cat_nil : cat xs [] = xs` in `cat xs [] = xs` by `rfl` (`mk.py order` patches
 # the statement): `cat xs []` unfolds to a recursor stuck on `xs`, and the rule fires.  Target 0.
 0 rewrite_rule_order_global.ndjson
+# abstract definitions (scripts/rewrite-fixtures/RrAbstract.lean, rr-dev leanchecker 0): `double` is
+# abstract after its `abstract_block`, so only its block's members unfold it.  The member
+# `double_two : double 2 = 4` by `rfl` unfolds it.  Target 0.
+0 abstract_block_member.ndjson
+# the same with `double_two` dropped from the member list: `double` is stuck.  Target 1.
+1 abstract_block_member_dropped.ndjson
+# `double 3 = 6` by `rfl` outside the block (`mk.py abstract` patches the statement): needs the
+# body.  Target 1.
+1 abstract_block_outside.ndjson
+# the same under `double_zero` and `double_succ`, which fire at the stuck head.  Target 0.
+0 abstract_block_rules.ndjson
+# `double .zero = .zero` by `rfl` under `double_zero` alone: the rule fires at once.  Target 0.
+0 abstract_block_rule_stuck.ndjson
+# the abstract line twice (official `addAbstract`: already abstract), naming a theorem (not a
+# definition), and before its definition.  Target 1 each.
+1 abstract_block_twice.ndjson
+1 abstract_block_not_def.ndjson
+1 abstract_block_before_def.ndjson

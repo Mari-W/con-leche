@@ -95,7 +95,7 @@ def declConstants : Declaration → List ConstantInfo
     match readBlock nP block with
     | .ok p => blockConstants p
     | .error _ => []
-  | .rewriteDecl .. | .useRules _ => []
+  | .rewriteDecl .. | .useRules _ | .abstractDecl .. => []
 
 /-- **The projection tables a declaration installs**: those of a recognised inductive block. -/
 def declTables : Declaration → List ProjTable

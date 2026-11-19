@@ -172,7 +172,7 @@ theorem blockRun_freshExt {F : Nat} {env env₂ : Env} {block : List ConstantInf
   refine ⟨⟨(ConLeche.blockConstants p₀).reverse, by rw [henv]; rfl, fun c hc =>
       hfr c.name (List.mem_map_of_mem (List.mem_reverse.mp hc))⟩,
     ⟨((ConLeche.blockTables p₀ p₀.members).getD []).reverse, by rw [henv]; rfl, fun t ht => ?_⟩,
-    ⟨[], by rw [henv]; rfl, fun _ h => nomatch h⟩⟩
+    ⟨[], by rw [henv]; rfl, fun _ h => nomatch h⟩, ⟨[], by rw [henv]; rfl, fun _ h => nomatch h⟩⟩
   obtain ⟨m, hm, hn⟩ : ∃ m ∈ p₀.members, t.structName = m.declared.name := by
     cases hQ : ConLeche.blockTables p₀ p₀.members with
     | none => simp only [hQ, Option.getD_none, List.reverse_nil, List.not_mem_nil] at ht

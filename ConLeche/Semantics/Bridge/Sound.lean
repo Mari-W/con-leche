@@ -42,7 +42,7 @@ theorem checkDeclRun_ofEnvFactsK
     {F : Nat} {env env₂ : Env}
     {d : Declaration}
     (h : checkDecl .verified (fueledOps .verified F) pins env d = .ok env₂) :
-    DeclRun F (DeclIndRunDispatchK F env) env d env₂ :=
+    DeclRun F (DeclIndRunDispatchK F (env.enter d)) (env.enter d) d env₂ :=
   checkDeclRun_of
     (fun {block nP} hh => by
       simp only [checkDeclKind] at hh

@@ -1657,4 +1657,33 @@ theorem scanRuleDecl_eq (b : ByteArray) (i : USize) :
   unfold scanRuleDecl naiveRuleDecl
   exact objWrap rewriteFields_read_suffix (scanRuleDeclLoop_eq b (i + 1) true 0 0 0 0)
 
+/-! ### `scanAbstractDecl` -/
+
+theorem abstractFields_read_suffix : ∀ k slot, abstractFields k = some slot →
+    ∀ l st, (slot.read l st).rest <:+ l := by
+  intro k slot hf l st
+  cases k <;> simp only [abstractFields, Option.some.injEq] at hf <;>
+    first | exact absurd hf (by simp) | (subst hf; slot_rest)
+
+theorem naiveAbstractDecl_rest_suffix (l : List UInt8) : (naiveAbstractDecl l).rest <:+ l := by
+  exact naiveObject_rest_suffix _ _ abstractFields_read_suffix _ _ l
+
+theorem scanAbstractDeclLoop_eq (b : ByteArray) (i : USize) (wantMember : Bool) (seen : UInt32)
+    (ms : List Nat) (nm : Nat) :
+    scanAbstractDeclLoop b i wantMember seen ms nm =
+      liftRes b i ((naiveObjLoop abstractFields 3 (tailAt b i) wantMember seen (ms, nm)).map
+        (fun (ms, n) => DeclRec.abstr n ms)) := by
+  fun_induction scanAbstractDeclLoop b i wantMember seen ms nm
+  obj_head abstractFields_read_suffix
+  obj_sub abstractFields_read_suffix case10 case11 case12 case13
+  obj_num abstractFields_read_suffix case14 case15 case16 case17
+  case case18 => o_unknown abstractFields x1 x2
+  case case19 => o_other
+  case case20 => o_end
+
+theorem scanAbstractDecl_eq (b : ByteArray) (i : USize) :
+    scanAbstractDecl b i = liftRes b i (naiveAbstractDecl (tailAt b i)) := by
+  unfold scanAbstractDecl naiveAbstractDecl
+  exact objWrap abstractFields_read_suffix (scanAbstractDeclLoop_eq b (i + 1) true 0 [] 0)
+
 end ConLeche.Frontend

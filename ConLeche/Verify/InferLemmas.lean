@@ -3064,13 +3064,26 @@ theorem reduceNat_inv {env : Env} {fuel d : Nat} {e e₂ : Expr}
         | none => intro h; simp [pure, Except.pure] at h
     · intro h; simp [pure, Except.pure] at h
 
+/-- The gated unfolding is the raw one where it unfolds. -/
+theorem unfoldDefinition_raw {env : Env} {e e₂ : Expr} (h : unfoldDefinition env e = some e₂) :
+    unfoldDefinitionRaw env e = some e₂ := by
+  unfold unfoldDefinition at h
+  unfold unfoldDefinitionRaw
+  split at h
+  · split at h
+    · split at h
+      · rename_i hc; rw [ite_eq_left hc.1]; exact h
+      · exact nomatch h
+    · exact nomatch h
+  · exact nomatch h
+
 /-- Unfolding a definition at the head preserves well-scopedness (the
 stored value is closed by environment well-formedness). -/
-theorem unfoldDefinition_WScoped {env : Env} (henv : EnvWF env)
+theorem unfoldDefinition_WScoped_raw {env : Env} (henv : EnvWF env)
     {d : Nat} {e e₂ : Expr}
-    (h : unfoldDefinition env e = some e₂) (hw : WScoped d e) :
+    (h : unfoldDefinitionRaw env e = some e₂) (hw : WScoped d e) :
     WScoped d e₂ := by
-  unfold unfoldDefinition at h
+  unfold unfoldDefinitionRaw at h
   revert h
   match hfn : e.getAppFn with
   | .const n us => ?_
@@ -3103,6 +3116,13 @@ theorem unfoldDefinition_WScoped {env : Env} (henv : EnvWF env)
     intro x hx
     exact hw.getAppArgs x hx
   · intro h; exact nomatch h
+
+
+theorem unfoldDefinition_WScoped {env : Env} (henv : EnvWF env)
+    {d : Nat} {e e₂ : Expr}
+    (h : unfoldDefinition env e = some e₂) (hw : WScoped d e) :
+    WScoped d e₂ :=
+  unfoldDefinition_WScoped_raw henv (unfoldDefinition_raw h) hw
 
 /-- Peeling a `∀`-telescope along scoped arguments preserves
 well-scopedness. -/

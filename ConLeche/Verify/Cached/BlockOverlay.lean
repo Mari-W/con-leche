@@ -165,8 +165,10 @@ theorem FEnv.famBelow_congr {fe₁ fe₂ : FEnv} (hf : fe₁.find? = fe₂.find?
   have hr : fe₁.rlsAt = fe₂.rlsAt := by
     funext c; unfold FEnv.rlsAt FEnv.snapsAll; rw [he, hb]
   have hc : fe₁.cnt = fe₂.cnt := by unfold FEnv.cnt; rw [he, hb]
+  have hk : fe₁.blkAt = fe₂.blkAt := by
+    funext c; unfold FEnv.blkAt; rw [hb]
   unfold FEnv.famBelow FEnv.below FEnv.dropTop
-  rw [hf, he, hb, ht, hr, hc]
+  rw [hf, he, hb, ht, hr, hc, hk]
 
 /-- An overlay reads below a block as pushing its constants would. -/
 theorem famBelow_overlay_pushAll {fe : FEnv} (h : fe.ovl = []) (cis : List ConstantInfo) :
@@ -176,12 +178,13 @@ theorem famBelow_overlay_pushAll {fe : FEnv} (h : fe.ovl = []) (cis : List Const
 
 /-- Two views below a block that answer alike (or no view at all). -/
 @[expose] def FEnv.BelowReads : Option FEnv → Option FEnv → Prop
-  | some a, some b => a.find? = b.find? ∧ a.findTable? = b.findTable? ∧ a.rulesFor = b.rulesFor
+  | some a, some b => a.find? = b.find? ∧ a.findTable? = b.findTable? ∧ a.rulesFor = b.rulesFor ∧
+      a.base.blk = b.base.blk
   | none, none => True
   | _, _ => False
 
 theorem FEnv.BelowReads.refl : ∀ o : Option FEnv, FEnv.BelowReads o o
-  | some _ => ⟨rfl, rfl, rfl⟩
+  | some _ => ⟨rfl, rfl, rfl, rfl⟩
   | none => trivial
 
 /-- An overlay answers the table lookups as the pushed index does. -/
@@ -213,6 +216,13 @@ theorem classFeROvl_findTable? {fe : FEnv} (h : fe.ovl = []) (p : BlockShape)
   rfl
 
 /-- The overlay reads the rules as the pushes do. -/
+theorem classFeROvl_blk {fe : FEnv} (p : BlockShape)
+    (Ms : List TargetMajor) (cvGs : List ConstantVal) (recCls : List Nat) :
+    (classFeROvl p Ms cvGs recCls fe).base.blk = (classFeR p Ms cvGs recCls fe).base.blk := by
+  unfold classFeROvl classFeR
+  rw [consBlockRecsBareF_eq_pushAll, FEnv.base_pushAll]
+  rfl
+
 theorem classFeROvl_rulesFor {fe : FEnv} (h : fe.ovl = []) (p : BlockShape)
     (Ms : List TargetMajor) (cvGs : List ConstantVal) (recCls : List Nat) :
     (classFeROvl p Ms cvGs recCls fe).rulesFor = (classFeR p Ms cvGs recCls fe).rulesFor := by
@@ -251,17 +261,17 @@ theorem whnfBC_congr {mode : CheckMode} {fe₁ fe₂ : FEnv}
   · rfl
   · exact h.elim
   · exact h.elim
-  · simp only [knotI_congr h.1 h.2.1 h.2.2]
+  · simp only [knotI_congr h.1 h.2.1 h.2.2.1 h.2.2.2]
 
 /-- The cached operations read their index through `find?`, `findTable?` and the views below a
 block. -/
 theorem sharedOpsC_congr {mode : CheckMode} {fe₁ fe₂ : FEnv} (hfe : fe₁.find? = fe₂.find?)
-    (hru : fe₁.rulesFor = fe₂.rulesFor)
+    (hru : fe₁.rulesFor = fe₂.rulesFor) (hbk : fe₁.base.blk = fe₂.base.blk)
     (htb : fe₁.findTable? = fe₂.findTable?)
     (hfb : ∀ n, FEnv.BelowReads (fe₁.famBelow n) (fe₂.famBelow n)) :
     sharedOpsC mode fe₁ = sharedOpsC mode fe₂ := by
   unfold sharedOpsC opI opW opB opS
-  simp only [knotI_congr hfe htb hru, whnfBC_congr hfb]
+  simp only [knotI_congr hfe htb hru hbk, whnfBC_congr hfb]
 
 /-- The stored recursors' check (task #431) reads its index through
 `find?` and `env` alone. -/
@@ -331,12 +341,12 @@ variable (mode : CheckMode)
 
 /-- `sharedOpsRuleR` reads `fe` only through `find?` and `findTable?`. -/
 theorem sharedOpsRuleR_congr {fe₁ fe₂ : FEnv} (hfe : fe₁.find? = fe₂.find?)
-    (hru : fe₁.rulesFor = fe₂.rulesFor)
+    (hru : fe₁.rulesFor = fe₂.rulesFor) (hbk : fe₁.base.blk = fe₂.base.blk)
     (htb : fe₁.findTable? = fe₂.findTable?)
     (hfb : ∀ n, FEnv.BelowReads (fe₁.famBelow n) (fe₂.famBelow n)) :
     sharedOpsRuleR mode fe₁ = sharedOpsRuleR mode fe₂ := by
   unfold sharedOpsRuleR sharedOpsC opI opW opB opS
-  simp only [knotI_congr hfe htb hru, whnfBC_congr hfb]
+  simp only [knotI_congr hfe htb hru hbk, whnfBC_congr hfb]
 
 /-- **The rule stage at the overlay is the rule stage at the pushes**,
 at the cached operations, on an environment without an overlay. -/
@@ -349,6 +359,7 @@ theorem classRecsRulesOk_classFeROvl {fe : FEnv} (h : fe.ovl = []) (p : BlockSha
         fe (classFeR p Ms cvGs recCls fe) g recOf cvGs recCls := by
   have hfind := classFeROvl_find? h p Ms cvGs recCls
   rw [sharedOpsRuleR_congr mode hfind (classFeROvl_rulesFor h p Ms cvGs recCls)
+    (classFeROvl_blk p Ms cvGs recCls)
     (classFeROvl_findTable? h p Ms cvGs recCls)
     (fun n => by rw [classFeROvl_famBelow h p Ms cvGs recCls]; exact FEnv.BelowReads.refl _)]
   exact classRecsRulesOk_congrR (funext (constsResolveF_congr hfind))

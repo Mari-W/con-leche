@@ -305,6 +305,58 @@ theorem mkFEnv_below_rls (env : Env) (n : Name) (k : Nat) :
       RuleTable.cut]
     rfl
 
+/-- The view under the `k` newest constants blocks as recorded there. -/
+theorem FEnv.dropTop_blk (fe : FEnv) (k : Nat) : (fe.dropTop k).base.blk = fe.blkAt (fe.cnt - k) := by
+  unfold FEnv.dropTop
+  split <;> rfl
+
+/-- The view under the `k` newest constants holds `k` fewer. -/
+theorem FEnv.dropTop_cnt (fe : FEnv) (k : Nat) : (fe.dropTop k).cnt = fe.cnt - k := by
+  unfold FEnv.dropTop FEnv.cnt
+  split
+  · simp only [FEnv.ofParts, List.length_drop]; omega
+  · simp only [FEnv.ofParts, List.length_nil]; omega
+
+/-- A view below a block blocks as recorded at its own number of constants. -/
+theorem FEnv.below_blk (fe : FEnv) (n : Name) (k : Nat) :
+    (fe.below n k).base.blk = fe.blkAt (fe.below n k).cnt := by
+  unfold FEnv.below
+  split
+  · rw [FEnv.dropTop_blk, FEnv.dropTop_cnt]
+  · simp [FEnv.ofParts, FEnv.cnt]
+
+/-- The blocked set in force at `c` is the newest of those recorded up to `c`. -/
+theorem blkAtS_eq_blkHead_filter (l : List (Nat × List Name)) (c : Nat) :
+    blkAtS l c = blkHead (l.filter fun s => decide (s.1 ≤ c)) := by
+  unfold blkAtS
+  induction l with
+  | nil => rfl
+  | cons a l ih =>
+    by_cases ha : a.1 ≤ c
+    · simp [ha, blkHead]
+    · rw [List.filter_cons_of_neg (by simpa using ha), ← ih, List.find?_cons_of_neg (by simpa using ha)]
+
+/-- The view below a name's entry under `mkFEnv` holds the constants of the cut. -/
+theorem mkFEnv_below_cnt (env : Env) (n : Name) (k : Nat) :
+    ((mkFEnv env).below n k).cnt = ((Env.suffixAfter env.consts n).drop k).length := by
+  rw [Env.suffixAfter_eq_findIdx]
+  unfold FEnv.below
+  rw [show (mkFEnv env).env = env from rfl]
+  cases hj : env.consts.findIdx? (·.name == n) with
+  | some j =>
+    simp only
+    rw [FEnv.dropTop_cnt, List.drop_drop, List.length_drop]
+    simp only [FEnv.cnt, mkFEnv_base, show (mkFEnv env).env = env from rfl]
+    omega
+  | none => simp [FEnv.cnt, FEnv.ofParts, mkFEnv_base]
+
+/-- **The view below a name's entry under `mkFEnv` blocks as the environment cut there.** -/
+theorem mkFEnv_below_blk (env : Env) (n : Name) (k : Nat) :
+    ((mkFEnv env).below n k).base.blk =
+      blkHead (env.cutAt ((Env.suffixAfter env.consts n).drop k)).rules.blks := by
+  rw [FEnv.below_blk, mkFEnv_below_cnt, FEnv.blkAt, blkAtS_eq_blkHead_filter]
+  rfl
+
 /-- **The view below a name's entry under `mkFEnv` answers the table lookups of the environment
 cut there.** -/
 theorem mkFEnv_below_findTable (env : Env) (n : Name) (k : Nat) :

@@ -979,6 +979,11 @@ theorem rewriteFields_read_local : ∀ k slot, rewriteFields k = some slot →
 theorem naiveRuleDecl_local : LineLocal naiveRuleDecl :=
   naiveObject_local _ _ rewriteFields_read_local _ _
 
+theorem abstractFields_read_local : ∀ k slot, abstractFields k = some slot →
+    ∀ st, LineLocal (fun l => slot.read l st) := by table_local abstractFields
+theorem naiveAbstractDecl_local : LineLocal naiveAbstractDecl :=
+  naiveObject_local _ _ abstractFields_read_local _ _
+
 
 /-! ## The line -/
 
@@ -1275,6 +1280,7 @@ theorem naiveLineLoop_local : ∀ (n : Nat) (l : List UInt8) (w : Bool)
           case kQuot => line_pl naiveQuotDecl_local LinePayload.decl
           case kInductive => line_pl naiveIndDecl_local LinePayload.decl
           case kRewrite => line_pl naiveRuleDecl_local LinePayload.decl
+          case kAbstract => line_pl naiveAbstractDecl_local LinePayload.decl
           case kMeta => line_meta
           all_goals line_unknown
         · have hw' : w = false := by simpa using hw

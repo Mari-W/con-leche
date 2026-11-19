@@ -178,6 +178,15 @@ theorem freshExt_stepRules (env : Env) (d : Declaration) : FreshExt env (env.ste
   ⟨⟨[], rfl, fun _ h => nomatch h⟩, ⟨[], rfl, fun _ h => nomatch h⟩, by
     cases d with
     | useRules S => exact ⟨[_], rfl, fun s hs => by simp at hs; simp [hs]⟩
-    | _ => exact ⟨[], rfl, fun _ h => nomatch h⟩⟩
+    | _ => exact ⟨[], rfl, fun _ h => nomatch h⟩, by
+    cases d with
+    | rewriteDecl _ _ _ => exact ⟨[], rfl, fun _ h => nomatch h⟩
+    | useRules _ => exact ⟨[], rfl, fun _ h => nomatch h⟩
+    | abstractDecl _ _ => exact ⟨[], rfl, fun _ h => nomatch h⟩
+    | _ =>
+      simp only [Env.stepRules, RuleTable.step, pushBlkOn]
+      split
+      · exact ⟨[], rfl, fun _ h => nomatch h⟩
+      · exact ⟨[_], rfl, fun s hs => by simp at hs; simp [hs]⟩⟩
 
 end ConLeche.Model

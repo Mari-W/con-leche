@@ -251,6 +251,8 @@ and the one in force at its own number the active one (`RuleTable.cut`). -/
 structure RulesWF (env : Env) : Prop where
   le : ∀ s ∈ env.rules.snaps, s.1 ≤ env.consts.length
   active : activeAtS env.rules.snaps env.consts.length = env.rules.active
+  /-- every blocked set was recorded at the current number of constants or below -/
+  ble : ∀ s ∈ env.rules.blks, s.1 ≤ env.consts.length
 
 /-- A list whose every entry passes finds its head. -/
 theorem find?_of_all {α : Type} {p : α → Bool} :
@@ -273,18 +275,25 @@ theorem activeAtS_append_gt {N S : List (Nat × List (Name × Name))} {k : Nat}
 
 /-- The cut at `k` reads the tables recorded up to `k` alone. -/
 theorem RuleTable.cut_append_gt {rt rt' : RuleTable} {N : List (Nat × List (Name × Name))} {k : Nat}
-    (hs : rt'.snaps = N ++ rt.snaps) (h : ∀ s ∈ N, k < s.1) : rt'.cut k = rt.cut k := by
+    (hs : rt'.snaps = N ++ rt.snaps) (h : ∀ s ∈ N, k < s.1)
+    {NB : List (Nat × List Name)} (hb : rt'.blks = NB ++ rt.blks) (hbk : ∀ s ∈ NB, k < s.1) :
+    rt'.cut k = rt.cut k := by
   unfold RuleTable.cut
-  rw [hs, activeAtS_append_gt h, List.filter_append,
-    List.filter_eq_nil_iff.mpr (fun s hs => by simpa using h s hs), List.nil_append]
+  have h1 : N.filter (fun s => decide (s.1 ≤ k)) = [] :=
+    List.filter_eq_nil_iff.mpr (fun s hs => by simpa using h s hs)
+  have h2 : NB.filter (fun s => decide (s.1 ≤ k)) = [] :=
+    List.filter_eq_nil_iff.mpr (fun s hs => by simpa using hbk s hs)
+  rw [hs, hb, activeAtS_append_gt h, List.filter_append, List.filter_append, h1, h2, List.nil_append,
+    List.nil_append]
 
 /-- The empty environment records no table. -/
-theorem RulesWF.empty : RulesWF Env.empty := ⟨fun _ h => (nomatch h), rfl⟩
+theorem RulesWF.empty : RulesWF Env.empty := ⟨fun _ h => (nomatch h), rfl, fun _ h => (nomatch h)⟩
 
 /-- More constants under the same rules keep `RulesWF`. -/
 theorem RulesWF.mono {env env' : Env} (h : RulesWF env) (hR : env'.rules = env.rules)
     (hl : env.consts.length ≤ env'.consts.length) : RulesWF env' := by
-  refine ⟨fun s hs => Nat.le_trans (h.le s (hR ▸ hs)) hl, ?_⟩
+  refine ⟨fun s hs => Nat.le_trans (h.le s (hR ▸ hs)) hl, ?_,
+    fun s hs => Nat.le_trans (h.ble s (hR ▸ hs)) hl⟩
   rw [hR, activeAtS_of_le h.le hl, h.active]
 
 /-- A record's rule effect keeps `RulesWF`: a `useRules` records its table at the current number. -/
@@ -292,13 +301,21 @@ theorem RulesWF.stepRules {env : Env} (h : RulesWF env) (d : Declaration) :
     RulesWF (env.stepRules d) := by
   cases d with
   | useRules S =>
-    refine ⟨fun s hs => ?_, ?_⟩
+    refine ⟨fun s hs => ?_, ?_, h.ble⟩
     · rcases List.mem_cons.mp hs with rfl | hs
       · exact Nat.le_refl _
       · exact h.le s hs
     · simp [Env.stepRules, RuleTable.step, activeAtS]
-  | rewriteDecl t c p => exact ⟨h.le, h.active⟩
-  | _ => exact h
+  | rewriteDecl t c p => exact ⟨h.le, h.active, h.ble⟩
+  | abstractDecl c ms => exact ⟨h.le, h.active, h.ble⟩
+  | _ =>
+    refine ⟨h.le, h.active, fun s hs => ?_⟩
+    simp only [Env.stepRules, RuleTable.step, pushBlkOn] at hs
+    split at hs
+    · exact h.ble s hs
+    · rcases List.mem_cons.mp hs with rfl | hs
+      · exact Nat.le_refl _
+      · exact h.ble s hs
 
 /-- The recorded tables up to `k` find the one in force at `k` as all of them do. -/
 theorem activeAtS_filter (S : List (Nat × List (Name × Name))) (k : Nat) :
@@ -313,7 +330,8 @@ theorem activeAtS_filter (S : List (Nat × List (Name × Name))) (k : Nat) :
 
 /-- Every cut keeps `RulesWF`: it records the tables up to its own number. -/
 theorem RulesWF.cutAt (env : Env) (cs : List ConstantInfo) : RulesWF (env.cutAt cs) :=
-  ⟨fun s hs => by simpa [Env.cutAt, RuleTable.cut] using (List.mem_filter.mp hs).2, activeAtS_filter _ _⟩
+  ⟨fun s hs => by simpa [Env.cutAt, RuleTable.cut] using (List.mem_filter.mp hs).2, activeAtS_filter _ _,
+    fun s hs => by simpa [Env.cutAt, RuleTable.cut] using (List.mem_filter.mp hs).2⟩
 
 /-- Every stored constant and every stored table is syntactically
 well-formed, every stored family's sort fact holds, and every stored constructor's family
@@ -796,6 +814,14 @@ theorem EnvWF.stepRules {env : Env} (h : EnvWF env) (d : Declaration) : EnvWF (e
     fun t ht => TableWF.of_find (env := env) (env' := env.stepRules d) rfl (h.tables t ht), h.inds, h.ctors, h.rules, h.below,
     h.ruleSnaps.stepRules d⟩
 
+/-- **A record is checked at a well-formed environment** (`Env.enter`). -/
+theorem EnvWF.enter {env : Env} (henv : EnvWF env) (d : Declaration) : EnvWF (env.enter d) := by
+  cases d with
+  | rewriteDecl _ _ _ => exact henv
+  | useRules _ => exact henv
+  | abstractDecl _ _ => exact henv
+  | _ => dsimp only [Env.enter]; exact henv.stepRules _
+
 /-- **Installing a well-formed table preserves `EnvWF`** (task #362): the
 constants read the environment only through `find?`, which a table
 install leaves alone. -/
@@ -805,7 +831,7 @@ theorem EnvWF.pushTable {env : Env} {t : ProjTable} (henv : EnvWF env)
     rcases List.mem_cons.mp ht' with rfl | hmem
     · exact ht.of_find (Env.find?_pushTable env _)
     · exact (henv.tables t' hmem).of_find (Env.find?_pushTable env t), henv.inds, henv.ctors,
-    henv.rules, henv.below, ⟨henv.ruleSnaps.le, henv.ruleSnaps.active⟩⟩
+    henv.rules, henv.below, ⟨henv.ruleSnaps.le, henv.ruleSnaps.active, henv.ruleSnaps.ble⟩⟩
 
 /-- **Tables pushed onto a well-formed environment, each well formed there, keep it well
 formed**: a table install changes no lookup. -/
@@ -813,7 +839,7 @@ theorem EnvWF.pushTables {env : Env} (henv : EnvWF env) {Q : List ProjTable}
     (hQ : ∀ t ∈ Q, TableWF env t) : EnvWF ⟨env.consts, Q ++ env.tables, env.rules⟩ := by
   have hf : Env.find? ⟨env.consts, Q ++ env.tables, env.rules⟩ = env.find? := rfl
   refine ⟨fun c hc => (henv.consts c hc).of_find hf, henv.shapes, fun t ht => ?_, henv.inds,
-    henv.ctors, henv.rules, henv.below, ⟨henv.ruleSnaps.le, henv.ruleSnaps.active⟩⟩
+    henv.ctors, henv.rules, henv.below, ⟨henv.ruleSnaps.le, henv.ruleSnaps.active, henv.ruleSnaps.ble⟩⟩
   rcases List.mem_append.mp ht with ht | ht
   · exact (hQ t ht).of_find hf
   · exact (henv.tables t ht).of_find hf

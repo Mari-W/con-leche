@@ -22,7 +22,7 @@ corollary follow in @sec:ind.
 
 *The environment* $E$, fixed throughout like the valuation, is a
 #src("whitepaper/Fragment/Env.lean", 109, 125)[list of the constants] accepted so far,
-#src("ConLeche/Kernel/Env.lean", 548)[most recent first]. A
+#src("ConLeche/Kernel/Env.lean", 592)[most recent first]. A
 #src("whitepaper/Fragment/Env.lean", 63, 100)[stored constant] has its level parameters $arrow(p)$, its type (a closed
 term over $arrow(p)$) and #src("ConLeche/Kernel/Env.lean", 297, 320)[its _kind_]. We write
 $(c.\{arrow(p)\} : T) in E$ for "$c$ is stored with parameters
@@ -163,7 +163,7 @@ gains three cases, one per rule.
   $|arrow(ell)| = |arrow(p)|$ levels: \
   Law 2 says the instantiated
   value is well-denoted and denotes $M(c, phi(arrow(ell)))$, which is
-  #src("ConLeche/Model/Rules/RedSound.lean", 252, 253)[what the constant denotes].
+  #src("ConLeche/Model/Rules/RedSound.lean", 261, 262)[what the constant denotes].
   The redex's semantic invariant is not used.
   @thm:install-def shows the law holds when a definition is added.
 

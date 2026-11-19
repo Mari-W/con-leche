@@ -95,6 +95,7 @@ def _root_.ConLeche.Declaration.usedConsts : Declaration → Array Name
   | .quotDecl .. => #[]
   | .rewriteDecl thm _ _ => #[thm]
   | .useRules _ => #[]
+  | .abstractDecl .. => #[]
 
 /-- The pinned `Nat` operation records whose ground the pass serves:
 the pin-certified WF operations and the structural ones (whose

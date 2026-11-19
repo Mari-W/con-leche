@@ -301,6 +301,9 @@ theorem declWFStepRun {F : Nat}
   | useRules S =>
     subst h
     exact henv.stepRules _
+  | abstractDecl c ms =>
+    obtain ⟨-, rfl⟩ := h
+    exact henv.stepRules _
 
 /-- **One declaration's run keeps well-formedness**, at the fold's dispatch. -/
 theorem declRun_envWF {F : Nat} {env env₂ : Env} {d : Declaration} (henv : EnvWF env)
@@ -316,7 +319,7 @@ variable {pins : List NatOpPinSet}
 /-- **An accepted declaration keeps the environment well formed.** -/
 theorem checkDecl_envWF {F : Nat} {env env₂ : Env} {d : Declaration} (henv : EnvWF env)
     (h : checkDecl .verified (fueledOps .verified F) pins env d = .ok env₂) : EnvWF env₂ :=
-  declRun_envWF henv (checkDeclRun_ofEnvFactsK h)
+  declRun_envWF (henv.enter d) (checkDeclRun_ofEnvFactsK h)
 
 /-- The empty environment is well formed. -/
 theorem EnvWF.empty : EnvWF Env.empty :=

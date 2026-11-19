@@ -116127,3 +116127,90 @@ and the whitepaper were repointed and their expectations regenerated. README nee
 (`_tmp/r8/arena.log`). A first run failed one progress-lane check, `--jobs=4 --progress=1`
 naming the oldest running check, which depends on a worker being busy at that moment. It passed
 on the rerun (`_tmp/r8/arena1.log`).
+
+## Abstract definitions (2026-11-19, rewrite-rules, `abstract_block`)
+
+The checker blocks an abstract definition as the C++ kernel does (lean4 ebd9738451,
+`notes/format.md`). The export writes `{"abstract":{"name":c,"members":[…]}}` after the definition
+`c`, and from then on `c` unfolds only while one of `members` is checked. Every other declaration
+sees `c` stuck, so under "rules when stuck" its rules fire at the head directly.
+
+**The checker.** The line becomes the record `Declaration.abstractDecl c members`. Its check is
+`abstractDeclError?`, official `addAbstract`: `c` holds a stored definition and is not abstract
+yet. The members are trusted as given. `RuleTable` gains `abstracts` and `blks`, the blocked sets
+newest first, each with the number of constants it was set at. `checkDecl` checks a record at
+`Env.enter`, which records the abstract definitions the record's `mainName` (official
+`decl_main_name`) may not unfold, `blockedFor`. A rule or abstract record enters nothing.
+`Env.blocked` reads the newest set, and `unfoldDefinition` and `unfoldableHead` refuse a blocked
+head. These two are the only places that decide unfoldability, so `noteOrigin` and the lazy
+delta step follow. `RuleTable.cut` keeps the sets recorded up to its number, so a reading below a
+block blocks what the block's own record blocked, whatever record reads it.
+
+**The cached twin.** `FBase` gains `abs`, `blks` and `blk`, the set in force. `FEnv.enter`
+pushes onto the base layer, because a job's view has its rules from the stream's index and not
+from its environment. `StreamIndex` records `absAt` and `blksAt` per record, as it records
+`snapsAt`. `unfoldableHeadC` and `unfoldDefinitionI` read `fe.base.blk`. A view below a block
+sets `blk` from the sets recorded up to its counter (`FEnv.blkAt`).
+
+**Model and relation.** No semantic change. Blocking only refuses δ steps, so every run the
+checker makes is a run it made before, and `Red.delta`'s premise, `unfoldDefinition`, now names
+fewer steps. The plumbing changed in three places. `FreshExt` gains `blks`, like `snaps`, and
+`Env.famBelow_push` takes its two hypotheses. `EnvModelOk.enter` moves the invariant to the
+entered environment through `stepRules_cover`, the same step a `useRules` record takes. The
+identity-wrapper reader `unwrapIdDefs` unfolds a wrapper whether it is abstract or not, so its
+soundness proof reads the δ step through `unfoldDefinitionRaw` and the `_raw` lemmas.
+
+**Proofs.** `EnvExt` gains `blocked`, and `envExt_cutAt_self` proves it from the new
+`RulesWF.ble`, every blocked set recorded at or below the current number of constants. The
+congruences of `Verify/Cached/KnotCongr.lean` take `hbk`, equal blocked sets, beside `hru`, and
+`Twin` gains `abs`, `blks`, `blk` and `blkB`. `checkDecl_inv` and `checkDeclRun_of` state the
+entered environment.
+
+**Olean.** `Region.noRewrites` accepts a `ModuleRewrite` with four or five empty fields. A module
+that registers an abstract definition is not read, as with rules.
+
+**Scanner.** `Scan/Naive.lean` and `Scan/Fast.lean` read the line (`kAbstract`, `kMembers`,
+`DeclRec.abstr`), with the equivalence proofs extended. `naiveLineLoop_rest_suffix` now needs about
+220 000 heartbeats and carries `maxHeartbeats 400000` with the measurement.
+
+Deviations. The certified `Nat` fast paths and `unwrapIdDefs` ignore abstract blocking. Neither
+can meet an abstract definition on an export, because the `Nat` operations are pinned in `Init`
+and an identity wrapper is read for its type only.
+
+**The quiet skip.** Entering a record cost about 2 000 instructions on every declaration record,
+because `enterRec` copied the environment, its rule table and the base layer even when nothing
+changed. `wide_ok` paid +5.4% for it (3 000 records). `FEnv.stepRules` now returns the index
+unchanged when nothing is blocked (`FEnv.quiet`, five emptiness tests), which is every record of
+a stream without an `abstract` line. `FEnv.enterRec_quiet` shows `enterRec` returns the same
+index there, and `FEnv.enter_eq` folds the skip away for `Twin.enter`. `pushBlkOn` lost its
+`bot` argument. Every caller passed `[]`, and `top ++ []` copied the list of blocked sets once
+per record.
+
+**Plain reach.** The blocked-set functions the binary runs are allowlisted in their own group of
+`tests/plain-reach-allow.txt` (`mainName`, `blockedFor`, `pushBlkOn`, `blkHead`, `blkAtS`,
+`FEnv.enter`, `FEnv.enterRec`, `FEnv.quiet`, `FEnv.blkAt`), and `abstractDeclError?` joins the
+rule registration group. Each runs once per record or once per view below a block.
+
+**Fixtures.** Eight `abstract_block_*` fixtures from `scripts/rewrite-fixtures/RrAbstract.lean`
+(`mk.py abstract`), pinned in `tests/e2e-expected.txt`. `_member`, `_rules` and `_rule_stuck`
+are accepted. `_outside`, `_member_dropped`, `_twice`, `_not_def` and `_before_def` are
+rejected.
+
+Cost. `perf stat -e instructions:u` at `--jobs=1` against e08f36e55, built from scratch in a
+worktree after the reboot (`_tmp/r9/perf2-base.txt`, `_tmp/r9/perf-final-new.txt`,
+`_tmp/r9/perf-final-table.txt`). Streams without an abstract definition cost +0.07% to +0.28%.
+`wide_ok` costs +2.1%, down from +5.4% before the quiet skip. Its rest is the three new base
+fields every view copies and the two per-record arrays of the index. The `abstract_block_*`
+fixtures have no baseline, because e08f36e55 rejects the `abstract` line as malformed (exit 3).
+`abstract_block_rules` is a 3.7 MB stream and takes 1.63 G.
+
+Gates. After the reboot the build directory was cleaned and everything rebuilt. `lake build`
+and `lake test` are warning-free (`_tmp/r9/final-build3.log`, `_tmp/r9/final-test2.log`).
+`tests/shake.sh` passes, 666 of 666 allowlisted and none demotable (`_tmp/r9/final-shake2.log`).
+`tests/arena.sh` exits 0 (`_tmp/r9/final-arena2.log`), with plain-reach 677 reached, e2e
+643/643, olean gate 122/122, self-check 56 710 declarations, axioms pinned, and the trusted and
+`--jobs` sweeps without divergence. Twenty OVERVIEW anchors moved and were repointed. The
+`knotI_congr` paragraph now says the cached core reads the lookups and the blocked set. README's
+`sorryAx` link moved to the `checkDeclC` lines it cites (`ParsedC.lean#L359-L360`). In the
+whitepaper seven citations moved, and the `Red.delta_soundU` one now points at the gated lemma,
+whose proof goes through `Red.delta_soundU_raw`.

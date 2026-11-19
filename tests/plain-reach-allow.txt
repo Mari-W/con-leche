@@ -349,12 +349,13 @@ ConLeche.ruleFireBudget
 ConLeche.ruleTele
 
 # User rewrite rules' registration and rule sets (Kernel/CoreDefs, Kernel/Env, Kernel/FEnv), once per
-# `rewrite` or `useRules` record, never per term. The registration check walks the theorem's
+# `rewrite`, `useRules` or abstract record, never per term. The registration check walks the theorem's
 # statement once (its telescope, its left side as a pattern, its right side's variables and
 # universe parameters: `hasLooseBVar` and `allLevelParamsDefined` are those walks, on the
 # rule's two sides; `ruleSides` rebuilds the statement's telescope once around its sides for the
 # law's five inferences). A `useRules` filters and sorts the registered rules (`activeTable`) and
 # builds the rule map once (`mkRlsGo`); the stream index does the same once per `useRules`.
+# An abstract record looks up its name and the abstract list once (`abstractDeclError?`).
 ConLeche.Env.stepRules
 ConLeche.Expr.allLevelParamsDefined
 ConLeche.Expr.hasLooseBVar
@@ -362,12 +363,29 @@ ConLeche.FEnv.stepRules
 ConLeche.Name.cmp
 ConLeche.RewriteRule.before
 ConLeche.RuleTable.step
+ConLeche.abstractDeclError?
 ConLeche.activeTable
 ConLeche.mkRlsGo
 ConLeche.ruleDeclError?
 ConLeche.ruleLhsParams
 ConLeche.rulePat
 ConLeche.ruleSides
+
+# Abstract definitions' blocked sets (Kernel/Env, Kernel/FEnv), once per declaration record and
+# once per view below a block, never per term. Entering a record (`FEnv.enter`) is five emptiness
+# tests on a stream without an `abstract` line (`FEnv.quiet`). Otherwise it names the record
+# (`mainName`), filters the abstract list by membership (`blockedFor`) and compares the result
+# with the newest set (`pushBlkOn`, `blkHead`). A view below a block finds its set in the list of
+# blocked sets, one entry per change (`FEnv.blkAt`, `blkAtS`).
+ConLeche.Declaration.mainName
+ConLeche.FEnv.blkAt
+ConLeche.FEnv.enter
+ConLeche.FEnv.enterRec
+ConLeche.FEnv.quiet
+ConLeche.blkAtS
+ConLeche.blkHead
+ConLeche.blockedFor
+ConLeche.pushBlkOn
 
 # ConLeche.Kernel.Level — the level algorithms (levels are small trees; the cached tier memoises them by level, the official kernel runs the same walks)
 ConLeche.Expr.instantiateLevelParams

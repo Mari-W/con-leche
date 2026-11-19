@@ -382,6 +382,10 @@ inductive Declaration where
   theorem is in `S` (the stream's `R(D)`, trusted as given).  The frontends emit one only where
   the set changes. -/
   | useRules (S : List Name)
+  /-- **An abstract definition's registration** (`notes/format.md`, lean4 `abstract_block`): the
+  stored definition `c` unfolds from now on only while one of `members` is checked.  It follows
+  its definition and installs no constant. -/
+  | abstractDecl (c : Name) (members : List Name)
   deriving DecidableEq, Repr, Inhabited
 
 namespace Declaration
@@ -459,7 +463,15 @@ def names : Declaration → List Name
   | .axiomDecl cv | .defnDecl cv .. | .thmDecl cv .. | .opaqueDecl cv .. => [cv.name]
   | .quotDecl _ cv => [cv.name]
   | .indDecl block _ => block.map (·.name)
-  | .rewriteDecl .. | .useRules _ => []
+  | .rewriteDecl .. | .useRules _ | .abstractDecl .. => []
+
+/-- **The name a record is checked as** (official `decl_main_name`, the declaration an abstract
+definition's members list): a declaration's constant, an inductive block's first member.  A rule
+or abstract record declares nothing and has none. -/
+def mainName : Declaration → Name
+  | .axiomDecl cv | .defnDecl cv .. | .thmDecl cv .. | .opaqueDecl cv .. | .quotDecl _ cv => cv.name
+  | .indDecl block _ => (block.head?.map (·.name)).getD .anonymous
+  | .rewriteDecl .. | .useRules _ | .abstractDecl .. => .anonymous
 
 end Declaration
 
@@ -508,17 +520,48 @@ structure RuleTable where
   active : List (Name × Name) := []
   registered : List RewriteRule := []
   snaps : List (Nat × List (Name × Name)) := []
+  /-- The abstract definitions, newest first, each with the declarations that may unfold it. -/
+  abstracts : List (Name × List Name) := []
+  /-- The blocked sets the environment has had, newest first, each with the number of constants
+  it was set at: a declaration record sets the abstract definitions it may not unfold
+  (`RuleTable.step`), and the set in force is the newest one (`blkHead`, `Env.blocked`). -/
+  blks : List (Nat × List Name) := []
   deriving Repr, Inhabited
+
+/-- **The abstract definitions the declaration `n` may not unfold** (official
+`blockedAbstracts`): every one whose members do not list `n`. -/
+def blockedFor (abs : List (Name × List Name)) (n : Name) : List Name :=
+  abs.filterMap fun a => if a.2.contains n then none else some a.1
+
+/-- The newest blocked set of a list, none when it is empty. -/
+def blkHead : List (Nat × List Name) → List Name
+  | s :: _ => s.2
+  | [] => []
+
+/-- **A blocked set recorded** on top of `top`, at `len` constants: nothing is recorded where the
+newest set is already `B`. -/
+def pushBlkOn (top : List (Nat × List Name)) (len : Nat) (B : List Name) :
+    List (Nat × List Name) :=
+  if blkHead top = B then top else (len, B) :: top
+
+/-- **The blocked set in force at `k` constants**: the newest one recorded at `k` constants or
+fewer, none before the first. -/
+def blkAtS (blks : List (Nat × List Name)) (k : Nat) : List Name :=
+  match blks.find? (fun s => decide (s.1 ≤ k)) with
+  | some s => s.2
+  | none => []
 
 /-- A record's effect on the rules, at an environment of `len` constants: a registration adds
 its rule, a `useRules` rebuilds the active table from the registered rules and records it at
-`len`, every other record keeps them. -/
+`len`, an abstract record adds its definition, and a declaration record records the abstract
+definitions it may not unfold (`blockedFor`) before it is checked (`Env.enter`). -/
 def RuleTable.step (rt : RuleTable) (len : Nat) : Declaration → RuleTable
   | .rewriteDecl thm head prio => { rt with registered := ⟨thm, head, prio⟩ :: rt.registered }
   | .useRules S =>
     let a := activeTable rt.registered S
     { rt with active := a, snaps := (len, a) :: rt.snaps }
-  | _ => rt
+  | .abstractDecl c ms => { rt with abstracts := (c, ms) :: rt.abstracts }
+  | d => { rt with blks := pushBlkOn rt.blks len (blockedFor rt.abstracts d.mainName) }
 
 /-- **The active table in force at `k` constants**: the newest one recorded at `k` constants or
 fewer, none before the first `useRules`. -/
@@ -530,7 +573,8 @@ def activeAtS (snaps : List (Nat × List (Name × Name))) (k : Nat) : List (Name
 /-- The rules of the environment cut at `k` constants: the table in force there, and the
 tables recorded up to there.  No registered rule (`Env.rulesFor` reads the active table only). -/
 def RuleTable.cut (rt : RuleTable) (k : Nat) : RuleTable :=
-  { active := activeAtS rt.snaps k, snaps := rt.snaps.filter (fun s => decide (s.1 ≤ k)) }
+  { active := activeAtS rt.snaps k, snaps := rt.snaps.filter (fun s => decide (s.1 ≤ k)),
+    blks := rt.blks.filter (fun s => decide (s.1 ≤ k)) }
 
 /-- The global environment: the constants accepted so far and the
 structures' projection tables, each list newest first.  Names are
@@ -583,6 +627,20 @@ def findProj? (env : Env) (T : Name) (i : Nat) : Option ProjEntry :=
 theorems named by the rule table under `c` that the environment stores. -/
 def rulesFor (env : Env) (c : Name) : List Name :=
   env.rules.active.filterMap fun r => if r.1 == c && (env.find? r.2).isSome then some r.2 else none
+
+/-- **Is the abstract definition `c` blocked here**: in the newest blocked set (`blkHead`), set
+by the declaration record being checked (`Env.enter`); below a block, the newest one recorded
+there (`RuleTable.cut`).  The delta step refuses a blocked head (`unfoldableHead`), official
+`is_abstract_blocked`. -/
+def blocked (env : Env) (c : Name) : Bool :=
+  (blkHead env.rules.blks).contains c
+
+/-- **The environment a record is checked at**: a declaration record's blocked set recorded
+(`RuleTable.step`); a rule or abstract record's own arm steps the rules itself. -/
+def enter (env : Env) (d : Declaration) : Env :=
+  match d with
+  | .rewriteDecl .. | .useRules _ | .abstractDecl .. => env
+  | _ => env.stepRules d
 
 end Env
 

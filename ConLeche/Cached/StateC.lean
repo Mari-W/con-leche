@@ -56,7 +56,7 @@ def unfoldableHeadC (fe : FEnv) (e : Expr) : Bool :=
   match Expr.getAppFn e with
   | .const nm us .. =>
     match fe.find? nm with
-    | some (.defnInfo cv _ _) => us.length == cv.levelParams.length
+    | some (.defnInfo cv _ _) => us.length == cv.levelParams.length && !fe.base.blk.contains nm
     | _ => false
   | _ => false
 

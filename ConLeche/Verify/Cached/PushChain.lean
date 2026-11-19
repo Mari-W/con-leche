@@ -80,6 +80,15 @@ theorem PushChain.stepRules {env : Env} {fe : FEnv} (h : PushChain env fe) (d : 
   conv => lhs; rw [hc]
   exact stepRules_mkFEnv fe.env d
 
+/-- **Entering a record keeps a chain** (`FEnv.enter`). -/
+theorem PushChain.enter {env : Env} {fe : FEnv} (h : PushChain env fe) (d : Declaration) :
+    PushChain env (fe.enter d) := by
+  cases d with
+  | rewriteDecl _ _ _ => exact h
+  | useRules _ => exact h
+  | abstractDecl _ _ => exact h
+  | _ => dsimp only [FEnv.enter]; exact h.stepRules _
+
 /-- A lookup that fails names no stored constant. -/
 theorem Env.find?_none_notin {env : Env} {n : Name} (h : env.find? n = none) :
     n ∉ env.consts.map (·.name) := by
@@ -608,12 +617,17 @@ theorem checkDeclKindC_push (mode : CheckMode) {env : Env} {fe : FEnv}
     · exact Yields.ofThrow
     · exact Yields.bind fun _ => Yields.pure (h.stepRules _)
   | useRules S => exact Yields.pure (h.stepRules _)
+  | abstractDecl c ms =>
+    simp only []
+    split
+    · exact Yields.ofThrow
+    · exact Yields.pure (h.stepRules _)
 
 theorem checkDeclC_push (mode : CheckMode) {env : Env} {fe : FEnv}
     (h : PushChain env fe) (pd : Declaration) :
     Yields (checkDeclC mode pins fe pd) (fun fe' => PushChain env fe') := by
   unfold checkDeclC
-  refine Yields.bind' (checkDeclKindC_push mode h pd) fun fe₂ h₂ => ?_
+  refine Yields.bind' (checkDeclKindC_push mode (h.enter pd) pd) fun fe₂ h₂ => ?_
   yields
   all_goals exact Yields.pure h₂
 

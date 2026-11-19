@@ -731,12 +731,12 @@ private theorem deltaCore (m : EnvModel V env)
 
 /-- **The δ step is invisible to the reading**: the unfolding has the
 subject's own reading. -/
-theorem denote_unfoldDefinition {m : EnvModel V env} (hdi : AcvalDefnInst m)
+theorem denote_unfoldDefinitionRaw {m : EnvModel V env} (hdi : AcvalDefnInst m)
     {d : Nat} {e e' : Expr} {ea : Term}
-    (hud : ConLeche.unfoldDefinition env e = some e')
+    (hud : ConLeche.unfoldDefinitionRaw env e = some e')
     (hea : denote m.acval env φ d e = some ea) :
     denote m.acval env φ d e' = some ea := by
-  unfold ConLeche.unfoldDefinition at hud
+  unfold ConLeche.unfoldDefinitionRaw at hud
   split at hud
   · next n us hfn =>
     split at hud
@@ -754,6 +754,13 @@ theorem denote_unfoldDefinition {m : EnvModel V env} (hdi : AcvalDefnInst m)
       · exact nomatch hud
     · exact nomatch hud
   · exact nomatch hud
+
+theorem denote_unfoldDefinition {m : EnvModel V env} (hdi : AcvalDefnInst m)
+    {d : Nat} {e e' : Expr} {ea : Term}
+    (hud : ConLeche.unfoldDefinition env e = some e')
+    (hea : denote m.acval env φ d e = some ea) :
+    denote m.acval env φ d e' = some ea :=
+  denote_unfoldDefinitionRaw hdi (ConLeche.unfoldDefinition_raw hud) hea
 
 /-! ## The graph-regime fit of a graded spine (task #342 L10) -/
 

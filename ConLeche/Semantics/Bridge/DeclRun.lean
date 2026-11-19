@@ -461,12 +461,12 @@ theorem checkRuleSide_inv {F : Nat} {env : Env} {thm : Name} {msg : String} {v T
 
 theorem checkDeclRun_of {F : Nat}
     {Ind : List ConstantInfo → Nat → Env → Prop} {env env₂ : Env}
-    (hind : ∀ {block : List ConstantInfo} {nP : Nat},
-      checkDeclKind (fueledOps .verified F) pins env (.indDecl block nP) = .ok env₂ →
-      Ind block nP env₂)
     {d : Declaration}
+    (hind : ∀ {block : List ConstantInfo} {nP : Nat},
+      checkDeclKind (fueledOps .verified F) pins (env.enter d) (.indDecl block nP) = .ok env₂ →
+      Ind block nP env₂)
     (h : checkDecl .verified (fueledOps .verified F) pins env d = .ok env₂) :
-    DeclRun F Ind env d env₂ := by
+    DeclRun F Ind (env.enter d) d env₂ := by
   obtain ⟨h, hnames⟩ := checkDecl_inv h
   refine ⟨hnames, ?_⟩
   cases d with
@@ -477,6 +477,7 @@ theorem checkDeclRun_of {F : Nat}
   | quotDecl k cv => exact declQuotRunOf h
   | indDecl block nP => exact hind h
   | rewriteDecl thm head prio =>
+    dsimp only [Env.enter] at h ⊢
     unfold checkDeclKind at h
     dsimp only at h
     cases he : ruleDeclError? env.find? thm head with
@@ -506,8 +507,16 @@ theorem checkDeclRun_of {F : Nat}
           checkRuleSide_inv h3, checkRuleSide_inv h4, checkRuleSide_inv h5⟩
       · exact nomatch hlaw
   | useRules S =>
+    dsimp only [Env.enter] at h ⊢
     unfold checkDeclKind at h
     dsimp only at h
     exact (Except.ok.inj h).symm
+  | abstractDecl c ms =>
+    dsimp only [Env.enter] at h ⊢
+    unfold checkDeclKind at h
+    dsimp only at h
+    cases he : abstractDeclError? env.find? env.rules.abstracts c with
+    | some e => rw [he] at h; exact nomatch h
+    | none => rw [he] at h; exact ⟨he, (Except.ok.inj h).symm⟩
 
 end ConLeche.Semantics

@@ -174,13 +174,20 @@ def checkDeclKind (ops : CheckerOps m) (pins : List NatOpPinSet) (env : Env)
   | .useRules _ =>
     -- the rule set the following records are checked under, trusted as given
     pure (env.stepRules d)
+  | .abstractDecl c _ =>
+    -- an abstract definition's registration (official `addAbstract`): a stored definition, not
+    -- abstract yet; its members are trusted as given, because blocking only restricts reduction
+    match abstractDeclError? env.find? env.rules.abstracts c with
+    | some e => throw e
+    | none => pure (env.stepRules d)
 
-/-- **Check a single declaration**: its own checks, then the reserved names' (`basisNamesOk`),
-which justify the model's fixed meanings of the basis names.  The mode is part of the signature
+/-- **Check a single declaration**: its own checks at the environment it is checked at
+(`Env.enter`, the abstract definitions it may not unfold recorded), then the reserved names'
+(`basisNamesOk`), which justify the model's fixed meanings of the basis names.  The mode is part of the signature
 although nothing reads it; every caller and every statement passes it. -/
 def checkDecl (_mode : CheckMode) (ops : CheckerOps m) (pins : List NatOpPinSet) (env : Env)
     (d : Declaration) : m Env := do
-  let env₂ ← checkDeclKind ops pins env d
+  let env₂ ← checkDeclKind ops pins (env.enter d) d
   unless basisNamesOk d do
     throw (basisNamesError d)
   pure env₂

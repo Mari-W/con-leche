@@ -314,6 +314,10 @@ theorem checkDeclKindC_spec (henv : EnvWF env)
   | useRules S =>
     sym only [conleche_grind, checkDeclKind, mkFEnv_env, stepRules_mkFEnv] =>
       vcgen [checkDeclKindC] <;> finish
+  | abstractDecl c ms =>
+    sym only [conleche_grind, checkDeclKind, mkFEnv_env, mkFEnv_find_fun, mkFEnv_abs,
+        stepRules_mkFEnv] =>
+      vcgen [checkDeclKindC] <;> finish
   | rewriteDecl thm head prio =>
     sym only [conleche_grind, checkDeclKind, mkFEnv_env, mkFEnv_find_fun, stepRules_mkFEnv] =>
       vcgen [checkDeclKindC, checkRuleLawC_spec henv hs] <;> finish
@@ -356,6 +360,9 @@ theorem checkDeclStepC_run {env : Env} (henv : EnvWF env) {pd : Declaration}
   obtain rfl : s₀.flushed = s₁ := congrArg Prod.snd hflush
   have hcsok : CSOK .verified false env s₀.flushed := flushC_csok hres
   unfold checkDeclC at h
+  rw [enter_mkFEnv] at h
+  have henv := henv.enter pd
+  have hcsok : CSOK .verified false (env.enter pd) s₀.flushed := flushC_csok hres
   obtain ⟨fe₂, s₂, hk, h⟩ := bindC_ok h
   have hb : basisNamesOk pd = true := by
     by_cases hb : basisNamesOk pd = true
@@ -366,7 +373,7 @@ theorem checkDeclStepC_run {env : Env} (henv : EnvWF env) {pd : Declaration}
   obtain ⟨hfe, hst⟩ := pureC_ok h
   rw [← hfe, ← hst]
   suffices hkind : CSOKF s₂ ∧ fe₂ = mkFEnv fe₂.env ∧
-      ∃ F, checkDeclKind (fueledOps .verified F) pins env pd = .ok fe₂.env by
+      ∃ F, checkDeclKind (fueledOps .verified F) pins (env.enter pd) pd = .ok fe₂.env by
     obtain ⟨h1, h2, F, hF⟩ := hkind
     exact ⟨h1, h2, F, checkDecl_of_kind hF hb⟩
   cases pd with
@@ -375,7 +382,7 @@ theorem checkDeclStepC_run {env : Env} (henv : EnvWF env) {pd : Declaration}
     -- throws on both sides, so only the passing branch reaches the bridge
     have hd : (if indParamsOk nP block = true then
           (match readBlock nP block with
-            | .ok p => checkBlockKS .verified (mkFEnv env) block p
+            | .ok p => checkBlockKS .verified (mkFEnv (env.enter (.indDecl block nP))) block p
             | .error e => throw e)
         else throw (CheckError.invalid "number of parameters mismatch"))
         s₀.flushed = .ok (fe₂, s₂) := hk

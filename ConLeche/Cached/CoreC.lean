@@ -46,7 +46,7 @@ def unfoldDefinitionI (fe : FEnv) (e : Expr) : CheckCM (Option Expr) := do
     let nm ← pure n
     match fe.find? nm with
     | some (.defnInfo cv _ _) =>
-      if us.length = cv.levelParams.length then do
+      if us.length = cv.levelParams.length ∧ fe.base.blk.contains nm = false then do
         let v ← constValAtM fe n nm us
         let args ← pure (Expr.getAppArgsC e)
         let r ← mkAppNM v args

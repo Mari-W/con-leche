@@ -137,6 +137,9 @@ set_option maxRecDepth 4000
 
 /-! ### The key table's literals -/
 
+theorem lit_abstract :
+    lit "abstract" = [97, 98, 115, 116, 114, 97, 99, 116] := by
+  rw [lit_eq_toByteArray]; rfl
 theorem lit_all : lit "all" = [97, 108, 108] := by rw [lit_eq_toByteArray]; rfl
 theorem lit_app : lit "app" = [97, 112, 112] := by rw [lit_eq_toByteArray]; rfl
 theorem lit_arg : lit "arg" = [97, 114, 103] := by rw [lit_eq_toByteArray]; rfl
@@ -184,6 +187,9 @@ theorem lit_levelParams :
     lit "levelParams" = [108, 101, 118, 101, 108, 80, 97, 114, 97, 109, 115] := by
   rw [lit_eq_toByteArray]; rfl
 theorem lit_max : lit "max" = [109, 97, 120] := by rw [lit_eq_toByteArray]; rfl
+theorem lit_members :
+    lit "members" = [109, 101, 109, 98, 101, 114, 115] := by
+  rw [lit_eq_toByteArray]; rfl
 theorem lit_meta : lit "meta" = [109, 101, 116, 97] := by rw [lit_eq_toByteArray]; rfl
 theorem lit_name : lit "name" = [110, 97, 109, 101] := by rw [lit_eq_toByteArray]; rfl
 theorem lit_natVal : lit "natVal" = [110, 97, 116, 86, 97, 108] := by rw [lit_eq_toByteArray]; rfl
@@ -256,22 +262,25 @@ theorem lit_value : lit "value" = [118, 97, 108, 117, 101] := by rw [lit_eq_toBy
 /-! ### `keyOf`, first byte by first byte -/
 
 theorem keyOf_97 (k' : List UInt8) : keyOf (97 :: k') =
-    if k' = [108, 108] then Key.kAll
+    if k' = [98, 115, 116, 114, 97, 99, 116] then Key.kAbstract
+    else if k' = [108, 108] then Key.kAll
     else if k' = [112, 112] then Key.kApp
     else if k' = [114, 103] then Key.kArg
     else if k' = [120, 105, 111, 109] then Key.kAxiom
     else Key.kUnknown := by
   unfold keyOf keyTable
-  simp only [List.find?_cons, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
+  simp only [List.find?_cons, lit_abstract, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
     lit_bvar, lit_cidx, lit_const, lit_ctor, lit_ctors, lit_def, lit_fn, lit_forallE, lit_head, lit_hints,
     lit_i, lit_idx, lit_ie, lit_il, lit_imax, lit_in, lit_induct, lit_inductive, lit_isRec,
-    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max,
+    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max, lit_members,
     lit_meta, lit_name, lit_natVal, lit_nfields, lit_nondep, lit_num, lit_numFields,
     lit_numIndices, lit_numMinors, lit_numMotives, lit_numNested, lit_numParams, lit_opaque,
     lit_param, lit_pre, lit_prio, lit_proj, lit_quot, lit_recs, lit_regular, lit_rewrite, lit_rewrites, lit_rhs, lit_rules,
     lit_safety, lit_sort, lit_str, lit_strVal, lit_struct, lit_succ, lit_thm, lit_type,
     lit_typeName, lit_types, lit_us, lit_value]
   simp
+  by_cases hA : k' = [98, 115, 116, 114, 97, 99, 116]
+  case pos => subst hA; simp
   by_cases h0 : k' = [108, 108]
   case pos => subst h0; simp
   by_cases h1 : k' = [112, 112]
@@ -292,8 +301,11 @@ theorem keyOf_97 (k' : List UInt8) : keyOf (97 :: k') =
   have b3 : (([120, 105, 111, 109] : List UInt8) == k') = false := by
     simp only [beq_eq_false_iff_ne, ne_eq]
     exact Ne.symm h3
-  simp only [b0, b1, b2, b3]
-  rw [ite_eq_right h0, ite_eq_right h1, ite_eq_right h2, ite_eq_right h3]
+  have bA : (([98, 115, 116, 114, 97, 99, 116] : List UInt8) == k') = false := by
+    simp only [beq_eq_false_iff_ne, ne_eq]
+    exact Ne.symm hA
+  simp only [bA, b0, b1, b2, b3]
+  rw [ite_eq_right hA, ite_eq_right h0, ite_eq_right h1, ite_eq_right h2, ite_eq_right h3]
 
 theorem keyOf_98 (k' : List UInt8) : keyOf (98 :: k') =
     if k' = [105, 110, 100, 101, 114, 73, 110, 102, 111] then Key.kBinderInfo
@@ -301,10 +313,10 @@ theorem keyOf_98 (k' : List UInt8) : keyOf (98 :: k') =
     else if k' = [118, 97, 114] then Key.kBvar
     else Key.kUnknown := by
   unfold keyOf keyTable
-  simp only [List.find?_cons, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
+  simp only [List.find?_cons, lit_abstract, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
     lit_bvar, lit_cidx, lit_const, lit_ctor, lit_ctors, lit_def, lit_fn, lit_forallE, lit_head, lit_hints,
     lit_i, lit_idx, lit_ie, lit_il, lit_imax, lit_in, lit_induct, lit_inductive, lit_isRec,
-    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max,
+    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max, lit_members,
     lit_meta, lit_name, lit_natVal, lit_nfields, lit_nondep, lit_num, lit_numFields,
     lit_numIndices, lit_numMinors, lit_numMotives, lit_numNested, lit_numParams, lit_opaque,
     lit_param, lit_pre, lit_prio, lit_proj, lit_quot, lit_recs, lit_regular, lit_rewrite, lit_rewrites, lit_rhs, lit_rules,
@@ -336,10 +348,10 @@ theorem keyOf_99 (k' : List UInt8) : keyOf (99 :: k') =
     else if k' = [116, 111, 114, 115] then Key.kCtors
     else Key.kUnknown := by
   unfold keyOf keyTable
-  simp only [List.find?_cons, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
+  simp only [List.find?_cons, lit_abstract, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
     lit_bvar, lit_cidx, lit_const, lit_ctor, lit_ctors, lit_def, lit_fn, lit_forallE, lit_head, lit_hints,
     lit_i, lit_idx, lit_ie, lit_il, lit_imax, lit_in, lit_induct, lit_inductive, lit_isRec,
-    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max,
+    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max, lit_members,
     lit_meta, lit_name, lit_natVal, lit_nfields, lit_nondep, lit_num, lit_numFields,
     lit_numIndices, lit_numMinors, lit_numMotives, lit_numNested, lit_numParams, lit_opaque,
     lit_param, lit_pre, lit_prio, lit_proj, lit_quot, lit_recs, lit_regular, lit_rewrite, lit_rewrites, lit_rhs, lit_rules,
@@ -373,10 +385,10 @@ theorem keyOf_100 (k' : List UInt8) : keyOf (100 :: k') =
     if k' = [101, 102] then Key.kDef
     else Key.kUnknown := by
   unfold keyOf keyTable
-  simp only [List.find?_cons, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
+  simp only [List.find?_cons, lit_abstract, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
     lit_bvar, lit_cidx, lit_const, lit_ctor, lit_ctors, lit_def, lit_fn, lit_forallE, lit_head, lit_hints,
     lit_i, lit_idx, lit_ie, lit_il, lit_imax, lit_in, lit_induct, lit_inductive, lit_isRec,
-    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max,
+    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max, lit_members,
     lit_meta, lit_name, lit_natVal, lit_nfields, lit_nondep, lit_num, lit_numFields,
     lit_numIndices, lit_numMinors, lit_numMotives, lit_numNested, lit_numParams, lit_opaque,
     lit_param, lit_pre, lit_prio, lit_proj, lit_quot, lit_recs, lit_regular, lit_rewrite, lit_rewrites, lit_rhs, lit_rules,
@@ -396,10 +408,10 @@ theorem keyOf_102 (k' : List UInt8) : keyOf (102 :: k') =
     else if k' = [111, 114, 97, 108, 108, 69] then Key.kForallE
     else Key.kUnknown := by
   unfold keyOf keyTable
-  simp only [List.find?_cons, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
+  simp only [List.find?_cons, lit_abstract, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
     lit_bvar, lit_cidx, lit_const, lit_ctor, lit_ctors, lit_def, lit_fn, lit_forallE, lit_head, lit_hints,
     lit_i, lit_idx, lit_ie, lit_il, lit_imax, lit_in, lit_induct, lit_inductive, lit_isRec,
-    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max,
+    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max, lit_members,
     lit_meta, lit_name, lit_natVal, lit_nfields, lit_nondep, lit_num, lit_numFields,
     lit_numIndices, lit_numMinors, lit_numMotives, lit_numNested, lit_numParams, lit_opaque,
     lit_param, lit_pre, lit_prio, lit_proj, lit_quot, lit_recs, lit_regular, lit_rewrite, lit_rewrites, lit_rhs, lit_rules,
@@ -424,10 +436,10 @@ theorem keyOf_104 (k' : List UInt8) : keyOf (104 :: k') =
     else if k' = [105, 110, 116, 115] then Key.kHints
     else Key.kUnknown := by
   unfold keyOf keyTable
-  simp only [List.find?_cons, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
+  simp only [List.find?_cons, lit_abstract, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
     lit_bvar, lit_cidx, lit_const, lit_ctor, lit_ctors, lit_def, lit_fn, lit_forallE, lit_head, lit_hints,
     lit_i, lit_idx, lit_ie, lit_il, lit_imax, lit_in, lit_induct, lit_inductive, lit_isRec,
-    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max,
+    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max, lit_members,
     lit_meta, lit_name, lit_natVal, lit_nfields, lit_nondep, lit_num, lit_numFields,
     lit_numIndices, lit_numMinors, lit_numMotives, lit_numNested, lit_numParams, lit_opaque,
     lit_param, lit_pre, lit_prio, lit_proj, lit_quot, lit_recs, lit_regular, lit_rewrite, lit_rewrites, lit_rhs, lit_rules,
@@ -461,10 +473,10 @@ theorem keyOf_105 (k' : List UInt8) : keyOf (105 :: k') =
     else if k' = [115, 85, 110, 115, 97, 102, 101] then Key.kIsUnsafe
     else Key.kUnknown := by
   unfold keyOf keyTable
-  simp only [List.find?_cons, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
+  simp only [List.find?_cons, lit_abstract, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
     lit_bvar, lit_cidx, lit_const, lit_ctor, lit_ctors, lit_def, lit_fn, lit_forallE, lit_head, lit_hints,
     lit_i, lit_idx, lit_ie, lit_il, lit_imax, lit_in, lit_induct, lit_inductive, lit_isRec,
-    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max,
+    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max, lit_members,
     lit_meta, lit_name, lit_natVal, lit_nfields, lit_nondep, lit_num, lit_numFields,
     lit_numIndices, lit_numMinors, lit_numMotives, lit_numNested, lit_numParams, lit_opaque,
     lit_param, lit_pre, lit_prio, lit_proj, lit_quot, lit_recs, lit_regular, lit_rewrite, lit_rewrites, lit_rhs, lit_rules,
@@ -536,10 +548,10 @@ theorem keyOf_107 (k' : List UInt8) : keyOf (107 :: k') =
     else if k' = [105, 110, 100] then Key.kKind
     else Key.kUnknown := by
   unfold keyOf keyTable
-  simp only [List.find?_cons, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
+  simp only [List.find?_cons, lit_abstract, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
     lit_bvar, lit_cidx, lit_const, lit_ctor, lit_ctors, lit_def, lit_fn, lit_forallE, lit_head, lit_hints,
     lit_i, lit_idx, lit_ie, lit_il, lit_imax, lit_in, lit_induct, lit_inductive, lit_isRec,
-    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max,
+    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max, lit_members,
     lit_meta, lit_name, lit_natVal, lit_nfields, lit_nondep, lit_num, lit_numFields,
     lit_numIndices, lit_numMinors, lit_numMotives, lit_numNested, lit_numParams, lit_opaque,
     lit_param, lit_pre, lit_prio, lit_proj, lit_quot, lit_recs, lit_regular, lit_rewrite, lit_rewrites, lit_rhs, lit_rules,
@@ -566,10 +578,10 @@ theorem keyOf_108 (k' : List UInt8) : keyOf (108 :: k') =
     else if k' = [101, 118, 101, 108, 80, 97, 114, 97, 109, 115] then Key.kLevelParams
     else Key.kUnknown := by
   unfold keyOf keyTable
-  simp only [List.find?_cons, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
+  simp only [List.find?_cons, lit_abstract, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
     lit_bvar, lit_cidx, lit_const, lit_ctor, lit_ctors, lit_def, lit_fn, lit_forallE, lit_head, lit_hints,
     lit_i, lit_idx, lit_ie, lit_il, lit_imax, lit_in, lit_induct, lit_inductive, lit_isRec,
-    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max,
+    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max, lit_members,
     lit_meta, lit_name, lit_natVal, lit_nfields, lit_nondep, lit_num, lit_numFields,
     lit_numIndices, lit_numMinors, lit_numMotives, lit_numNested, lit_numParams, lit_opaque,
     lit_param, lit_pre, lit_prio, lit_proj, lit_quot, lit_recs, lit_regular, lit_rewrite, lit_rewrites, lit_rhs, lit_rules,
@@ -596,13 +608,14 @@ theorem keyOf_108 (k' : List UInt8) : keyOf (108 :: k') =
 
 theorem keyOf_109 (k' : List UInt8) : keyOf (109 :: k') =
     if k' = [97, 120] then Key.kMax
+    else if k' = [101, 109, 98, 101, 114, 115] then Key.kMembers
     else if k' = [101, 116, 97] then Key.kMeta
     else Key.kUnknown := by
   unfold keyOf keyTable
-  simp only [List.find?_cons, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
+  simp only [List.find?_cons, lit_abstract, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
     lit_bvar, lit_cidx, lit_const, lit_ctor, lit_ctors, lit_def, lit_fn, lit_forallE, lit_head, lit_hints,
     lit_i, lit_idx, lit_ie, lit_il, lit_imax, lit_in, lit_induct, lit_inductive, lit_isRec,
-    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max,
+    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max, lit_members,
     lit_meta, lit_name, lit_natVal, lit_nfields, lit_nondep, lit_num, lit_numFields,
     lit_numIndices, lit_numMinors, lit_numMotives, lit_numNested, lit_numParams, lit_opaque,
     lit_param, lit_pre, lit_prio, lit_proj, lit_quot, lit_recs, lit_regular, lit_rewrite, lit_rewrites, lit_rhs, lit_rules,
@@ -611,16 +624,21 @@ theorem keyOf_109 (k' : List UInt8) : keyOf (109 :: k') =
   simp
   by_cases h0 : k' = [97, 120]
   case pos => subst h0; simp
+  by_cases hM : k' = [101, 109, 98, 101, 114, 115]
+  case pos => subst hM; simp
   by_cases h1 : k' = [101, 116, 97]
   case pos => subst h1; simp
   have b0 : (([97, 120] : List UInt8) == k') = false := by
     simp only [beq_eq_false_iff_ne, ne_eq]
     exact Ne.symm h0
+  have bM : (([101, 109, 98, 101, 114, 115] : List UInt8) == k') = false := by
+    simp only [beq_eq_false_iff_ne, ne_eq]
+    exact Ne.symm hM
   have b1 : (([101, 116, 97] : List UInt8) == k') = false := by
     simp only [beq_eq_false_iff_ne, ne_eq]
     exact Ne.symm h1
-  simp only [b0, b1]
-  rw [ite_eq_right h0, ite_eq_right h1]
+  simp only [b0, bM, b1]
+  rw [ite_eq_right h0, ite_eq_right hM, ite_eq_right h1]
 
 theorem keyOf_110 (k' : List UInt8) : keyOf (110 :: k') =
     if k' = [97, 109, 101] then Key.kName
@@ -636,10 +654,10 @@ theorem keyOf_110 (k' : List UInt8) : keyOf (110 :: k') =
     else if k' = [117, 109, 80, 97, 114, 97, 109, 115] then Key.kNumParams
     else Key.kUnknown := by
   unfold keyOf keyTable
-  simp only [List.find?_cons, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
+  simp only [List.find?_cons, lit_abstract, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
     lit_bvar, lit_cidx, lit_const, lit_ctor, lit_ctors, lit_def, lit_fn, lit_forallE, lit_head, lit_hints,
     lit_i, lit_idx, lit_ie, lit_il, lit_imax, lit_in, lit_induct, lit_inductive, lit_isRec,
-    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max,
+    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max, lit_members,
     lit_meta, lit_name, lit_natVal, lit_nfields, lit_nondep, lit_num, lit_numFields,
     lit_numIndices, lit_numMinors, lit_numMotives, lit_numNested, lit_numParams, lit_opaque,
     lit_param, lit_pre, lit_prio, lit_proj, lit_quot, lit_recs, lit_regular, lit_rewrite, lit_rewrites, lit_rhs, lit_rules,
@@ -709,10 +727,10 @@ theorem keyOf_111 (k' : List UInt8) : keyOf (111 :: k') =
     if k' = [112, 97, 113, 117, 101] then Key.kOpaque
     else Key.kUnknown := by
   unfold keyOf keyTable
-  simp only [List.find?_cons, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
+  simp only [List.find?_cons, lit_abstract, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
     lit_bvar, lit_cidx, lit_const, lit_ctor, lit_ctors, lit_def, lit_fn, lit_forallE, lit_head, lit_hints,
     lit_i, lit_idx, lit_ie, lit_il, lit_imax, lit_in, lit_induct, lit_inductive, lit_isRec,
-    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max,
+    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max, lit_members,
     lit_meta, lit_name, lit_natVal, lit_nfields, lit_nondep, lit_num, lit_numFields,
     lit_numIndices, lit_numMinors, lit_numMotives, lit_numNested, lit_numParams, lit_opaque,
     lit_param, lit_pre, lit_prio, lit_proj, lit_quot, lit_recs, lit_regular, lit_rewrite, lit_rewrites, lit_rhs, lit_rules,
@@ -734,10 +752,10 @@ theorem keyOf_112 (k' : List UInt8) : keyOf (112 :: k') =
     else if k' = [114, 111, 106] then Key.kProj
     else Key.kUnknown := by
   unfold keyOf keyTable
-  simp only [List.find?_cons, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
+  simp only [List.find?_cons, lit_abstract, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
     lit_bvar, lit_cidx, lit_const, lit_ctor, lit_ctors, lit_def, lit_fn, lit_forallE, lit_head, lit_hints,
     lit_i, lit_idx, lit_ie, lit_il, lit_imax, lit_in, lit_induct, lit_inductive, lit_isRec,
-    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max,
+    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max, lit_members,
     lit_meta, lit_name, lit_natVal, lit_nfields, lit_nondep, lit_num, lit_numFields,
     lit_numIndices, lit_numMinors, lit_numMotives, lit_numNested, lit_numParams, lit_opaque,
     lit_param, lit_pre, lit_prio, lit_proj, lit_quot, lit_recs, lit_regular, lit_rewrite, lit_rewrites, lit_rhs, lit_rules,
@@ -771,10 +789,10 @@ theorem keyOf_113 (k' : List UInt8) : keyOf (113 :: k') =
     if k' = [117, 111, 116] then Key.kQuot
     else Key.kUnknown := by
   unfold keyOf keyTable
-  simp only [List.find?_cons, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
+  simp only [List.find?_cons, lit_abstract, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
     lit_bvar, lit_cidx, lit_const, lit_ctor, lit_ctors, lit_def, lit_fn, lit_forallE, lit_head, lit_hints,
     lit_i, lit_idx, lit_ie, lit_il, lit_imax, lit_in, lit_induct, lit_inductive, lit_isRec,
-    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max,
+    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max, lit_members,
     lit_meta, lit_name, lit_natVal, lit_nfields, lit_nondep, lit_num, lit_numFields,
     lit_numIndices, lit_numMinors, lit_numMotives, lit_numNested, lit_numParams, lit_opaque,
     lit_param, lit_pre, lit_prio, lit_proj, lit_quot, lit_recs, lit_regular, lit_rewrite, lit_rewrites, lit_rhs, lit_rules,
@@ -798,10 +816,10 @@ theorem keyOf_114 (k' : List UInt8) : keyOf (114 :: k') =
     else if k' = [117, 108, 101, 115] then Key.kRules
     else Key.kUnknown := by
   unfold keyOf keyTable
-  simp only [List.find?_cons, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
+  simp only [List.find?_cons, lit_abstract, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
     lit_bvar, lit_cidx, lit_const, lit_ctor, lit_ctors, lit_def, lit_fn, lit_forallE, lit_head, lit_hints,
     lit_i, lit_idx, lit_ie, lit_il, lit_imax, lit_in, lit_induct, lit_inductive, lit_isRec,
-    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max,
+    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max, lit_members,
     lit_meta, lit_name, lit_natVal, lit_nfields, lit_nondep, lit_num, lit_numFields,
     lit_numIndices, lit_numMinors, lit_numMotives, lit_numNested, lit_numParams, lit_opaque,
     lit_param, lit_pre, lit_prio, lit_proj, lit_quot, lit_recs, lit_regular, lit_rewrite, lit_rewrites, lit_rhs, lit_rules,
@@ -850,10 +868,10 @@ theorem keyOf_115 (k' : List UInt8) : keyOf (115 :: k') =
     else if k' = [117, 99, 99] then Key.kSucc
     else Key.kUnknown := by
   unfold keyOf keyTable
-  simp only [List.find?_cons, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
+  simp only [List.find?_cons, lit_abstract, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
     lit_bvar, lit_cidx, lit_const, lit_ctor, lit_ctors, lit_def, lit_fn, lit_forallE, lit_head, lit_hints,
     lit_i, lit_idx, lit_ie, lit_il, lit_imax, lit_in, lit_induct, lit_inductive, lit_isRec,
-    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max,
+    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max, lit_members,
     lit_meta, lit_name, lit_natVal, lit_nfields, lit_nondep, lit_num, lit_numFields,
     lit_numIndices, lit_numMinors, lit_numMotives, lit_numNested, lit_numParams, lit_opaque,
     lit_param, lit_pre, lit_prio, lit_proj, lit_quot, lit_recs, lit_regular, lit_rewrite, lit_rewrites, lit_rhs, lit_rules,
@@ -900,10 +918,10 @@ theorem keyOf_116 (k' : List UInt8) : keyOf (116 :: k') =
     else if k' = [121, 112, 101, 115] then Key.kTypes
     else Key.kUnknown := by
   unfold keyOf keyTable
-  simp only [List.find?_cons, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
+  simp only [List.find?_cons, lit_abstract, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
     lit_bvar, lit_cidx, lit_const, lit_ctor, lit_ctors, lit_def, lit_fn, lit_forallE, lit_head, lit_hints,
     lit_i, lit_idx, lit_ie, lit_il, lit_imax, lit_in, lit_induct, lit_inductive, lit_isRec,
-    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max,
+    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max, lit_members,
     lit_meta, lit_name, lit_natVal, lit_nfields, lit_nondep, lit_num, lit_numFields,
     lit_numIndices, lit_numMinors, lit_numMotives, lit_numNested, lit_numParams, lit_opaque,
     lit_param, lit_pre, lit_prio, lit_proj, lit_quot, lit_recs, lit_regular, lit_rewrite, lit_rewrites, lit_rhs, lit_rules,
@@ -937,10 +955,10 @@ theorem keyOf_117 (k' : List UInt8) : keyOf (117 :: k') =
     if k' = [115] then Key.kUs
     else Key.kUnknown := by
   unfold keyOf keyTable
-  simp only [List.find?_cons, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
+  simp only [List.find?_cons, lit_abstract, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
     lit_bvar, lit_cidx, lit_const, lit_ctor, lit_ctors, lit_def, lit_fn, lit_forallE, lit_head, lit_hints,
     lit_i, lit_idx, lit_ie, lit_il, lit_imax, lit_in, lit_induct, lit_inductive, lit_isRec,
-    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max,
+    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max, lit_members,
     lit_meta, lit_name, lit_natVal, lit_nfields, lit_nondep, lit_num, lit_numFields,
     lit_numIndices, lit_numMinors, lit_numMotives, lit_numNested, lit_numParams, lit_opaque,
     lit_param, lit_pre, lit_prio, lit_proj, lit_quot, lit_recs, lit_regular, lit_rewrite, lit_rewrites, lit_rhs, lit_rules,
@@ -959,10 +977,10 @@ theorem keyOf_118 (k' : List UInt8) : keyOf (118 :: k') =
     if k' = [97, 108, 117, 101] then Key.kValue
     else Key.kUnknown := by
   unfold keyOf keyTable
-  simp only [List.find?_cons, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
+  simp only [List.find?_cons, lit_abstract, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo, lit_body,
     lit_bvar, lit_cidx, lit_const, lit_ctor, lit_ctors, lit_def, lit_fn, lit_forallE, lit_head, lit_hints,
     lit_i, lit_idx, lit_ie, lit_il, lit_imax, lit_in, lit_induct, lit_inductive, lit_isRec,
-    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max,
+    lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam, lit_letE, lit_levelParams, lit_max, lit_members,
     lit_meta, lit_name, lit_natVal, lit_nfields, lit_nondep, lit_num, lit_numFields,
     lit_numIndices, lit_numMinors, lit_numMotives, lit_numNested, lit_numParams, lit_opaque,
     lit_param, lit_pre, lit_prio, lit_proj, lit_quot, lit_recs, lit_regular, lit_rewrite, lit_rewrites, lit_rhs, lit_rules,
@@ -1244,7 +1262,12 @@ theorem keyAt_eq {b : ByteArray} {i : USize} {k r : List UInt8} (h : i < b.usize
           intro hx
           rw [hx] at hL0
           simp at hL0
-        simp only [ite_eq_right e2, ite_eq_right e0, ite_eq_right e1, ite_eq_right n3]
+        have nA : ¬ k' = [98, 115, 116, 114, 97, 99, 116] := by
+          intro hx
+          rw [hx] at hL0
+          simp at hL0
+        simp only [ite_eq_right nA, ite_eq_right e2, ite_eq_right e0, ite_eq_right e1,
+          ite_eq_right n3]
       rw [ite_eq_right (kl_beq_ne (by rw [hkl, usz3]; omega))]
       by_cases hL1 : k'.length = 4
       case pos =>
@@ -1264,8 +1287,41 @@ theorem keyAt_eq {b : ByteArray} {i : USize} {k r : List UInt8} (h : i < b.usize
           intro hx
           rw [hx] at hL1
           simp at hL1
-        simp only [ite_eq_right n0, ite_eq_right n1, ite_eq_right n2, ite_eq_right e0]
+        have nA : ¬ k' = [98, 115, 116, 114, 97, 99, 116] := by
+          intro hx
+          rw [hx] at hL1
+          simp at hL1
+        simp only [ite_eq_right nA, ite_eq_right n0, ite_eq_right n1, ite_eq_right n2,
+          ite_eq_right e0]
       rw [ite_eq_right (kl_beq_ne (by rw [hkl, usz5]; omega))]
+      by_cases hL2 : k'.length = 7
+      case pos =>
+        rw [ite_eq_left (kl_beq (by rw [hkl, hL2, usz8]))]
+        simp only [lit7_key b (i + 1 + 1) 98 115 116 114 97 99 116 k' r hT2 (by simp [hL2])]
+        by_cases e0 : k' = [98, 115, 116, 114, 97, 99, 116]
+        case pos => subst e0; simp
+        have n0 : ¬ k' = [108, 108] := by
+          intro hx
+          rw [hx] at hL2
+          simp at hL2
+        have n1 : ¬ k' = [112, 112] := by
+          intro hx
+          rw [hx] at hL2
+          simp at hL2
+        have n2 : ¬ k' = [114, 103] := by
+          intro hx
+          rw [hx] at hL2
+          simp at hL2
+        have n3 : ¬ k' = [120, 105, 111, 109] := by
+          intro hx
+          rw [hx] at hL2
+          simp at hL2
+        simp only [ite_eq_right e0, ite_eq_right n0, ite_eq_right n1, ite_eq_right n2,
+          ite_eq_right n3]
+      rw [ite_eq_right (kl_beq_ne (by rw [hkl, usz8]; omega))]
+      have mA : ¬ k' = [98, 115, 116, 114, 97, 99, 116] := by
+        intro hx
+        exact hL2 (by simp [hx])
       have m0 : ¬ k' = [108, 108] := by
         intro hx
         exact hL0 (by simp [hx])
@@ -1278,7 +1334,8 @@ theorem keyAt_eq {b : ByteArray} {i : USize} {k r : List UInt8} (h : i < b.usize
       have m3 : ¬ k' = [120, 105, 111, 109] := by
         intro hx
         exact hL1 (by simp [hx])
-      simp only [ite_eq_right m0, ite_eq_right m1, ite_eq_right m2, ite_eq_right m3]
+      simp only [ite_eq_right mA, ite_eq_right m0, ite_eq_right m1, ite_eq_right m2,
+        ite_eq_right m3]
     · -- 'b'
       rw [keyOf_98]
       by_cases hL0 : k'.length = 3
@@ -1982,11 +2039,15 @@ theorem keyAt_eq {b : ByteArray} {i : USize} {k r : List UInt8} (h : i < b.usize
         simp only [lit2_key b (i + 1 + 1) 97 120 k' r hT2 (by simp [hL0])]
         by_cases e0 : k' = [97, 120]
         case pos => subst e0; simp
+        have nM : ¬ k' = [101, 109, 98, 101, 114, 115] := by
+          intro hx
+          rw [hx] at hL0
+          simp at hL0
         have n1 : ¬ k' = [101, 116, 97] := by
           intro hx
           rw [hx] at hL0
           simp at hL0
-        simp only [ite_eq_right e0, ite_eq_right n1]
+        simp only [ite_eq_right e0, ite_eq_right nM, ite_eq_right n1]
       rw [ite_eq_right (kl_beq_ne (by rw [hkl, usz3]; omega))]
       by_cases hL1 : k'.length = 3
       case pos =>
@@ -1998,15 +2059,38 @@ theorem keyAt_eq {b : ByteArray} {i : USize} {k r : List UInt8} (h : i < b.usize
           intro hx
           rw [hx] at hL1
           simp at hL1
-        simp only [ite_eq_right n0, ite_eq_right e0]
+        have nM : ¬ k' = [101, 109, 98, 101, 114, 115] := by
+          intro hx
+          rw [hx] at hL1
+          simp at hL1
+        simp only [ite_eq_right n0, ite_eq_right nM, ite_eq_right e0]
       rw [ite_eq_right (kl_beq_ne (by rw [hkl, usz4]; omega))]
+      by_cases hL2 : k'.length = 6
+      case pos =>
+        rw [ite_eq_left (kl_beq (by rw [hkl, hL2, usz7]))]
+        simp only [lit6_key b (i + 1 + 1) 101 109 98 101 114 115 k' r hT2 (by simp [hL2])]
+        by_cases e0 : k' = [101, 109, 98, 101, 114, 115]
+        case pos => subst e0; simp
+        have n0 : ¬ k' = [97, 120] := by
+          intro hx
+          rw [hx] at hL2
+          simp at hL2
+        have n1 : ¬ k' = [101, 116, 97] := by
+          intro hx
+          rw [hx] at hL2
+          simp at hL2
+        simp only [ite_eq_right n0, ite_eq_right e0, ite_eq_right n1]
+      rw [ite_eq_right (kl_beq_ne (by rw [hkl, usz7]; omega))]
       have m0 : ¬ k' = [97, 120] := by
         intro hx
         exact hL0 (by simp [hx])
+      have mM : ¬ k' = [101, 109, 98, 101, 114, 115] := by
+        intro hx
+        exact hL2 (by simp [hx])
       have m1 : ¬ k' = [101, 116, 97] := by
         intro hx
         exact hL1 (by simp [hx])
-      simp only [ite_eq_right m0, ite_eq_right m1]
+      simp only [ite_eq_right m0, ite_eq_right mM, ite_eq_right m1]
     · -- 'n'
       rw [keyOf_110]
       by_cases hL0 : k'.length = 3
@@ -2869,11 +2953,11 @@ theorem keyAt_eq {b : ByteArray} {i : USize} {k r : List UInt8} (h : i < b.usize
         exact fun hx => e118 hx.symm
       have hu : keyOf (c :: k') = Key.kUnknown := by
         unfold keyOf keyTable
-        simp only [List.find?_cons, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo,
+        simp only [List.find?_cons, lit_abstract, lit_all, lit_app, lit_arg, lit_axiom, lit_binderInfo,
           lit_body, lit_bvar, lit_cidx, lit_const, lit_ctor, lit_ctors, lit_def, lit_fn,
           lit_forallE, lit_head, lit_hints, lit_i, lit_idx, lit_ie, lit_il, lit_imax, lit_in, lit_induct,
           lit_inductive, lit_isRec, lit_isReflexive, lit_isUnsafe, lit_k, lit_kind, lit_lam,
-          lit_letE, lit_levelParams, lit_max, lit_meta, lit_name, lit_natVal, lit_nfields,
+          lit_letE, lit_levelParams, lit_max, lit_members, lit_meta, lit_name, lit_natVal, lit_nfields,
           lit_nondep, lit_num, lit_numFields, lit_numIndices, lit_numMinors, lit_numMotives,
           lit_numNested, lit_numParams, lit_opaque, lit_param, lit_pre, lit_prio, lit_proj,
           lit_quot, lit_recs, lit_regular, lit_rewrite, lit_rewrites, lit_rhs, lit_rules, lit_safety, lit_sort, lit_str,

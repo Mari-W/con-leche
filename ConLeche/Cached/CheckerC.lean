@@ -115,7 +115,7 @@ def declConstantsC : Declaration → List ConstantInfo
     match readBlock nP block with
     | .ok p => blockConstantsC p
     | .error _ => []
-  | .rewriteDecl .. | .useRules _ => []
+  | .rewriteDecl .. | .useRules _ | .abstractDecl .. => []
 
 variable (mode : CheckMode)
 

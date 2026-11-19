@@ -48,6 +48,13 @@ structure FBase where
   /-- The active tables recorded before the layer's view, each with its counter
   (`RuleTable.snaps`); the frozen layer's part of `FEnv.snapsAll`. -/
   snaps : List (Nat × List (Name × Name)) := []
+  /-- The abstract definitions registered so far (`RuleTable.abstracts`). -/
+  abs : List (Name × List Name) := []
+  /-- The blocked sets recorded so far, each with its counter (`RuleTable.blks`). -/
+  blks : List (Nat × List Name) := []
+  /-- **The blocked set in force** (`Env.blocked`): the abstract definitions the delta step
+  refuses here, set where the view is made or a record is entered (`FEnv.enter`). -/
+  blk : List Name := []
 
 /-- The base layer's lookup: a visible entry's constant. -/
 def FBase.find? (b : @& FBase) (n : Name) : Option ConstantInfo :=
@@ -266,7 +273,10 @@ def mkRlsGo : List (Name × Name) → Std.HashMap Name (List Name)
 
 /-- Build the index of `env`. -/
 def mkFEnv (env : Env) : FEnv :=
-  FEnv.ofParts env (mkIdxGo env.consts) { rls := mkRlsGo env.rules.active } [] (mkTblsGo env.tables)
+  FEnv.ofParts env (mkIdxGo env.consts)
+    { rls := mkRlsGo env.rules.active, abs := env.rules.abstracts, blks := env.rules.blks,
+      blk := blkHead env.rules.blks } []
+    (mkTblsGo env.tables)
 
 namespace FEnv
 
@@ -419,15 +429,50 @@ environments, one bucket array.  Read-only: nothing pushes onto it. -/
 def overlay (fe : FEnv) (new : List ConstantInfo) : FEnv :=
   ofParts ⟨new ++ fe.env.consts, fe.env.tables, fe.env.rules⟩ fe.idx fe.base (new ++ fe.ovl) fe.tbls
 
+/-- The number of constants below this index's top: the frozen layer's counter and the pushed
+constants (the length of `Env.consts` for `mkFEnv`). -/
+def cnt (fe : FEnv) : Nat := fe.base.below + fe.env.consts.length
+
+/-- **The blocked set in force at counter `c`** (`blkAtS`, `RuleTable.cut`). -/
+def blkAt (fe : FEnv) (c : Nat) : List Name := blkAtS fe.base.blks c
+
+/-- **A declaration record entered** (`RuleTable.step`'s declaration arm through the index): the
+abstract definitions it may not unfold recorded at the counter, and made the blocked set in
+force.  The index keeps its own abstract definitions and blocked sets (`FBase.abs`,
+`FBase.blks`): a view of a stream's index has them from the index, not from its environment. -/
+def enterRec (fe : FEnv) (d : Declaration) : FEnv :=
+  let l := pushBlkOn fe.base.blks fe.cnt (blockedFor fe.base.abs d.mainName)
+  -- the literal flags read the index and the base's lookup alone, which entering keeps
+  ⟨fe.env.stepRules d, fe.idx, { fe.base with blks := l, blk := blkHead l }, fe.ovl, fe.tbls,
+    fe.natLit, fe.strLit, fe.natLit_eq, fe.strLit_eq⟩
+
+/-- **Nothing to block**: no abstract definition registered and no blocked set in force, on the
+index or its environment.  Entering a declaration record then changes nothing, so `stepRules`
+skips `enterRec` and its copies of the environment and the base layer: every record of a stream
+without an `abstract` line, at about 2 000 instructions each (task r9, `wide_ok`). -/
+def quiet (fe : FEnv) : Bool :=
+  fe.base.abs.isEmpty && fe.base.blk.isEmpty && (blkHead fe.base.blks).isEmpty &&
+    fe.env.rules.abstracts.isEmpty && (blkHead fe.env.rules.blks).isEmpty
+
 /-- **A record's rule effect on the index** (`Env.stepRules`): a registration records the rule, a
-`useRules` rebuilds the active table and its rule map, any other record changes nothing. -/
+`useRules` rebuilds the active table and its rule map, an abstract record records its
+definition, and a declaration record is entered (`enterRec`), unless there is nothing to block
+(`quiet`). -/
 def stepRules (fe : FEnv) (d : Declaration) : FEnv :=
   match d with
   | .rewriteDecl .. => ofParts (fe.env.stepRules d) fe.idx fe.base fe.ovl fe.tbls
   | .useRules _ =>
     ofParts (fe.env.stepRules d) fe.idx { fe.base with rls := mkRlsGo (fe.env.stepRules d).rules.active }
       fe.ovl fe.tbls
-  | _ => fe
+  | .abstractDecl c ms =>
+    ofParts (fe.env.stepRules d) fe.idx { fe.base with abs := (c, ms) :: fe.base.abs } fe.ovl fe.tbls
+  | _ => if fe.quiet then fe else fe.enterRec d
+
+/-- **The index a record is checked at** (`Env.enter`). -/
+def enter (fe : FEnv) (d : Declaration) : FEnv :=
+  match d with
+  | .rewriteDecl .. | .useRules _ | .abstractDecl .. => fe
+  | _ => fe.stepRules d
 
 /-- The table map's lookup, ungated: a miss in the map falls through to
 the base layer (empty but in a view of a stream's index). -/
@@ -478,10 +523,6 @@ theorem findTable?_of_chk {fe : FEnv} (h : fe.base.chk = false) (T : Name) :
     fe.findTable? T = if (fe.find? T).isSome then fe.rawTable? T else none := by
   simp only [findTable?, h, Bool.false_eq_true, ↓reduceIte]
 
-/-- The number of constants below this index's top: the frozen layer's counter and the pushed
-constants (the length of `Env.consts` for `mkFEnv`). -/
-def cnt (fe : FEnv) : Nat := fe.base.below + fe.env.consts.length
-
 /-- The active tables recorded so far, each with its counter: the pushed environment's, then the
 frozen layer's. -/
 def snapsAll (fe : FEnv) : List (Nat × List (Name × Name)) := fe.env.rules.snaps ++ fe.base.snaps
@@ -497,11 +538,12 @@ def dropTop (fe : FEnv) (k : Nat) : FEnv :=
   if k ≤ fe.env.consts.length then
     let cs := fe.env.consts.drop k
     ofParts ⟨cs, fe.env.tables, fe.env.rules⟩ (mkIdxGo cs)
-      { fe.base with chk := true, rls := fe.rlsAt (fe.cnt - k) } [] fe.tbls
+      { fe.base with chk := true, rls := fe.rlsAt (fe.cnt - k), blk := fe.blkAt (fe.cnt - k) } [] fe.tbls
   else
     ofParts ⟨[], fe.env.tables, fe.env.rules⟩ ∅
       { fe.base with
-        below := fe.base.below - (k - fe.env.consts.length), chk := true, rls := fe.rlsAt (fe.cnt - k) }
+        below := fe.base.below - (k - fe.env.consts.length), chk := true, rls := fe.rlsAt (fe.cnt - k),
+        blk := fe.blkAt (fe.cnt - k) }
       [] fe.tbls
 
 /-- **The view below the first entry named `n`, less `k` more constants** (`Env.suffixAfter`,
@@ -515,7 +557,7 @@ def below (fe : FEnv) (n : Name) (k : Nat) : FEnv :=
       | some (c, _) => if c < fe.base.below then c - k else 0
       | none => 0
     ofParts ⟨[], fe.env.tables, fe.env.rules⟩ ∅
-      { fe.base with below := c, chk := true, rls := fe.rlsAt c } [] fe.tbls
+      { fe.base with below := c, chk := true, rls := fe.rlsAt c, blk := fe.blkAt c } [] fe.tbls
 
 /-- **The rules registered for the head constant `c`** (`Env.rulesFor` through the index):
 newest first, each theorem stored here. -/

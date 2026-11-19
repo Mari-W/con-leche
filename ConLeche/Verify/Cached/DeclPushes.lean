@@ -639,13 +639,17 @@ theorem checkBlockKS_pushes (mode : CheckMode) (fe : FEnv) (block : List Constan
   cases blockTables p p.members <;> simp only [unwrapOr, Option.getD, pure_bind] <;> yields
   all_goals first | exact Yields.pure rfl | exact Yields.ofThrow
 
-/-- **A declaration's own checks push what it installs**, at every mode. -/
+/-- **A declaration's own checks push what it installs**, at every mode, at the index it is
+checked at (`FEnv.enter`). -/
 theorem checkDeclKindC_pushes (mode : CheckMode) (fe : FEnv) (pd : Declaration) :
-    Yields (checkDeclKindC mode pins fe pd)
+    Yields (checkDeclKindC mode pins (fe.enter pd) pd)
       (· = FEnv.pushDelta (declConstants pd) (declTables pd) (fe.stepRules pd)) := by
-  unfold checkDeclKindC
   cases pd with
   | defnDecl cv value hint =>
+    show Yields (checkDeclKindC mode pins (fe.stepRules (.defnDecl cv value hint)) _)
+      (· = FEnv.pushDelta _ _ (fe.stepRules (.defnDecl cv value hint)))
+    generalize fe.stepRules (.defnDecl cv value hint) = fe
+    unfold checkDeclKindC
     simp only []
     ybind
     refine Yields.bind' (checkDefnValCI_shape mode fe cv value hint) fun ci hci => ?_
@@ -653,12 +657,20 @@ theorem checkDeclKindC_pushes (mode : CheckMode) (fe : FEnv) (pd : Declaration) 
     yields
     all_goals exact Yields.pure rfl
   | thmDecl cv value =>
+    show Yields (checkDeclKindC mode pins (fe.stepRules (.thmDecl cv value)) _)
+      (· = FEnv.pushDelta _ _ (fe.stepRules (.thmDecl cv value)))
+    generalize fe.stepRules (.thmDecl cv value) = fe
+    unfold checkDeclKindC
     simp only []
     ybind
     refine Yields.bind' (checkThmValCI_shape mode fe cv value) fun ci hci => ?_
     subst hci
     exact Yields.pure rfl
   | opaqueDecl cv value =>
+    show Yields (checkDeclKindC mode pins (fe.stepRules (.opaqueDecl cv value)) _)
+      (· = FEnv.pushDelta _ _ (fe.stepRules (.opaqueDecl cv value)))
+    generalize fe.stepRules (.opaqueDecl cv value) = fe
+    unfold checkDeclKindC
     simp only []
     ybind
     refine Yields.bind' (checkOpaqueValCI_shape mode fe cv value) fun ci hci => ?_
@@ -666,6 +678,10 @@ theorem checkDeclKindC_pushes (mode : CheckMode) (fe : FEnv) (pd : Declaration) 
     yields
     all_goals exact Yields.pure rfl
   | axiomDecl cv =>
+    show Yields (checkDeclKindC mode pins (fe.stepRules (.axiomDecl cv)) _)
+      (· = FEnv.pushDelta _ _ (fe.stepRules (.axiomDecl cv)))
+    generalize fe.stepRules (.axiomDecl cv) = fe
+    unfold checkDeclKindC
     simp only []
     by_cases hqs : cv.name = quotSoundName
     · rw [ite_eq_left hqs]
@@ -685,8 +701,17 @@ theorem checkDeclKindC_pushes (mode : CheckMode) (fe : FEnv) (pd : Declaration) 
         all_goals first
           | exact Yields.pure rfl
           | exact absurd (by assumption) ht
-  | quotDecl k cv => exact checkQuotRecordC_pushes fe k cv
+  | quotDecl k cv =>
+    show Yields (checkDeclKindC mode pins (fe.stepRules (.quotDecl k cv)) _)
+      (· = FEnv.pushDelta _ _ (fe.stepRules (.quotDecl k cv)))
+    generalize fe.stepRules (.quotDecl k cv) = fe
+    unfold checkDeclKindC
+    exact checkQuotRecordC_pushes fe k cv
   | indDecl block nP =>
+    show Yields (checkDeclKindC mode pins (fe.stepRules (.indDecl block nP)) _)
+      (· = FEnv.pushDelta _ _ (fe.stepRules (.indDecl block nP)))
+    generalize fe.stepRules (.indDecl block nP) = fe
+    unfold checkDeclKindC
     simp only [declConstants, declTables]
     unfold checkIndDeclC
     split
@@ -695,11 +720,18 @@ theorem checkDeclKindC_pushes (mode : CheckMode) (fe : FEnv) (pd : Declaration) 
       | ok p => exact checkBlockKS_pushes mode fe block p
     · exact Yields.ofThrow
   | rewriteDecl thm head prio =>
+    unfold checkDeclKindC
     simp only []
     split
     · exact Yields.ofThrow
     · exact Yields.bind fun _ => Yields.pure rfl
-  | useRules S => exact Yields.pure rfl
+  | useRules S => unfold checkDeclKindC; exact Yields.pure rfl
+  | abstractDecl c ms =>
+    unfold checkDeclKindC
+    simp only []
+    split
+    · exact Yields.ofThrow
+    · exact Yields.pure rfl
 
 /-- **An accepting step pushes what the declaration installs**, at every mode, after its rule
 effect. -/

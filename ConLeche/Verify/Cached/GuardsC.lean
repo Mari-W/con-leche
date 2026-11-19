@@ -810,7 +810,8 @@ theorem unfoldableHeadC_spec {env : Env} {e : Expr} :
   show (match Expr.getAppFn e with
       | .const nm us =>
         match (mkFEnv env).find? nm with
-        | some (.defnInfo cv _ _) => us.length == cv.levelParams.length
+        | some (.defnInfo cv _ _) => us.length == cv.levelParams.length &&
+            !(mkFEnv env).base.blk.contains nm
         | _ => false
       | _ => false) = _
   rw [unfoldableHead]

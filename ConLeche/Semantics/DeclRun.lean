@@ -223,6 +223,9 @@ def DeclKindRun (F : Nat)
     ruleDeclError? env.find? thm head = none ∧ RuleLawRun F env thm ∧
       env₂ = env.stepRules (.rewriteDecl thm head prio)
   | .useRules S, env₂ => env₂ = env.stepRules (.useRules S)
+  | .abstractDecl c ms, env₂ =>
+    abstractDeclError? env.find? env.rules.abstracts c = none ∧
+      env₂ = env.stepRules (.abstractDecl c ms)
 
 /-- **The per-declaration run relation**: the declaration's own checks, then the reserved names'
 (`basisNamesOk`). -/

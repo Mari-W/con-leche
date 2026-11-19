@@ -95,6 +95,7 @@ kind of record claims a name and a type for:
   | .quotDecl _ _, _ => False
   | .rewriteDecl .., _ => False
   | .useRules _, _ => False
+  | .abstractDecl .., _ => False
 
 /-! ## A name-unique environment finds what it holds -/
 
@@ -169,7 +170,8 @@ theorem checkDecl_declares {env env₂ : Env} {F : Nat}
     · exact absurd hq hqs
     obtain ⟨-, type', -, hcvr, hdisj⟩ := hrun
     obtain ⟨-, -, -, -, hann, -, -, -⟩ := hcvr
-    have henv₂ : env₂ = ⟨.axiomInfo ⟨cv.name, cv.levelParams, type'⟩ :: env.consts, env.tables, env.rules⟩ := by
+    have henv₂ : env₂ = ⟨.axiomInfo ⟨cv.name, cv.levelParams, type'⟩ :: (env.enter (.axiomDecl cv)).consts,
+        (env.enter (.axiomDecl cv)).tables, (env.enter (.axiomDecl cv)).rules⟩ := by
       rcases hdisj with ⟨-, he⟩ | ⟨-, -, he⟩ | ⟨-, -, he⟩ |
         ⟨-, -, -, -, -, -, htol', -⟩
       · exact he
@@ -183,6 +185,7 @@ theorem checkDecl_declares {env env₂ : Env} {F : Nat}
   | indDecl block nP => exact hcv.elim
   | rewriteDecl thm head prio => exact hcv.elim
   | useRules S => exact hcv.elim
+  | abstractDecl c ms => exact hcv.elim
 
 /-! ## The walk -/
 

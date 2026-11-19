@@ -39,7 +39,9 @@ open ConLeche
 record's first counter, and the next counter; the rules after the records so far, and the rule
 map each record is checked under (`rlsAt`, the active table's map before the record; `rlsCur`,
 after the last), and the active tables recorded before each record (`snapsAt`, `RuleTable.snaps`),
-which a view below a block reads its rule table from (`FEnv.rlsAt`). -/
+which a view below a block reads its rule table from (`FEnv.rlsAt`), and the abstract
+definitions and blocked sets recorded before each record (`absAt`, `blksAt`, `RuleTable.abstracts`,
+`RuleTable.blks`), which a record is entered with (`FEnv.enter`). -/
 structure StreamIndex where
   base : FBase := {}
   firsts : Array Nat := #[]
@@ -48,6 +50,8 @@ structure StreamIndex where
   rlsAt : Array (Std.HashMap Name (List Name)) := #[]
   rlsCur : Std.HashMap Name (List Name) := {}
   snapsAt : Array (List (Nat × List (Name × Name))) := #[]
+  absAt : Array (List (Name × List Name)) := #[]
+  blksAt : Array (List (Nat × List Name)) := #[]
 
 /-- Insert a record's constants from counter `c` on, a name's first entry winning. -/
 def insertConsts (idx : Std.HashMap Name (Nat × ConstantInfo)) (c : Nat) :
@@ -72,6 +76,8 @@ def StreamIndex.add (I : StreamIndex) (pd : Declaration) : StreamIndex :=
     rules
     rlsAt := I.rlsAt.push I.rlsCur
     snapsAt := I.snapsAt.push I.rules.snaps
+    absAt := I.absAt.push I.rules.abstracts
+    blksAt := I.blksAt.push I.rules.blks
     rlsCur := match pd with
       | .useRules _ => mkRlsGo rules.active
       | _ => I.rlsCur }
@@ -95,13 +101,15 @@ def StreamIndex.freeze (I : StreamIndex) : FrozenIndex :=
   ⟨I, litFrom I.base.idx natLitNames, litFrom I.base.idx strLitNames, rfl, rfl⟩
 
 /-- **The view of record `k`**: no constants or tables of its own, the index visible below the
-record's first counter and its position, the rule map the record is checked under, and the rule
-tables recorded before it. -/
+record's first counter and its position, the rule map the record is checked under, the rule
+tables recorded before it, and the abstract definitions and blocked sets recorded before it. -/
 def FrozenIndex.view (F : FrozenIndex) (k : Nat) : FEnv :=
   let c := F.I.firsts.getD k F.I.next
   ⟨⟨[], [], {}⟩, ∅, { F.I.base with
           below := c, belowRec := k, rls := F.I.rlsAt.getD k F.I.rlsCur,
-          snaps := F.I.snapsAt.getD k F.I.rules.snaps },
+          snaps := F.I.snapsAt.getD k F.I.rules.snaps,
+          abs := F.I.absAt.getD k F.I.rules.abstracts, blks := F.I.blksAt.getD k F.I.rules.blks,
+          blk := blkHead (F.I.blksAt.getD k F.I.rules.blks) },
     [], ∅,
     fromLe F.natFrom c, fromLe F.strFrom c,
     by
@@ -109,13 +117,17 @@ def FrozenIndex.view (F : FrozenIndex) (k : Nat) : FEnv :=
       exact FBase.fromLe_litFrom
         { F.I.base with
           below := c, belowRec := k, rls := F.I.rlsAt.getD k F.I.rlsCur,
-          snaps := F.I.snapsAt.getD k F.I.rules.snaps } natLitNames,
+          snaps := F.I.snapsAt.getD k F.I.rules.snaps,
+          abs := F.I.absAt.getD k F.I.rules.abstracts, blks := F.I.blksAt.getD k F.I.rules.blks,
+          blk := blkHead (F.I.blksAt.getD k F.I.rules.blks) } natLitNames,
     by
       rw [F.strFrom_eq, findIn_empty, strLitStoredBy_all]
       exact FBase.fromLe_litFrom
         { F.I.base with
           below := c, belowRec := k, rls := F.I.rlsAt.getD k F.I.rlsCur,
-          snaps := F.I.snapsAt.getD k F.I.rules.snaps } strLitNames⟩
+          snaps := F.I.snapsAt.getD k F.I.rules.snaps,
+          abs := F.I.absAt.getD k F.I.rules.abstracts, blks := F.I.blksAt.getD k F.I.rules.blks,
+          blk := blkHead (F.I.blksAt.getD k F.I.rules.blks) } strLitNames⟩
 
 /-- **Record `pd`'s job, at position `k`**: what the fold's step asks of it, at its view. -/
 def recordJob (mode : CheckMode) (pins : List NatOpPinSet) (maxNatSize : Nat) (F : FrozenIndex)

@@ -149,6 +149,7 @@ theorem Emit.cv_spec (st : Emit) (c : CEntry) :
     (∃ t ∈ ts, em.names[t.cv.name]? = some n) ∨ (∃ t ∈ cs, em.names[t.cv.name]? = some n) ∨
       ∃ t ∈ rs, em.names[t.cv.name]? = some n
   | .rule .. => False
+  | .abstr .. => False
   | .underRules _ d => Declares em n d
 
 /-- A name some record declares. -/
@@ -165,6 +166,7 @@ theorem Declares.mono {a b : Emit} (h : Emit.Sub a b) {n : Name} :
   | .ind _ _ _, .inr (.inl ⟨t, ht, h'⟩) => .inr (.inl ⟨t, ht, h.names _ _ h'⟩)
   | .ind _ _ _, .inr (.inr ⟨t, ht, h'⟩) => .inr (.inr ⟨t, ht, h.names _ _ h'⟩)
   | .rule .., h' => h'.elim
+  | .abstr .., h' => h'.elim
   | .underRules _ d, h' => Declares.mono (r := d) h h'
 
 theorem Has.mono {a b : Emit} (h : Emit.Sub a b) {n : Name} : Has a n → Has b n
@@ -179,6 +181,7 @@ theorem Has.mono {a b : Emit} (h : Emit.Sub a b) {n : Name} : Has a n → Has b 
   | .quot cv k => CvOf em cv c ∧ c.kind = .quot k
   | .ind .. => False
   | .rule .. => False
+  | .abstr .. => False
   | .underRules .. => False
 
 /-- A constant the merge holds under its name. -/
@@ -201,6 +204,7 @@ theorem RecOf.mono {a b : Emit} (h : Emit.Sub a b) {c : CEntry} :
   | .quot _ _, ⟨h1, h2⟩ => ⟨h1.mono h, h2⟩
   | .ind .., h' => h'.elim
   | .rule .., h' => h'.elim
+  | .abstr .., h' => h'.elim
   | .underRules .., h' => h'.elim
 
 theorem RecFrom.mono {mg : Merged} {a b : Emit} (h : Emit.Sub a b) :
@@ -211,6 +215,7 @@ theorem RecFrom.mono {mg : Merged} {a b : Emit} (h : Emit.Sub a b) :
   | .opaq _ _ _, ⟨c, h1, h2⟩ => ⟨c, h1, RecOf.mono h h2⟩
   | .quot _ _, ⟨c, h1, h2⟩ => ⟨c, h1, RecOf.mono h h2⟩
   | .rule .., ⟨c, h1, h2⟩ => ⟨c, h1, RecOf.mono h h2⟩
+  | .abstr .., ⟨c, h1, h2⟩ => ⟨c, h1, RecOf.mono h h2⟩
   | .underRules .., ⟨c, h1, h2⟩ => ⟨c, h1, RecOf.mono h h2⟩
   | .ind _ _ _, ⟨h1, h2, h3⟩ => by
     refine ⟨fun t ht => ?_, fun t ht => ?_, fun t ht => ?_⟩
@@ -229,6 +234,7 @@ theorem RecOf.declares {em : Emit} {c : CEntry} : ∀ {r : DeclRec}, RecOf em c 
   | .quot _ _, h => h.1.1
   | .ind .., h => h.elim
   | .rule .., h => h.elim
+  | .abstr .., h => h.elim
   | .underRules .., h => h.elim
 
 /-- **One constant's record.** -/
@@ -607,6 +613,7 @@ theorem Emit.ones_spec (mg : Merged) (cs : List CEntry) : ∀ st : Emit, (∀ c 
         | opaq _ _ _ => exact ⟨c, hc c List.mem_cons_self, h4⟩
         | quot _ _ => exact ⟨c, hc c List.mem_cons_self, h4⟩
         | rule _ _ _ => exact h4.elim
+        | abstr _ _ => exact h4.elim
         | underRules _ _ => exact h4.elim)
     exact ⟨h1.trans g1, g2.trans h2, g3⟩
 
@@ -673,6 +680,7 @@ theorem emitLoop_spec (mg : Merged) (recMap : Std.HashMap Name (Array Name))
         | opaq _ _ _ => exact ⟨c, hc, h4⟩
         | quot _ _ => exact ⟨c, hc, h4⟩
         | rule _ _ _ => exact h4.elim
+        | abstr _ _ => exact h4.elim
         | underRules _ _ => exact h4.elim)
     refine ⟨h1.trans g1, fun k hk => g2 k (h2 ▸ hk), g3, fun m hm => ?_⟩
     rcases List.mem_cons.mp hm with hm | hm
@@ -1576,6 +1584,9 @@ theorem rec_of_declares {mg : Merged} {em : Emit} {n : Name} {c : CEntry} {r : D
   | rule _ _ _ =>
     obtain ⟨c', -, h2⟩ := hf
     exact h2.elim
+  | abstr _ _ =>
+    obtain ⟨c', -, h2⟩ := hf
+    exact h2.elim
   | underRules _ _ =>
     obtain ⟨c', -, h2⟩ := hf
     exact h2.elim
@@ -1599,6 +1610,7 @@ theorem declsOf_thm {mg : Merged} {rs : Array Name} {ds : Array Declaration} {n 
   | opaq cv i u => obtain ⟨-, _, -, h⟩ := hR; rw [hk] at h; cases h
   | quot cv q => obtain ⟨-, h⟩ := hR; rw [hk] at h; cases h
   | rule _ _ _ => exact hR.elim
+  | abstr _ _ => exact hR.elim
   | underRules _ _ => exact hR.elim
   | ind ts cs rs' =>
     simp only [hk, CKindF.tag] at hR
@@ -1645,6 +1657,9 @@ theorem declsOf_from {mg : Merged} {rs : Array Name} {ds : Array Declaration}
   cases r with
   | ind ts cts rcs => exact .inr ⟨ts, cts, rcs, hf, hd1⟩
   | rule _ _ _ =>
+    obtain ⟨c, -, h⟩ := hf
+    exact h.elim
+  | abstr _ _ =>
     obtain ⟨c, -, h⟩ := hf
     exact h.elim
   | underRules _ _ =>

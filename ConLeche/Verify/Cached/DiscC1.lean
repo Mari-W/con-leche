@@ -326,7 +326,7 @@ theorem litToCtorIfNatC_spec {s₀ : CState} (hs : CSOK mode eager env s₀) (i 
 theorem unfoldDefinitionC_spec {s₀ : CState} (hs : CSOK mode eager env s₀) (i : Expr) :
     ⦃fun s => s = s₀⦄ unfoldDefinitionI (mkFEnv env) i
     ⦃fun o s' => CSOK mode eager env s' ∧ o = unfoldDefinition env i; ⊤⦄ := by
-  sym only [conleche_grind, unfoldDefinition, constValAt?] =>
+  sym only [conleche_grind, unfoldDefinition, constValAt?, mkFEnv_blk_elem] =>
     vcgen [unfoldDefinitionI, mkAppNM, constValAtM_spec hs] <;> finish
 
 end Walks2
