@@ -1279,18 +1279,18 @@
    795        Infer env Γ (b.inst v) B →
    796        Infer env Γ (letE T v b) B
 
-== ConLeche/Kernel/Core.lean#L1324-L1326
-  1324      | .letE _ v b =>
-  1325        -- Task #342 S0: ζ
-  1326        r.whnfCore cheap depth (b.instantiate1 v)
+== ConLeche/Kernel/Core.lean#L1414-L1416
+  1414      | .letE _ v b =>
+  1415        -- Task #342 S0: ζ
+  1416        r.whnfCore cheap depth (b.instantiate1 v)
 
-== ConLeche/Kernel/Core.lean#L1588-L1593
-  1588      | .letE ty v b => do
-  1589        -- Task #342 S0: official `infer_let`
-  1590        let _ ← ensureSort r env depth (← r.infer depth ty)
-  1591        unless ← r.defeq depth (← r.infer depth v) ty do
-  1592          throw (.invalid "let value type mismatch")
-  1593        r.infer depth (b.instantiate1 v)
+== ConLeche/Kernel/Core.lean#L1681-L1686
+  1681      | .letE ty v b => do
+  1682        -- Task #342 S0: official `infer_let`
+  1683        let _ ← ensureSort r env depth (← r.infer depth ty)
+  1684        unless ← r.defeq depth (← r.infer depth v) ty do
+  1685          throw (.invalid "let value type mismatch")
+  1686        r.infer depth (b.instantiate1 v)
 
 >>> whitepaper/sections/02b-model-proof.typ
 
@@ -2225,14 +2225,14 @@
    545  "reduce, then continue": `redL`.
    546  -/
 
-== ConLeche/Kernel/Core.lean#L1721-L1727
-  1721  /-- The innermost level of `defeqBinders`: the opened bodies, and for
-  1722  two λ-telescopes at the verified mode their FULL-grade types. -/
-  1723  def defeqBindersInner (r : CoreFns m) (lam : Bool) (depth : Nat) (b₁ b₂ : Expr) : m Bool := do
-  1724    unless ← r.defeq (depth + 1) b₁ b₂ do return false
-  1725    if lam && mode.verifiedChecks then
-  1726      unless ← r.defeq (depth + 1) (← r.infer (depth + 1) b₁)
-  1727          (← r.infer (depth + 1) b₂) do return false
+== ConLeche/Kernel/Core.lean#L1814-L1820
+  1814  /-- The innermost level of `defeqBinders`: the opened bodies, and for
+  1815  two λ-telescopes at the verified mode their FULL-grade types. -/
+  1816  def defeqBindersInner (r : CoreFns m) (lam : Bool) (depth : Nat) (b₁ b₂ : Expr) : m Bool := do
+  1817    unless ← r.defeq (depth + 1) b₁ b₂ do return false
+  1818    if lam && mode.verifiedChecks then
+  1819      unless ← r.defeq (depth + 1) (← r.infer (depth + 1) b₁)
+  1820          (← r.infer (depth + 1) b₂) do return false
 
 == ConLeche/Kernel/Core.lean#L515-L520
    515        -- Task #342 S0: the λ/η tax (T2)
@@ -2438,13 +2438,13 @@
    469      (hA : DefEqSem m φ Γ A₂ A₁)
    470      (hbody : DefEqSem m φ (A₁ :: Γ) b₁ (.app (b.liftN 1) (.bvar 0)))
 
-== ConLeche/Kernel/Core.lean#L1597-L1602
-  1597  /-- **The io inference body** (tasks #161, #170, #346): official's
-  1598  `infer_type_core` with `infer_only = true`.  It differs from
-  1599  `inferBody` at three clauses: an application's argument is not
-  1600  checked against the domain, a λ's domain is not checked to be a type,
-  1601  and a `let`'s type and value are not checked (the body is inferred at
-  1602  the value).  The computed types and the "function expected" rejection
+== ConLeche/Kernel/Core.lean#L1690-L1695
+  1690  /-- **The io inference body** (tasks #161, #170, #346): official's
+  1691  `infer_type_core` with `infer_only = true`.  It differs from
+  1692  `inferBody` at three clauses: an application's argument is not
+  1693  checked against the domain, a λ's domain is not checked to be a type,
+  1694  and a `let`'s type and value are not checked (the body is inferred at
+  1695  the value).  The computed types and the "function expected" rejection
 
 >>> whitepaper/sections/03-definitions.typ
 
@@ -2467,8 +2467,8 @@
    124  /-- Store one more constant. -/
    125  def add (env : Env) (n : Name) (ci : ConstInfo) : Env := ⟨(n, ci) :: env.consts⟩
 
-== ConLeche/Kernel/Env.lean#L592
-   592  structure Env where
+== ConLeche/Kernel/Env.lean#L613
+   613  structure Env where
 
 == whitepaper/Fragment/Env.lean#L63-L100
     63  /-- What kind of constant a name is stored as. -/
@@ -5659,18 +5659,18 @@
    454      rules.map fun rl => { rl with fire := fire }
    455    | some _ => rules
 
-== ConLeche/Kernel/CoreDefs.lean#L1193-L1203
-  1193  def recFireComparands (rl : RecRule) (cnP : Nat) (lps : List Name)
-  1194      (us : List Level) (cvjLps : List Name) (args : List Expr)
-  1195      (rP : Nat) : List Level × List Expr :=
-  1196    match rl.fire with
-  1197    | .nested lvls pins =>
-  1198      (lvls.map (Level.subst lps us),
-  1199       pins.map fun p => Expr.instSpine (args.take rP) (rP - 1)
-  1200         (p.instantiateLevelParams lps us))
-  1201    | .plain =>
-  1202      (cvjLps.map fun p => Level.subst lps us (.param p),
-  1203       args.take cnP)
+== ConLeche/Kernel/CoreDefs.lean#L1335-L1345
+  1335  def recFireComparands (rl : RecRule) (cnP : Nat) (lps : List Name)
+  1336      (us : List Level) (cvjLps : List Name) (args : List Expr)
+  1337      (rP : Nat) : List Level × List Expr :=
+  1338    match rl.fire with
+  1339    | .nested lvls pins =>
+  1340      (lvls.map (Level.subst lps us),
+  1341       pins.map fun p => Expr.instSpine (args.take rP) (rP - 1)
+  1342         (p.instantiateLevelParams lps us))
+  1343    | .plain =>
+  1344      (cvjLps.map fun p => Level.subst lps us (.param p),
+  1345       args.take cnP)
 
 == ConLeche/Rules/Rel.lean#L250-L261
    250        rules.find? (fun r' => r'.ctor == cj) = some rl →
