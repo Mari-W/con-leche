@@ -157,6 +157,23 @@ if sys.argv[1] == "prio":
     drop("prefix", "d_one", "prefix_norule")
     sys.exit(0)
 
+if sys.argv[1] == "pre":
+    # RrPre.lean: rules that fire before their head unfolds
+    src, out = sys.argv[2:4]
+    J = lambda r: json.dumps(r, separators=(",", ":"))
+    load = lambda f: [json.loads(l) for l in open(f).read().splitlines()]
+    for t in ["f", "same", "key", "lit", "cond", "foldr", "foldr_map", "prio"]:
+        open(f"{out}/rewrite_rule_pre_{t}.ndjson", "w").write(open(f"{src}/pre_{t}.ndjson").read())
+    for t, tgt in [("unmarked", "unmarkedTgt"), ("nonkey", "nonkeyTgt"), ("loop", "loopTgt")]:
+        stmt_patch(f"{src}/pre_{t}.ndjson", f"{out}/rewrite_rule_pre_{t}.ndjson", [(f"pre_{t}", tgt)])
+    for t in ["f", "key"]:
+        recs = load(f"{src}/pre_{t}.ndjson")
+        for r in recs:
+            if "thm" in r: r["thm"].pop("rewrites", None)
+        open(f"{out}/rewrite_rule_pre_{t}_norule.ndjson", "w").write(
+            "\n".join(J(r) for r in recs) + "\n")
+    sys.exit(0)
+
 if sys.argv[1] == "loop":
     # RrLoop.lean: a rule whose right side unfolds back to its left side, in a false conversion
     stmt_patch(sys.argv[2], f"{sys.argv[3]}/rewrite_rule_decl_budget.ndjson", [("loopBad", "loopTgt")])

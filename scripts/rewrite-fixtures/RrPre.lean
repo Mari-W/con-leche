@@ -12,7 +12,23 @@
    and `pre_nonkey` the false statements of `unmarkedTgt` and `nonkeyTgt`, which only a firing
    would make true: an unmarked rule waits for a stuck unfolding, and `!false` at a position that
    is not the key is not reduced.  `pre_loop` gets the statement of `loopTgt`, where two marked
-   rules fire into each other until the budget of 2^24 firings per declaration stops them. -/
+   rules fire into each other until the budget of 2^24 firings per declaration stops them.
+   `pre_f_norule` and `pre_key_norule` are `pre_f` and `pre_key` with their rule dropped. -/
+
+import Lean
+open Lean Elab Command Meta in
+/-- `kernel_rfl n : ∀ xs, l = r` adds `n := fun xs => rfl` straight to the kernel, as in
+lean4 tests/elab/rewriteRulesBeforeDelta.lean (the elaborator's `rfl` does not reduce a key). -/
+elab "kernel_rfl " name:ident " : " t:term : command => do
+  let (type, value) ← liftTermElabM do
+    let type ← instantiateMVars (← Term.elabTerm t none)
+    Term.synthesizeSyntheticMVarsNoPostponing
+    let type ← instantiateMVars type
+    let value ← forallTelescope type fun xs body => do
+      let some (_, l, _) := body.eq? | throwError "not an equation"
+      mkLambdaFVars xs (← mkEqRefl l)
+    return (type, value)
+  liftCoreM <| addDecl <| .thmDecl { name := name.getId, levelParams := [], type, value }
 
 def f (l : List Nat) : List Nat × Nat := (l ++ [], 0)
 @[rewrite ↓] theorem f_eq (l : List Nat) : f l = (l, 0) := by simp [f]
@@ -30,7 +46,7 @@ def p (_ : Bool) (l : List Nat) : List Nat × Nat := (l ++ [], 0)
 rewrite_rules p_true in
 theorem pre_same : ∀ l, p true l = p false l := fun _ => rfl
 rewrite_rules p_true in
-theorem pre_key : ∀ l, p (!false) l = (l, 0) := fun _ => rfl
+kernel_rfl pre_key : ∀ l, p (!false) l = (l, 0)
 
 def p2 (_ _ : Bool) (l : List Nat) : List Nat × Nat := (l ++ [], 0)
 @[rewrite ↓] theorem p2_tt (l : List Nat) : p2 true true l = (l, 0) := by simp [p2]
@@ -43,7 +59,7 @@ def z : Nat → List Nat → List Nat × Nat
   | _ + 1, _ => ([], 1)
 @[rewrite ↓] theorem z_zero (l : List Nat) : z .zero l = (l, 0) := by simp [z]
 rewrite_rules z_zero in
-theorem pre_lit : ∀ l, z (id 0) l = (l, 0) := fun _ => rfl
+kernel_rfl pre_lit : ∀ l, z (id 0) l = (l, 0)
 
 def isTrue (_ : List Nat) : Bool := true
 @[rewrite ↓] theorem cond_tt {α : Type} (a b : α) : cond true a b = a := rfl
@@ -72,4 +88,5 @@ def loopB (n : Nat) : Nat := n
 @[rewrite ↓] theorem loopA_B (n : Nat) : loopA n = loopB n := rfl
 @[rewrite ↓] theorem loopB_A (n : Nat) : loopB n = loopA n := rfl
 def loopTgt : Prop := loopA 0 = 0
+rewrite_rules loopA_B loopB_A in
 theorem pre_loop : loopA 0 = loopA 0 := rfl
