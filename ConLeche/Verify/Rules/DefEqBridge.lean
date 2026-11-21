@@ -206,15 +206,15 @@ theorem tryUnfoldProjApp_bridge (hwc : WhnfCoreBridge μ eager env fuel) {d : Na
 from: `eq` is an equation, `cont` a pair of reductions. -/
 @[expose] def StepSound (env : Env) (d : Nat) (a b : Expr) : DeltaStep → Prop
   | .eq => DefEq env d a b
-  | .cont a' b' => Red env d a a' ∧ Red env d b b'
+  | .cont a' b' _ _ => Red env d a a' ∧ Red env d b b'
   | .diff => True
   | .unknown => True
 
 /-- The end of a step (`deltaQuick`) on reducts of the pair. -/
 private theorem deltaQuick_bridge (hd : DefEqBridge .verified eager env
     fuel) (hi : InferBridge .verified eager env fuel) {d : Nat}
-    {a b x y : Expr} {r : DeltaStep}
-    (h : deltaQuickFueled .verified eager env fuel d x y = .ok r)
+    {a b x y : Expr} {fx fy : Bool} {r : DeltaStep}
+    (h : deltaQuickFueled .verified eager env fuel d x y fx fy = .ok r)
     (hx : Red env d a x) (hy : Red env d b y) : StepSound env d a b r := by
   simp only [deltaQuickFueled, deltaQuick, Bind.bind, Except.bind,
     quickDefEq_fold] at h
@@ -243,25 +243,140 @@ private theorem unfold_bridge (hwc : WhnfCoreBridge μ eager env fuel) {d : Nat}
     (h : whnfCore μ eager env fuel d a₂ true = .ok a₃) : Red env d a a₃ :=
   .trans (.delta hu) (hwc h)
 
+/-- A marked rule's firing put through the cheap `whnfCore`. -/
+private theorem fire_bridge (hwc : WhnfCoreBridge .verified eager env fuel)
+    (hw : WhnfBridge .verified eager env fuel) (hd : DefEqBridge .verified eager env fuel)
+    (hi : InferBridge .verified eager env fuel) {d : Nat} {a a₂ a₃ : Expr} {t : Name}
+    (hp : preFire (pureFns .verified eager env fuel) env d a = .ok (some (t, a₂)))
+    (h : whnfCore .verified eager env fuel d a₂ true = .ok a₃) : Red env d a a₃ :=
+  .trans (preFire_bridge hw hd hi hp) (hwc h)
+
+/-- One side's lazy step (`lazyUnfold`): a firing or an unfolding, then the cheap
+`whnfCore`. -/
+private theorem lazyUnfold_bridge (hwc : WhnfCoreBridge .verified eager env fuel)
+    (hw : WhnfBridge .verified eager env fuel) (hd : DefEqBridge .verified eager env fuel)
+    (hi : InferBridge .verified eager env fuel) {d : Nat} {a a₃ : Expr} {f : Bool}
+    (h : lazyUnfold (pureFns .verified eager env fuel) env d a = .ok (some (a₃, f))) :
+    Red env d a a₃ := by
+  simp only [lazyUnfold, Bind.bind, Except.bind, whnfCore_def] at h
+  cases hp : preFire (pureFns .verified eager env fuel) env d a with
+  | error err => rw [hp] at h; exact nomatch h
+  | ok o =>
+  rw [hp] at h
+  dsimp only at h
+  match o, hp, h with
+  | some (t, a₂), hp, h =>
+    dsimp only at h
+    cases hwa : whnfCore .verified eager env fuel d a₂ true with
+    | error err => rw [hwa] at h; exact nomatch h
+    | ok x =>
+    rw [hwa] at h
+    simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, -⟩ := h
+    exact fire_bridge hwc hw hd hi hp hwa
+  | none, _, h =>
+    dsimp only at h
+    cases hu : unfoldDefinition env a with
+    | none => rw [hu] at h; simp [pure, Except.pure] at h
+    | some a₂ =>
+    rw [hu] at h
+    dsimp only at h
+    cases hwa : whnfCore .verified eager env fuel d a₂ true with
+    | error err => rw [hwa] at h; exact nomatch h
+    | ok x =>
+    rw [hwa] at h
+    simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, -⟩ := h
+    exact unfold_bridge hwc hu hwa
+
+/-- Both sides unfold (`lazyBothUnfold`). -/
+private theorem lazyBothUnfold_bridge (hwc : WhnfCoreBridge .verified eager env fuel)
+    {d : Nat} {a b a₃ b₃ : Expr} {f : Bool}
+    (h : lazyBothUnfold (pureFns .verified eager env fuel) env d a b = .ok (some (a₃, b₃, f))) :
+    Red env d a a₃ ∧ Red env d b b₃ := by
+  simp only [lazyBothUnfold, Bind.bind, Except.bind, whnfCore_def] at h
+  cases hua : unfoldDefinition env a with
+  | none =>
+    cases hub : unfoldDefinition env b with
+    | none => rw [hua, hub] at h; simp [pure, Except.pure] at h
+    | some b₂ => rw [hua, hub] at h; simp [pure, Except.pure] at h
+  | some a₂ =>
+  cases hub : unfoldDefinition env b with
+  | none => rw [hua, hub] at h; simp [pure, Except.pure] at h
+  | some b₂ =>
+  rw [hua, hub] at h
+  dsimp only at h
+  cases hwa : whnfCore .verified eager env fuel d a₂ true with
+  | error err => rw [hwa] at h; exact nomatch h
+  | ok x =>
+  rw [hwa] at h
+  dsimp only at h
+  cases hwb : whnfCore .verified eager env fuel d b₂ true with
+  | error err => rw [hwb] at h; exact nomatch h
+  | ok y =>
+  rw [hwb] at h
+  simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq, Prod.mk.injEq] at h
+  obtain ⟨rfl, rfl, -⟩ := h
+  exact ⟨unfold_bridge hwc hua hwa, unfold_bridge hwc hub hwb⟩
+
+/-- Both sides with the same head (`lazyBoth`): firings on both sides, or both unfold. -/
+private theorem lazyBoth_bridge (hwc : WhnfCoreBridge .verified eager env fuel)
+    (hw : WhnfBridge .verified eager env fuel) (hd : DefEqBridge .verified eager env fuel)
+    (hi : InferBridge .verified eager env fuel) {d : Nat} {a b a₃ b₃ : Expr} {f : Bool}
+    (h : lazyBoth (pureFns .verified eager env fuel) env d a b = .ok (some (a₃, b₃, f))) :
+    Red env d a a₃ ∧ Red env d b b₃ := by
+  simp only [lazyBoth, Bind.bind, Except.bind, whnfCore_def] at h
+  cases hp : preFire (pureFns .verified eager env fuel) env d a with
+  | error err => rw [hp] at h; exact nomatch h
+  | ok o =>
+  rw [hp] at h
+  dsimp only at h
+  match o, hp, h with
+  | none, _, h => exact lazyBothUnfold_bridge hwc h
+  | some (t, a₂), hp, h =>
+  dsimp only at h
+  cases hq : preFire (pureFns .verified eager env fuel) env d b with
+  | error err => rw [hq] at h; exact nomatch h
+  | ok o' =>
+  rw [hq] at h
+  dsimp only at h
+  match o', hq, h with
+  | none, _, h => exact lazyBothUnfold_bridge hwc h
+  | some (t', b₂), hq, h =>
+  dsimp only at h
+  cases hwa : whnfCore .verified eager env fuel d a₂ true with
+  | error err => rw [hwa] at h; exact nomatch h
+  | ok x =>
+  rw [hwa] at h
+  dsimp only at h
+  cases hwb : whnfCore .verified eager env fuel d b₂ true with
+  | error err => rw [hwb] at h; exact nomatch h
+  | ok y =>
+  rw [hwb] at h
+  simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq, Prod.mk.injEq] at h
+  obtain ⟨rfl, rfl, -⟩ := h
+  exact ⟨fire_bridge hwc hw hd hi hp hwa, fire_bridge hwc hw hd hi hq hwb⟩
+
 /-- **One lazy-delta step** is sound. -/
 theorem lazyDeltaStep_bridge (hwc : WhnfCoreBridge .verified eager env fuel)
+    (hw : WhnfBridge .verified eager env fuel)
     (hd : DefEqBridge .verified eager env fuel) (hi : InferBridge .verified eager env fuel)
     {d : Nat} {a b : Expr} {r : DeltaStep}
     (h : lazyDeltaStepFueled .verified eager env fuel d a b = .ok r) :
     StepSound env d a b r := by
   simp only [lazyDeltaStepFueled, lazyDeltaStep, Bind.bind, Except.bind,
     whnfCore_def, tryUnfoldProjApp_fold, deltaQuick_fold, defeqSpine_fold] at h
-  -- one unfolded side, put through the cheap `whnfCore`, then `deltaQuick`
-  have hL : ∀ {a₂ a₃ : Expr}, unfoldDefinition env a = some a₂ →
-      whnfCore .verified eager env fuel d a₂ true = .ok a₃ →
-      deltaQuickFueled .verified eager env fuel d a₃ b = .ok r →
+  -- one side's lazy step, then `deltaQuick`
+  have hL : ∀ {a₃ : Expr} {fa : Bool},
+      lazyUnfold (pureFns .verified eager env fuel) env d a = .ok (some (a₃, fa)) →
+      deltaQuickFueled .verified eager env fuel d a₃ b fa false = .ok r →
       StepSound env d a b r :=
-    fun hu hw h => deltaQuick_bridge hd hi h (unfold_bridge hwc hu hw) .refl
-  have hR : ∀ {b₂ b₃ : Expr}, unfoldDefinition env b = some b₂ →
-      whnfCore .verified eager env fuel d b₂ true = .ok b₃ →
-      deltaQuickFueled .verified eager env fuel d a b₃ = .ok r →
+    fun hu h => deltaQuick_bridge hd hi h (lazyUnfold_bridge hwc hw hd hi hu) .refl
+  have hR : ∀ {b₃ : Expr} {fb : Bool},
+      lazyUnfold (pureFns .verified eager env fuel) env d b = .ok (some (b₃, fb)) →
+      deltaQuickFueled .verified eager env fuel d a b₃ false fb = .ok r →
       StepSound env d a b r :=
-    fun hu hw h => deltaQuick_bridge hd hi h .refl (unfold_bridge hwc hu hw)
+    fun hu h => deltaQuick_bridge hd hi h .refl (lazyUnfold_bridge hwc hw hd hi hu)
   have hU : (pure DeltaStep.unknown : CheckM DeltaStep) = .ok r →
       StepSound env d a b r := by
     intro h
@@ -281,13 +396,13 @@ theorem lazyDeltaStep_bridge (hwc : WhnfCoreBridge .verified eager env fuel)
     | some a₂ => exact deltaQuick_bridge hd hi h (tryUnfoldProjApp_bridge hwc ht) .refl
     | none =>
       dsimp only at h
-      cases hu : unfoldDefinition env b with
-      | none => rw [hu] at h; exact hU h
-      | some b₂ =>
-        rw [hu] at h; dsimp only at h
-        cases hw : whnfCore .verified eager env fuel d b₂ true with
-        | error err => rw [hw] at h; exact nomatch h
-        | ok x => rw [hw] at h; exact hR hu hw h
+      cases hu : lazyUnfold (pureFns .verified eager env fuel) env d b with
+      | error err => rw [hu] at h; exact nomatch h
+      | ok o =>
+      rw [hu] at h; dsimp only at h
+      match o, hu, h with
+      | none, _, h => exact hU h
+      | some (b₃, fb), hu, h => exact hR hu h
   · -- only `a` unfolds: `b`'s projection application first
     cases ht : tryUnfoldProjAppFueled .verified eager env fuel d b with
     | error err => rw [ht] at h; exact nomatch h
@@ -298,30 +413,49 @@ theorem lazyDeltaStep_bridge (hwc : WhnfCoreBridge .verified eager env fuel)
     | some b₂ => exact deltaQuick_bridge hd hi h .refl (tryUnfoldProjApp_bridge hwc ht)
     | none =>
       dsimp only at h
-      cases hu : unfoldDefinition env a with
-      | none => rw [hu] at h; exact hU h
-      | some a₂ =>
-        rw [hu] at h; dsimp only at h
-        cases hw : whnfCore .verified eager env fuel d a₂ true with
-        | error err => rw [hw] at h; exact nomatch h
-        | ok x => rw [hw] at h; exact hL hu hw h
+      cases hu : lazyUnfold (pureFns .verified eager env fuel) env d a with
+      | error err => rw [hu] at h; exact nomatch h
+      | ok o =>
+      rw [hu] at h; dsimp only at h
+      match o, hu, h with
+      | none, _, h => exact hU h
+      | some (a₃, fa), hu, h => exact hL hu h
   · -- both unfold: the hints decide
     split at h
-    · cases hu : unfoldDefinition env a with
-      | none => rw [hu] at h; exact hU h
-      | some a₂ =>
-        rw [hu] at h; dsimp only at h
-        cases hw : whnfCore .verified eager env fuel d a₂ true with
-        | error err => rw [hw] at h; exact nomatch h
-        | ok x => rw [hw] at h; exact hL hu hw h
+    · cases hu : lazyUnfold (pureFns .verified eager env fuel) env d a with
+      | error err => rw [hu] at h; exact nomatch h
+      | ok o =>
+      rw [hu] at h; dsimp only at h
+      match o, hu, h with
+      | none, _, h => exact hU h
+      | some (a₃, fa), hu, h => exact hL hu h
     split at h
-    · cases hu : unfoldDefinition env b with
-      | none => rw [hu] at h; exact hU h
-      | some b₂ =>
-        rw [hu] at h; dsimp only at h
-        cases hw : whnfCore .verified eager env fuel d b₂ true with
-        | error err => rw [hw] at h; exact nomatch h
-        | ok x => rw [hw] at h; exact hR hu hw h
+    · cases hu : lazyUnfold (pureFns .verified eager env fuel) env d b with
+      | error err => rw [hu] at h; exact nomatch h
+      | ok o =>
+      rw [hu] at h; dsimp only at h
+      match o, hu, h with
+      | none, _, h => exact hU h
+      | some (b₃, fb), hu, h => exact hR hu h
+    split at h
+    · -- two different heads: each side takes its own lazy step
+      cases hu : lazyUnfold (pureFns .verified eager env fuel) env d a with
+      | error err => rw [hu] at h; exact nomatch h
+      | ok o =>
+      rw [hu] at h; dsimp only at h
+      match o, hu, h with
+      | none, _, h => exact hU h
+      | some (a₃, fa), hu, h =>
+      dsimp only at h
+      cases hv : lazyUnfold (pureFns .verified eager env fuel) env d b with
+      | error err => rw [hv] at h; exact nomatch h
+      | ok o' =>
+      rw [hv] at h; dsimp only at h
+      match o', hv, h with
+      | none, _, h => exact hU h
+      | some (b₃, fb), hv, h =>
+        exact deltaQuick_bridge hd hi h (lazyUnfold_bridge hwc hw hd hi hu)
+          (lazyUnfold_bridge hwc hw hd hi hv)
     cases hsp : (if ReducibilityHint.sameRegular (headHint env a) (headHint env b) &&
         sameConstHeads a b then defeqSpineFueled .verified eager env fuel d a b
         else pure false) with
@@ -338,24 +472,16 @@ theorem lazyDeltaStep_bridge (hwc : WhnfCoreBridge .verified eager env fuel)
       · exact nomatch hsp
     | false =>
     simp only [Bool.false_eq_true, ↓reduceIte] at h
-    cases hua : unfoldDefinition env a with
-    | none => rw [hua] at h; exact hU h
-    | some a₂ =>
-    cases hub : unfoldDefinition env b with
-    | none => rw [hua, hub] at h; exact hU h
-    | some b₂ =>
-    rw [hua, hub] at h
+    cases hl : lazyBoth (pureFns .verified eager env fuel) env d a b with
+    | error err => rw [hl] at h; exact nomatch h
+    | ok o =>
+    rw [hl] at h
     dsimp only at h
-    cases hwa : whnfCore .verified eager env fuel d a₂ true with
-    | error err => rw [hwa] at h; exact nomatch h
-    | ok a₃ =>
-    rw [hwa] at h
-    dsimp only at h
-    cases hwb : whnfCore .verified eager env fuel d b₂ true with
-    | error err => rw [hwb] at h; exact nomatch h
-    | ok b₃ =>
-    rw [hwb] at h
-    exact deltaQuick_bridge hd hi h (unfold_bridge hwc hua hwa) (unfold_bridge hwc hub hwb)
+    match o, hl, h with
+    | none, _, h => exact hU h
+    | some (a₃, b₃, f), hl, h =>
+      obtain ⟨ha, hb⟩ := lazyBoth_bridge hwc hw hd hi hl
+      exact deltaQuick_bridge hd hi h ha hb
 
 /-- What the lazy-delta loop's outcome says about the pair `a`, `b` it started
 from, reached from `a₀`, `b₀`: a `true` verdict is an equation, the stuck pair a pair of
@@ -447,12 +573,12 @@ theorem lazyDeltaReduction_bridge (hwc : WhnfCoreBridge .verified eager env
     | ok st =>
     rw [hs] at h
     dsimp only at h
-    have hss := lazyDeltaStep_bridge hwc hd hi hs
+    have hss := lazyDeltaStep_bridge hwc hw hd hi hs
     cases st with
-    | cont a' b' =>
+    | cont a' b' fa fb =>
       obtain ⟨ha, hb⟩ := hss
       have ih := lazyDeltaReduction_bridge hwc hw hd hi n h (.trans ha₀ ha) (.trans hb₀ hb)
-        (hoa.note (.trans ha₀ ha)) (hob.note (.trans hb₀ hb))
+        ((hoa.drop fa a).note (.trans ha₀ ha)) ((hob.drop fb b).note (.trans hb₀ hb))
       cases r with
       | verdict v => exact fun hv => .redBoth ha hb (ih hv)
       | unknown oa₁ ob₁ a₁ b₁ => exact ih
@@ -491,9 +617,9 @@ theorem lazyDeltaProjReduction_bridge (hwc : WhnfCoreBridge .verified eager
     | ok st =>
     rw [hs] at h
     dsimp only at h
-    have hss := lazyDeltaStep_bridge hwc hd hi hs
+    have hss := lazyDeltaStep_bridge hwc hw hd hi hs
     cases st
-    case cont a' b' =>
+    case cont a' b' _ _ =>
       obtain ⟨ha, hb⟩ := hss
       exact .redBoth (.projArg ha) (.projArg hb)
         (lazyDeltaProjReduction_bridge hwc hw hd hi hio n h)
