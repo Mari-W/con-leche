@@ -861,9 +861,9 @@ theorem preFire_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {e e₂ : Expr} {
         obtain ⟨⟨t', k⟩, hz, hk⟩ := List.mem_filterMap.mp hmem
         have htt : t' = t := by
           dsimp only at hk
-          by_cases hck : cs.contains k = true
-          · rw [if_pos hck] at hk; exact Option.some.inj hk
-          · rw [if_neg hck] at hk; exact nomatch hk
+          split at hk
+          · exact Option.some.inj hk
+          · exact nomatch hk
         subst htt
         have ht : t' ∈ preRulesFor env.rulesFor c := (List.of_mem_zip hz).1
         unfold preRulesFor at ht

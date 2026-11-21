@@ -777,6 +777,7 @@ theorem originFire_rel {o : Option Expr} {e : Expr} (ho : OriginP (Res env₁) o
 
 /-! ### The test before unfolding at an extension -/
 
+omit K in
 theorem keyLit_ext {kc : Name} {a : Expr} (ha : Res env₁ a) :
     keyLit (natLitStored env₂) kc a = keyLit (natLitStored env₁) kc a := by
   unfold keyLit
@@ -846,15 +847,19 @@ theorem ruleKey_res {c t : Name} {p : Nat} {kc : Name}
             exact (res_app.mp (res_app.mp hb).1).2
           · exact nomatch hl
         have hmem : (p, kc) ∈ constArgPositions l₀.getAppArgs := by
-          split at h
-          · exact nomatch h
-          · obtain rfl := Option.some.inj h; exact List.mem_singleton_self _
-          · rename_i k ks _
-            split at h
-            · rename_i k' hk'
-              obtain rfl := Option.some.inj h
-              exact List.mem_of_find?_eq_some hk'
-            · obtain rfl := Option.some.inj h; exact List.mem_cons_self
+          cases hcp : constArgPositions l₀.getAppArgs with
+          | nil => rw [hcp] at h; exact nomatch h
+          | cons k ks =>
+            rw [hcp] at h
+            cases ks with
+            | nil => obtain rfl := Option.some.inj h; exact List.mem_singleton_self _
+            | cons k₂ ks =>
+              dsimp only at h
+              split at h
+              · rename_i k' hk'
+                obtain rfl := Option.some.inj h
+                exact List.mem_of_find?_eq_some hk'
+              · obtain rfl := Option.some.inj h; exact List.mem_cons_self
         unfold constArgPositions at hmem
         obtain ⟨⟨i, a⟩, hia, hm⟩ := List.mem_filterMap.mp hmem
         have ha : Res env₁ a := res_getAppArgs hl₀ a (List.of_mem_zip hia).2
@@ -895,11 +900,11 @@ theorem keyTest_rel {key : Option (Nat × Name)}
     · rename_i a hp
       have hra : Res env₁ a := ha a (List.mem_of_getElem? hp)
       dsimp only
-      rw [keyLit_ext K d hx hra, ctorForm_ext hx (res_keyLit hra), isCtorConst_ext hx (hk p kc rfl)]
+      rw [keyLit_ext hx hra, ctorForm_ext hx (res_keyLit hra), isCtorConst_ext hx (hk p kc rfl)]
       refine Rel.ite (fun _ => Rel.ok (res_set ha (res_keyLit hra))) fun _ => ?_
       refine Rel.ite (fun _ => ?_) fun _ => Rel.ok (res_set ha (res_keyLit hra))
       refine Rel.bind (K.whnf d (res_keyLit hra)) fun w hw => ?_
-      rw [keyLit_ext K d hx hw]
+      rw [keyLit_ext hx hw]
       exact Rel.ok (res_set ha (res_keyLit hw))
 
 /-- The key tests in order, at an extension, are the prefix's. -/
@@ -1032,9 +1037,9 @@ theorem preFire_rel {e : Expr} (he : Res env₁ e) :
       obtain ⟨⟨t', k⟩, hz, hk⟩ := List.mem_filterMap.mp ht
       have htt : t' = t := by
         dsimp only at hk
-        by_cases hck : cs.contains k = true
-        · rw [if_pos hck] at hk; exact Option.some.inj hk
-        · rw [if_neg hck] at hk; exact nomatch hk
+        split at hk
+        · exact Option.some.inj hk
+        · exact nomatch hk
       exact htt ▸ hfind t' (List.of_mem_zip hz).1
   · exact Rel.ok fun _ _ h => nomatch h
 

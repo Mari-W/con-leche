@@ -551,8 +551,6 @@ theorem whnfCore_bridge_succ (hwc : WhnfCoreBridge .verified eager env fuel)
     · exact .refl
     · exact .trans hR (.trans (reduceProjCore_bridge hw hr) (hwc hcont))
 
-/-- The rules at an origin the chain from `e₀` passed through reduce `e₀` (`Red.rewrite` at the
-origin). -/
 /-- **A key argument is a reduct** of the original one: `whnf` through the bridge, the literal
 reading by `Red.natLit`. -/
 theorem KeyArg.red (hw : WhnfBridge μ eager env fuel) {d : Nat} {a b : Expr}
@@ -606,6 +604,8 @@ theorem preFire_bridge (hw : WhnfBridge μ eager env fuel) (hd : DefEqBridge μ 
   obtain ⟨u, A, c', ls, l, hres, -, hlen, hsub, hcert, hlf⟩ := rewriteFire_inv hfire
   exact .rewrite hf hlen (iotaCertsFull_bridge hd hi hcert) hres hfn hm' hlf hsub hmem
 
+/-- The rules at an origin the chain from `e₀` passed through reduce `e₀` (`Red.rewrite` at the
+origin). -/
 theorem originFire_bridge (hw : WhnfBridge μ eager env fuel) (hd : DefEqBridge μ eager env fuel)
     (hi : InferBridge μ eager env fuel) {d : Nat} {o : Option Expr} {e₀ e e₂ : Expr} {t : Name}
     (h : originFire (pureFns μ eager env fuel) env d o e = .ok (some (t, e₂)))
