@@ -222,8 +222,8 @@ theorem lazyBothUnfold_rel {a b : Expr} (ha : Res env₁ a) (hb : Res env₁ b) 
       exact Rel.bind (K.whnfCore true d (res_unfoldDefinition hx ha hua)) fun a₃ ha₃ =>
         Rel.bind (K.whnfCore true d (res_unfoldDefinition hx hb hub)) fun b₃ hb₃ =>
           Rel.ok fun x y f h => by
-            obtain ⟨rfl, h⟩ := Prod.mk.inj (Option.some.inj h)
-            obtain ⟨rfl, -⟩ := Prod.mk.inj h
+            simp only [Option.some.injEq, Prod.mk.injEq] at h
+            obtain ⟨rfl, rfl, -⟩ := h
             exact ⟨ha₃, hb₃⟩
 
 theorem lazyBoth_rel {a b : Expr} (ha : Res env₁ a) (hb : Res env₁ b) :
@@ -238,8 +238,8 @@ theorem lazyBoth_rel {a b : Expr} (ha : Res env₁ a) (hb : Res env₁ b) :
       exact Rel.bind (K.whnfCore true d (ho te.1 te.2 rfl)) fun a₃ ha₃ =>
         Rel.bind (K.whnfCore true d (ho' te'.1 te'.2 rfl)) fun b₃ hb₃ =>
           Rel.ok fun x y f h => by
-            obtain ⟨rfl, h⟩ := Prod.mk.inj (Option.some.inj h)
-            obtain ⟨rfl, -⟩ := Prod.mk.inj h
+            simp only [Option.some.injEq, Prod.mk.injEq] at h
+            obtain ⟨rfl, rfl, -⟩ := h
             exact ⟨ha₃, hb₃⟩
     | none => exact lazyBothUnfold_rel K d hx ha hb
   | none => exact lazyBothUnfold_rel K d hx ha hb
