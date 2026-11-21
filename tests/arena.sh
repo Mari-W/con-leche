@@ -347,6 +347,7 @@ declare -A E2E_TIMEOUT=(
   [omega_demo2.ndjson]=10
   [k_rescue_stuck.ndjson]=10
   [lit_hash_low_bits.ndjson]=10
+  [rewrite_rule_pre_loop.ndjson]=300
 )
 
 # Per-fixture checker flags, each with its reason.

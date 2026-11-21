@@ -3627,3 +3627,28 @@
 1 abstract_block_twice.ndjson
 1 abstract_block_not_def.ndjson
 1 abstract_block_before_def.ndjson
+# rules marked to fire before their head unfolds (`@[rewrite ↓]`,
+# scripts/rewrite-fixtures/RrPre.lean, `mk.py pre`), mirroring lean4
+# tests/elab/rewriteRulesBeforeDelta.lean; every verdict is the C++ kernel's.  `f l = (l, 0)`
+# where `f l` unfolds to `(l ++ [], 0)`: the marked rule fires first; with it dropped (`_norule`)
+# the sides differ.  The same head on both sides fires only on both (`same`).  A constructor key
+# reduces its argument first: `p (!false) l` fires `p_true` (`key`, without the rule 1), and a
+# `Nat` literal under `id` counts as `Nat.zero` (`lit`).  `!false` at a position that is not the
+# key is not reduced (`nonkey`), and an unmarked rule waits for a stuck unfolding (`unmarked`).
+# `cond (isTrue l)`, a fold over `two n` and over `List.map`, and a marked rule of priority 100
+# that fires before an unmarked one of 2000 (`prio`) all hold.
+0 rewrite_rule_pre_f.ndjson
+1 rewrite_rule_pre_f_norule.ndjson
+0 rewrite_rule_pre_same.ndjson
+0 rewrite_rule_pre_key.ndjson
+1 rewrite_rule_pre_key_norule.ndjson
+0 rewrite_rule_pre_lit.ndjson
+1 rewrite_rule_pre_nonkey.ndjson
+1 rewrite_rule_pre_unmarked.ndjson
+0 rewrite_rule_pre_cond.ndjson
+0 rewrite_rule_pre_foldr.ndjson
+0 rewrite_rule_pre_foldr_map.ndjson
+0 rewrite_rule_pre_prio.ndjson
+# two marked rules that fire into each other: the budget of 2^24 firings per declaration rejects
+# (54 s on ahumoa, so tests/arena.sh gives it a longer timeout)
+1 rewrite_rule_pre_loop.ndjson

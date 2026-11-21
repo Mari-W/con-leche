@@ -8,27 +8,14 @@
    on both sides fires on both), `pre_key` (a constructor key reduces its argument first),
    `pre_lit` (a `Nat` literal at a `Nat.zero` key), `pre_cond` (a key argument that computes),
    `pre_foldr` and `pre_foldr_map` (a list fold, every step a firing), `pre_prio` (the marked
-   rule fires before the unmarked one of higher priority gets a turn).  `mk.py` gives `pre_unmarked`
+   rule fires before the unmarked one of higher priority gets a turn).  `pre_key` and `pre_lit`
+   are exported with a trivial statement and get the statements of `keyTgt` and `litTgt` from
+   `mk.py`, because the elaborator's `rfl` does not reduce a key.  `mk.py` gives `pre_unmarked`
    and `pre_nonkey` the false statements of `unmarkedTgt` and `nonkeyTgt`, which only a firing
    would make true: an unmarked rule waits for a stuck unfolding, and `!false` at a position that
    is not the key is not reduced.  `pre_loop` gets the statement of `loopTgt`, where two marked
    rules fire into each other until the budget of 2^24 firings per declaration stops them.
    `pre_f_norule` and `pre_key_norule` are `pre_f` and `pre_key` with their rule dropped. -/
-
-import Lean
-open Lean Elab Command Meta in
-/-- `kernel_rfl n : ∀ xs, l = r` adds `n := fun xs => rfl` straight to the kernel, as in
-lean4 tests/elab/rewriteRulesBeforeDelta.lean (the elaborator's `rfl` does not reduce a key). -/
-elab "kernel_rfl " name:ident " : " t:term : command => do
-  let (type, value) ← liftTermElabM do
-    let type ← instantiateMVars (← Term.elabTerm t none)
-    Term.synthesizeSyntheticMVarsNoPostponing
-    let type ← instantiateMVars type
-    let value ← forallTelescope type fun xs body => do
-      let some (_, l, _) := body.eq? | throwError "not an equation"
-      mkLambdaFVars xs (← mkEqRefl l)
-    return (type, value)
-  liftCoreM <| addDecl <| .thmDecl { name := name.getId, levelParams := [], type, value }
 
 def f (l : List Nat) : List Nat × Nat := (l ++ [], 0)
 @[rewrite ↓] theorem f_eq (l : List Nat) : f l = (l, 0) := by simp [f]
@@ -46,7 +33,9 @@ def p (_ : Bool) (l : List Nat) : List Nat × Nat := (l ++ [], 0)
 rewrite_rules p_true in
 theorem pre_same : ∀ l, p true l = p false l := fun _ => rfl
 rewrite_rules p_true in
-kernel_rfl pre_key : ∀ l, p (!false) l = (l, 0)
+theorem pre_key : ∀ l, p (!false) l = p (!false) l := fun _ => rfl
+
+def keyTgt : Prop := ∀ l, p (!false) l = (l, 0)
 
 def p2 (_ _ : Bool) (l : List Nat) : List Nat × Nat := (l ++ [], 0)
 @[rewrite ↓] theorem p2_tt (l : List Nat) : p2 true true l = (l, 0) := by simp [p2]
@@ -59,7 +48,9 @@ def z : Nat → List Nat → List Nat × Nat
   | _ + 1, _ => ([], 1)
 @[rewrite ↓] theorem z_zero (l : List Nat) : z .zero l = (l, 0) := by simp [z]
 rewrite_rules z_zero in
-kernel_rfl pre_lit : ∀ l, z (id 0) l = (l, 0)
+theorem pre_lit : ∀ l, z (id 0) l = z (id 0) l := fun _ => rfl
+
+def litTgt : Prop := ∀ l, z (id 0) l = (l, 0)
 
 def isTrue (_ : List Nat) : Bool := true
 @[rewrite ↓] theorem cond_tt {α : Type} (a b : α) : cond true a b = a := rfl

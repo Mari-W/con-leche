@@ -162,12 +162,13 @@ if sys.argv[1] == "pre":
     src, out = sys.argv[2:4]
     J = lambda r: json.dumps(r, separators=(",", ":"))
     load = lambda f: [json.loads(l) for l in open(f).read().splitlines()]
-    for t in ["f", "same", "key", "lit", "cond", "foldr", "foldr_map", "prio"]:
+    for t in ["f", "same", "cond", "foldr", "foldr_map", "prio"]:
         open(f"{out}/rewrite_rule_pre_{t}.ndjson", "w").write(open(f"{src}/pre_{t}.ndjson").read())
-    for t, tgt in [("unmarked", "unmarkedTgt"), ("nonkey", "nonkeyTgt"), ("loop", "loopTgt")]:
+    for t, tgt in [("key", "keyTgt"), ("lit", "litTgt"), ("unmarked", "unmarkedTgt"),
+                   ("nonkey", "nonkeyTgt"), ("loop", "loopTgt")]:
         stmt_patch(f"{src}/pre_{t}.ndjson", f"{out}/rewrite_rule_pre_{t}.ndjson", [(f"pre_{t}", tgt)])
     for t in ["f", "key"]:
-        recs = load(f"{src}/pre_{t}.ndjson")
+        recs = load(f"{out}/rewrite_rule_pre_{t}.ndjson")
         for r in recs:
             if "thm" in r: r["thm"].pop("rewrites", None)
         open(f"{out}/rewrite_rule_pre_{t}_norule.ndjson", "w").write(
