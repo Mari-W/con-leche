@@ -116501,8 +116501,7 @@ Three deviations from the C++ kernel, all on the side of rejecting more:
 
 * The reduct of a firing at a prefix takes the original arguments beyond the rule's arity. The C++
   kernel applies it to the reduced ones. `Red` has no congruence for arguments, so the checker
-  keeps the arguments it can account for. A term where the difference matters is reduced further
-  by the next step either way.
+  keeps the arguments it can account for.
 * `dropOrigin` compares the origin with the fired term structurally. The C++ kernel compares
   pointers (`is_eqp`), so the checker drops an origin in some cases where the C++ kernel keeps it.
   A dropped origin only loses a rules-last firing.
