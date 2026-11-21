@@ -330,18 +330,21 @@ ConLeche.mkIdxGo
 # they are. The index's rules of a head are one hash lookup and a filter over that head's few
 # rules. The cached matcher (`ruleMatchI`) walks the rule's left side once against the term, its
 # slots indexed by the rule's binder count; a variable position (`ruleSlot?`, `Expr.bvarIdx?`) is
-# one slot read or write. The firing's gate is one pass over the term's application tree, beside
-# the certificate pass each firing runs anyway. The levels a rule fires at (`ruleLevels`) are one
+# one slot read or write. The firing's gate looks for each argument in the term's application tree
+# (`memAppUpTo` to depth 6, then `memAppAll`) and stops at the first hit, beside the certificate
+# pass each firing runs anyway. The levels a rule fires at (`ruleLevels`) are one
 # pass over the left side's levels. The budget and its error are constants, as are the
 # per-declaration budget and its error.
 ConLeche.Expr.bvarIdx?
 ConLeche.Expr.isConstB
 ConLeche.FEnv.rulesFor
-ConLeche.appSubterms
 ConLeche.eqSpine?
+ConLeche.instDecidableMemAppSubterms
 ConLeche.instDecidableRuleGate
 ConLeche.matchLevel
 ConLeche.matchLevels
+ConLeche.memAppAll
+ConLeche.memAppUpTo
 ConLeche.ruleBudgetError
 ConLeche.ruleDeclBudget
 ConLeche.ruleDeclBudgetError

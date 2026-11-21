@@ -793,6 +793,48 @@ def appSubterms : Expr → List Expr
   | .app f a => .app f a :: (appSubterms f ++ appSubterms a)
   | e => [e]
 
+/-- `x ∈ appSubterms e` by a walk over the application tree that stops at the first hit, without
+building the list. -/
+def memAppAll (x : Expr) : Expr → Bool
+  | .app f a => decide (x = .app f a) || memAppAll x f || memAppAll x a
+  | e => decide (x = e)
+
+/-- The same walk down to depth `d` only. A matched rule argument sits a few application nodes
+below the term, so this finds it before `memAppAll` would walk a large argument on its left. -/
+def memAppUpTo (x : Expr) : Nat → Expr → Bool
+  | d + 1, .app f a => decide (x = .app f a) || memAppUpTo x d f || memAppUpTo x d a
+  | _, e => decide (x = e)
+
+theorem memAppAll_iff (x : Expr) : ∀ e, memAppAll x e = true ↔ x ∈ appSubterms e
+  | .app f a => by
+    simp only [memAppAll, appSubterms, Bool.or_eq_true, decide_eq_true_eq, List.mem_cons,
+      List.mem_append, memAppAll_iff x f, memAppAll_iff x a, or_assoc]
+  | .bvar _ | .fvar _ _ | .sort _ | .const _ _ | .lam _ _ | .forallE _ _ | .letE _ _ _ | .lit _
+  | .proj _ _ _ => by simp [memAppAll, appSubterms]
+
+theorem memAppUpTo_mem (x : Expr) : ∀ d e, memAppUpTo x d e = true → x ∈ appSubterms e
+  | d + 1, .app f a, h => by
+    simp only [memAppUpTo, Bool.or_eq_true, decide_eq_true_eq] at h
+    simp only [appSubterms, List.mem_cons, List.mem_append]
+    rcases h with (h | h) | h
+    · exact .inl h
+    · exact .inr (.inl (memAppUpTo_mem x d f h))
+    · exact .inr (.inr (memAppUpTo_mem x d a h))
+  | 0, e, h => by
+    have : x = e := by simpa [memAppUpTo] using h
+    subst this; cases x <;> simp [appSubterms]
+  | _ + 1, .bvar _, h | _ + 1, .fvar _ _, h | _ + 1, .sort _, h | _ + 1, .const _ _, h
+  | _ + 1, .lam _ _, h | _ + 1, .forallE _ _, h | _ + 1, .letE _ _ _, h | _ + 1, .lit _, h
+  | _ + 1, .proj _ _ _, h => by simp_all [memAppUpTo, appSubterms]
+
+/-- Membership in `appSubterms` as `RuleGate` decides it at every firing: the walk to depth 6, then
+the whole walk. Building the list cost a firing the size of the term's tree, which on a fold over a
+long list literal is the length of the list. -/
+instance instDecidableMemAppSubterms (x e : Expr) : Decidable (x ∈ appSubterms e) :=
+  decidable_of_iff (memAppUpTo x 6 e || memAppAll x e) <| by
+    rw [Bool.or_eq_true, memAppAll_iff]
+    exact ⟨fun h => h.elim (memAppUpTo_mem x 6 e) id, .inr⟩
+
 /-! ## User rewrite rules: the first-order matcher
 
 A rule is a stored theorem `∀ x₀ … x_{n-1}, @Eq A l r`.  The matcher reads
