@@ -89,14 +89,40 @@ grind_pattern [conleche_grind] wscoped_natPred? => Expr.WScoped d e, e.natPred?
 
 /-- A lazy-delta step's handed-on pair is well scoped. -/
 @[expose] def StepPairWS (d : Nat) : DeltaStep → Prop
-  | .cont a b => Expr.WScoped d a ∧ Expr.WScoped d b
+  | .cont a b _ _ => Expr.WScoped d a ∧ Expr.WScoped d b
   | _ => True
 
-@[conleche_grind =] theorem StepPairWS.cont_eq (d : Nat) (a b : Expr) :
-    StepPairWS d (.cont a b) = (Expr.WScoped d a ∧ Expr.WScoped d b) := rfl
+@[conleche_grind =] theorem StepPairWS.cont_eq (d : Nat) (a b : Expr) (fa fb : Bool) :
+    StepPairWS d (.cont a b fa fb) = (Expr.WScoped d a ∧ Expr.WScoped d b) := rfl
 @[conleche_grind =] theorem StepPairWS.eq_eq (d : Nat) : StepPairWS d .eq = True := rfl
 @[conleche_grind =] theorem StepPairWS.diff_eq (d : Nat) : StepPairWS d .diff = True := rfl
 @[conleche_grind =] theorem StepPairWS.unknown_eq (d : Nat) : StepPairWS d .unknown = True := rfl
+
+/-- Dropping an origin keeps it well scoped. -/
+theorem OptWS.drop {d : Nat} {o : Option Expr} (ho : OptWS d o) (fl : Bool) (a : Expr) :
+    OptWS d (dropOrigin fl o a) := by
+  rcases dropOrigin_cases fl o a with h | h <;> rw [h]
+  · exact ho
+  · trivial
+grind_pattern [conleche_grind] OptWS.drop => OptWS d (dropOrigin fl o a)
+
+/-- One side's lazy step's term is well scoped. -/
+@[expose] def UnfWS (d : Nat) : Option (Expr × Bool) → Prop
+  | none => True
+  | some (x, _) => Expr.WScoped d x
+
+@[conleche_grind =] theorem UnfWS.none_eq (d : Nat) : UnfWS d none = True := rfl
+@[conleche_grind =] theorem UnfWS.some_eq (d : Nat) (x : Expr) (fl : Bool) :
+    UnfWS d (some (x, fl)) = Expr.WScoped d x := rfl
+
+/-- Both sides' lazy step's terms are well scoped. -/
+@[expose] def BothWS (d : Nat) : Option (Expr × Expr × Bool) → Prop
+  | none => True
+  | some (x, y, _) => Expr.WScoped d x ∧ Expr.WScoped d y
+
+@[conleche_grind =] theorem BothWS.none_eq (d : Nat) : BothWS d none = True := rfl
+@[conleche_grind =] theorem BothWS.some_eq (d : Nat) (x y : Expr) (fl : Bool) :
+    BothWS d (some (x, y, fl)) = (Expr.WScoped d x ∧ Expr.WScoped d y) := rfl
 
 /-- The lazy-delta loop's stuck pair is well scoped. -/
 @[expose] def LazyPairWS (d : Nat) : LazyRes → Prop
@@ -386,14 +412,47 @@ theorem tryUnfoldProjAppC_spec (ih : SSimC mode eager env f) {d : Nat} {e : Expr
     vcgen [tryUnfoldProjAppI.eq_def, ih.whnfCore_spec] <;> finish
 
 /-- The end of a step simulates its specification. -/
-theorem deltaQuickC_spec (ih : SSimC mode eager env f) {d : Nat} {a b : Expr} {s₀ : CState}
-    (hs : CSOK mode eager env s₀) (hwa : Expr.WScoped d a) (hwb : Expr.WScoped d b) :
-    ⦃fun s => s = s₀⦄ deltaQuickI mode (mkFEnv env) eager f d a b
-    ⦃fun v s' => CSOK mode eager env s' ∧ Runs (deltaQuick mode (fueledFns mode eager env) d a b) v
-        ∧
-      StepPairWS d v; ⊤⦄ := by
+theorem deltaQuickC_spec (ih : SSimC mode eager env f) {d : Nat} {a b : Expr} {fa fb : Bool}
+    {s₀ : CState} (hs : CSOK mode eager env s₀) (hwa : Expr.WScoped d a)
+    (hwb : Expr.WScoped d b) :
+    ⦃fun s => s = s₀⦄ deltaQuickI mode (mkFEnv env) eager f d a b fa fb
+    ⦃fun v s' => CSOK mode eager env s' ∧
+      Runs (deltaQuick mode (fueledFns mode eager env) d a b fa fb) v ∧ StepPairWS d v; ⊤⦄ := by
   sym only [conleche_grind, deltaQuick] =>
     vcgen [deltaQuickI.eq_def, quickDefEqC_spec ih] <;> finish
+
+/-- One side's lazy step simulates its specification: a marked rule's firing, or δ, then the
+cheap `whnfCore`. -/
+theorem lazyUnfoldC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d : Nat} {a : Expr}
+    {s₀ : CState} (hs : CSOK mode eager env s₀) (hw : Expr.WScoped d a) :
+    ⦃fun s => s = s₀⦄ lazyUnfoldI mode (mkFEnv env) eager f d a
+    ⦃fun o s' => CSOK mode eager env s' ∧
+      Runs (lazyUnfold (fueledFns mode eager env) env d a) o ∧ UnfWS d o; ⊤⦄ := by
+  sym only [conleche_grind, lazyUnfold, unfoldDefinition_WScoped henv] =>
+    vcgen [lazyUnfoldI.eq_def, preFireC_spec ih henv, ih.whnfCore_spec,
+      unfoldDefinitionC_spec (mode := mode) (eager := eager) (env := env)] <;> finish
+
+/-- Both sides' unfolding simulates its specification. -/
+theorem lazyBothUnfoldC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d : Nat}
+    {a b : Expr} {s₀ : CState} (hs : CSOK mode eager env s₀) (hwa : Expr.WScoped d a)
+    (hwb : Expr.WScoped d b) :
+    ⦃fun s => s = s₀⦄ lazyBothUnfoldI mode (mkFEnv env) eager f d a b
+    ⦃fun o s' => CSOK mode eager env s' ∧
+      Runs (lazyBothUnfold (fueledFns mode eager env) env d a b) o ∧ BothWS d o; ⊤⦄ := by
+  sym only [conleche_grind, lazyBothUnfold, unfoldDefinition_WScoped henv] =>
+    vcgen [lazyBothUnfoldI.eq_def, ih.whnfCore_spec,
+      unfoldDefinitionC_spec (mode := mode) (eager := eager) (env := env)] <;> finish
+
+/-- The same head on both sides simulates its specification. -/
+theorem lazyBothC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d : Nat}
+    {a b : Expr} {s₀ : CState} (hs : CSOK mode eager env s₀) (hwa : Expr.WScoped d a)
+    (hwb : Expr.WScoped d b) :
+    ⦃fun s => s = s₀⦄ lazyBothI mode (mkFEnv env) eager f d a b
+    ⦃fun o s' => CSOK mode eager env s' ∧
+      Runs (lazyBoth (fueledFns mode eager env) env d a b) o ∧ BothWS d o; ⊤⦄ := by
+  sym only [conleche_grind, lazyBoth] =>
+    vcgen [lazyBothI.eq_def, preFireC_spec ih henv, ih.whnfCore_spec,
+      lazyBothUnfoldC_spec ih henv] <;> finish
 
 /-- One lazy-delta step simulates its specification. -/
 theorem lazyDeltaStepC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d : Nat} {a b : Expr}
@@ -403,9 +462,8 @@ theorem lazyDeltaStepC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d 
         a b) v ∧
       StepPairWS d v; ⊤⦄ := by
   sym only [conleche_grind, lazyDeltaStep, unfoldDefinition_WScoped henv] =>
-    vcgen [lazyDeltaStepI.eq_def, tryUnfoldProjAppC_spec ih, deltaQuickC_spec ih, ih.whnfCore_spec,
-      unfoldDefinitionC_spec (mode := mode) (eager := eager) (env := env), defeqSpineC_spec ih] <;>
-          finish
+    vcgen [lazyDeltaStepI.eq_def, tryUnfoldProjAppC_spec ih, deltaQuickC_spec ih,
+      lazyUnfoldC_spec ih henv, lazyBothC_spec ih henv, defeqSpineC_spec ih] <;> finish
 
 section PureLazy
 
@@ -419,8 +477,9 @@ would compare them). -/
 /-- Past the step. -/
 @[expose] def ldrStepP (mode : CheckMode) (eager : Bool) (n : Nat) (oa ob : Option Expr)
     (a b : Expr) : DeltaStep → m LazyRes
-  | .cont a' b' =>
-    lazyDeltaReduction mode eager r env depth n (noteOrigin env oa a') (noteOrigin env ob b') a' b'
+  | .cont a' b' fa fb =>
+    lazyDeltaReduction mode eager r env depth n (noteOrigin env (dropOrigin fa oa a) a')
+      (noteOrigin env (dropOrigin fb ob b) b') a' b'
   | .eq => pure (.verdict true)
   | .diff => pure (.verdict false)
   | .unknown => pure (.unknown oa ob a b)
@@ -483,8 +542,9 @@ block its own triple (one short bind chain each). -/
 /-- Past the step (cached). -/
 @[expose] def ldrStepI (mode : CheckMode) (fe : FEnv) (eager : Bool) (lv : Nat) (depth n : Nat)
     (oa ob : Option Expr) (a b : Expr) : DeltaStep → CheckCM LazyRes
-  | .cont a' b' =>
-    lazyDeltaReductionI mode fe eager lv depth n (noteOriginC fe oa a') (noteOriginC fe ob b') a' b'
+  | .cont a' b' fa fb =>
+    lazyDeltaReductionI mode fe eager lv depth n (noteOriginC fe (dropOrigin fa oa a) a')
+      (noteOriginC fe (dropOrigin fb ob b) b') a' b'
   | .eq => pure (.verdict true)
   | .diff => pure (.verdict false)
   | .unknown => pure (.unknown oa ob a b)

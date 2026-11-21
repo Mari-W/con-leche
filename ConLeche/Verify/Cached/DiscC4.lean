@@ -540,6 +540,153 @@ theorem fireMoreC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d : Nat
     sym only [conleche_grind, fireMore, CSOK.tickRule] =>
       vcgen [fireMoreI.eq_def, rewriteStepC_spec ih henv, tickRuleI, ihk] <;> finish
 
+/-! ### The test before unfolding (`preFire`) -/
+
+/-- A key test's scope side condition: the arguments it hands on are well scoped. -/
+@[expose] def KeyWS {α : Type} (d : Nat) (p : α × List Expr) : Prop := AllWS d p.2
+
+@[conleche_grind =] theorem KeyWS.mk_eq {α : Type} (d : Nat) (x : α) (xs : List Expr) :
+    KeyWS d (x, xs) = AllWS d xs := rfl
+
+/-- Replacing an argument by a well-scoped one keeps the arguments well scoped. -/
+theorem AllWS.set {d : Nat} {xs : List Expr} (h : AllWS d xs) (p : Nat) {a : Expr}
+    (ha : Expr.WScoped d a) : AllWS d (xs.set p a) := by
+  intro x hx
+  rcases List.mem_or_eq_of_mem_set hx with hx | rfl
+  · exact h x hx
+  · exact ha
+grind_pattern [conleche_grind] AllWS.set => AllWS d (xs.set p a)
+
+/-- A key argument read against its key is well scoped. -/
+theorem keyLit_WScopedC {d : Nat} (env : Env) (kc : Name) {a : Expr} (hw : Expr.WScoped d a) :
+    Expr.WScoped d (keyLit (natLitStored env) kc a) := by
+  rcases keyLit_cases env kc a with h | h <;> rw [h]
+  · exact hw
+  · exact litToCtorIfNat_WScoped hw
+grind_pattern [conleche_grind] keyLit_WScopedC => Expr.WScoped d a, keyLit (natLitStored env) kc a
+
+/-- One key group's test simulates its specification. -/
+theorem keyTestC_spec (ih : SSimC mode eager env f) {d : Nat} (key : Option (Nat × Name))
+    {args : List Expr} {s₀ : CState} (hs : CSOK mode eager env s₀) (hw : AllWS d args) :
+    ⦃fun s => s = s₀⦄ keyTestI mode (mkFEnv env) eager f d key args
+    ⦃fun v s' => CSOK mode eager env s' ∧
+      Runs (keyTest (fueledFns mode eager env) env d key args) v ∧ KeyWS d v; ⊤⦄ := by
+  unfold keyTestI keyTest
+  rw [mkFEnv_natLit]
+  cases key with
+  | none => sym only [conleche_grind] => vcgen <;> finish
+  | some pk =>
+    obtain ⟨p, kc⟩ := pk
+    dsimp only
+    cases ha : args[p]? with
+    | none => sym only [conleche_grind] => vcgen <;> finish
+    | some a =>
+      have hwa : Expr.WScoped d a := hw a (List.mem_of_getElem? ha)
+      dsimp only
+      sym only [conleche_grind] => vcgen [ih.whnf_spec] <;> finish
+
+/-- The key groups' tests simulate their specification. -/
+theorem keyScanC_spec (ih : SSimC mode eager env f) {d : Nat} :
+    ∀ (ks : List (Option (Nat × Name))) {args : List Expr} {s₀ : CState},
+    CSOK mode eager env s₀ → AllWS d args →
+    ⦃fun s => s = s₀⦄ keyScanI mode (mkFEnv env) eager f d ks args
+    ⦃fun v s' => CSOK mode eager env s' ∧
+      Runs (keyScan (fueledFns mode eager env) env d ks args) v ∧ KeyWS d v; ⊤⦄ := by
+  intro ks
+  induction ks with
+  | nil =>
+    intro args s₀ hs hw
+    sym only [conleche_grind, keyScan] => vcgen [keyScanI.eq_def] <;> finish
+  | cons k ks ihk =>
+    intro args s₀ hs hw
+    sym only [conleche_grind, keyScan] =>
+      vcgen [keyScanI.eq_def, keyTestC_spec ih k, ihk] <;> finish
+
+/-- A marked rule at the term with its key arguments reduced simulates its specification. -/
+theorem preAttemptC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d : Nat}
+    {e' : Expr} (t : Name) {s₀ : CState} (hs : CSOK mode eager env s₀) (hw : Expr.WScoped d e') :
+    ⦃fun s => s = s₀⦄ preAttemptI mode (mkFEnv env) eager f d e' t
+    ⦃fun o s' => CSOK mode eager env s' ∧
+      Runs (preAttempt (fueledFns mode eager env) env d e' t) o ∧ OptWS d o; ⊤⦄ := by
+  unfold preAttemptI preAttempt
+  rw [mkFEnv_find_fun]
+  cases hft : env.find? t with
+  | none => sym only [conleche_grind] => vcgen <;> finish
+  | some ci =>
+    cases ci
+    case thmInfo cv =>
+      dsimp only
+      cases hm : ruleArgsSyn cv e' with
+      | none => sym only [conleche_grind] => vcgen <;> finish
+      | some au =>
+        obtain ⟨args, us⟩ := au
+        dsimp only
+        exact rewriteFireC_spec ih henv hft args us hs hw
+    all_goals sym only [conleche_grind] => vcgen <;> finish
+
+/-- A marked rule against the prefix of its arity simulates its specification. -/
+theorem preAtC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d : Nat} (t : Name) :
+    ∀ (e e' : Expr) {s₀ : CState}, CSOK mode eager env s₀ → Expr.WScoped d e →
+    Expr.WScoped d e' →
+    ⦃fun s => s = s₀⦄ preAtI mode (mkFEnv env) eager f d t e e'
+    ⦃fun o s' => CSOK mode eager env s' ∧
+      Runs (preAt (fueledFns mode eager env) env d t e e') o ∧ OptWS d o; ⊤⦄ := by
+  intro e
+  induction e with
+  | app fn a ihf _ =>
+    intro e' s₀ hs hwe hw
+    cases e' with
+    | app fn' a' =>
+      sym only [conleche_grind, preAt] =>
+        vcgen [preAtI.eq_def, preAttemptC_spec ih henv t, ihf] <;> finish
+    | _ =>
+      rw [preAtI.eq_def, preAt.eq_def]
+      exact preAttemptC_spec ih henv t hs hw
+  | _ =>
+    intro e' s₀ hs hwe hw
+    rw [preAtI.eq_def, preAt.eq_def]
+    exact preAttemptC_spec ih henv t hs hw
+
+/-- The marked rules in order simulate their specification. -/
+theorem preRulesC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d : Nat}
+    {e e' : Expr} (hwe : Expr.WScoped d e) (hw : Expr.WScoped d e') (ts : List Name) :
+    ∀ {s₀ : CState}, CSOK mode eager env s₀ →
+    ⦃fun s => s = s₀⦄ preRulesI mode (mkFEnv env) eager f d e e' ts
+    ⦃fun o s' => CSOK mode eager env s' ∧
+      Runs (preRules (fueledFns mode eager env) env d e e' ts) o ∧ RuleWS d o; ⊤⦄ := by
+  induction ts with
+  | nil =>
+    intro s₀ hs
+    sym only [conleche_grind, preRules] => vcgen [preRulesI.eq_def] <;> finish
+  | cons t ts iht =>
+    intro s₀ hs
+    sym only [conleche_grind, preRules] =>
+      vcgen [preRulesI.eq_def, preAtC_spec ih henv t e e', iht] <;> finish
+
+/-- The test before unfolding simulates its specification; the cached twin counts a firing
+against the declaration's budget. -/
+theorem preFireC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d : Nat}
+    {e : Expr} {s₀ : CState} (hs : CSOK mode eager env s₀) (hw : Expr.WScoped d e) :
+    ⦃fun s => s = s₀⦄ preFireI mode (mkFEnv env) eager f d e
+    ⦃fun o s' => CSOK mode eager env s' ∧
+      Runs (preFire (fueledFns mode eager env) env d e) o ∧ RuleWS d o; ⊤⦄ := by
+  unfold preFireI preFire
+  rw [mkFEnv_rulesFor_fun, mkFEnv_find_fun, unfoldableHeadC_spec]
+  have hargs : AllWS d e.getAppArgs := allWS_getAppArgs hw
+  cases e.getAppFn with
+  | const c us =>
+    by_cases hu : unfoldableHead env e = true
+    · simp only [hu, ↓reduceIte]
+      cases preRulesFor env.rulesFor c with
+      | nil => sym only [conleche_grind] => vcgen <;> finish
+      | cons t ts =>
+        dsimp only
+        sym only [conleche_grind, CSOK.tickRule] =>
+          vcgen [keyScanC_spec ih, preRulesC_spec ih henv hw, tickRuleI] <;> finish
+    · simp only [hu, Bool.false_eq_true, ↓reduceIte]
+      sym only [conleche_grind] => vcgen <;> finish
+  | _ => sym only [conleche_grind] => vcgen <;> finish
+
 /-- Noting an origin at a well-scoped term keeps the origin well scoped. -/
 theorem OptWS.note {d : Nat} {o : Option Expr} {e : Expr} (ho : OptWS d o)
     (he : Expr.WScoped d e) : OptWS d (noteOrigin env o e) := by
@@ -1163,6 +1310,79 @@ theorem whnfCoreBodyC_spec (ih : SSimC .verified eager env f)
 
 end Walks
 
+section PureWhnf
+
+variable {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
+
+/-- The pure loop step past δ, named (the step's `match`es on `Option` share one matcher, so as
+lambdas `grind` would compare them). -/
+@[expose] def whnfUnfP (r : CoreFns m) (env : Env) (depth : Nat)
+    (k : Option Expr → Expr → m Expr) (o : Option Expr) (e₁ : Expr) : Option Expr → m Expr
+  | some e₂ => k (noteOrigin env o e₁) e₂
+  | none => whnfFix r env depth k o e₁
+
+/-- The pure loop step past the test before unfolding, named. -/
+@[expose] def whnfPreP (r : CoreFns m) (env : Env) (depth : Nat)
+    (k : Option Expr → Expr → m Expr) (o : Option Expr) (e₁ : Expr) :
+    Option (Name × Expr) → m Expr
+  | some (_, e₂) => k o e₂
+  | none => whnfUnfP r env depth k o e₁ (unfoldDefinition env e₁)
+
+/-- The pure loop step past the literal folding, named. -/
+@[expose] def whnfNatP (r : CoreFns m) (env : Env) (depth : Nat)
+    (k : Option Expr → Expr → m Expr) (o : Option Expr) (e₁ : Expr) : Option Expr → m Expr
+  | some e₂ => if e₂.isLit then pure e₂ else k o e₂
+  | none => preFire r env depth e₁ >>= whnfPreP r env depth k o e₁
+
+/-- The pure loop step with its continuations named. -/
+theorem whnfStep_pre (r : CoreFns m) (env : Env) (depth : Nat)
+    (k : Option Expr → Expr → m Expr) (o : Option Expr) (e : Expr) :
+    whnfStep r env depth k o e =
+      (r.whnfCore false depth e >>= fun e₁ =>
+        reduceNat r env depth e₁ >>= whnfNatP r env depth k o e₁) := by
+  rfl
+
+end PureWhnf
+
+/-! The cached loop step's continuations, named as the pure ones are, each block its own
+triple. -/
+
+/-- Past the rules at the origin (cached). -/
+@[expose] def whnfOrigI (mode : CheckMode) (fe : FEnv) (eager : Bool) (lv depth n : Nat)
+    (e₁ : Expr) (fires : Nat) : Option (Name × Expr) → CheckCM Expr
+  | some (t, e₂) =>
+    match fires with
+    | 0 => throw (ruleBudgetError t)
+    | k + 1 => do
+      tickRuleI t
+      whnfLoopI mode fe eager lv depth n k none e₂
+  | none => pure e₁
+
+/-- Past δ (cached). -/
+@[expose] def whnfUnfI (mode : CheckMode) (fe : FEnv) (eager : Bool) (lv depth n fires : Nat)
+    (o : Option Expr) (e₁ : Expr) : Option Expr → CheckCM Expr
+  | some e₂ => whnfLoopI mode fe eager lv depth n fires (noteOriginC fe o e₁) e₂
+  | none => originFireI mode fe eager lv depth o e₁ >>= whnfOrigI mode fe eager lv depth n e₁ fires
+
+/-- Past the test before unfolding (cached). -/
+@[expose] def whnfPreI (mode : CheckMode) (fe : FEnv) (eager : Bool) (lv depth n fires : Nat)
+    (o : Option Expr) (e₁ : Expr) : Option (Name × Expr) → CheckCM Expr
+  | some (_, e₂) => whnfLoopI mode fe eager lv depth n fires o e₂
+  | none => unfoldDefinitionI fe e₁ >>= whnfUnfI mode fe eager lv depth n fires o e₁
+
+/-- Past the literal folding (cached). -/
+@[expose] def whnfNatI (mode : CheckMode) (fe : FEnv) (eager : Bool) (lv depth n fires : Nat)
+    (o : Option Expr) (e₁ : Expr) : Option Expr → CheckCM Expr
+  | some e₂ => if e₂.isLit then pure e₂ else whnfLoopI mode fe eager lv depth n fires o e₂
+  | none => preFireI mode fe eager lv depth e₁ >>= whnfPreI mode fe eager lv depth n fires o e₁
+
+/-- The cached loop's step with its continuations named. -/
+theorem whnfLoopI_succ (fe : FEnv) (lv depth n fires : Nat) (o : Option Expr) (e : Expr) :
+    whnfLoopI mode fe eager lv depth (n + 1) fires o e =
+      (whnfCoreI mode fe eager lv false depth e >>= fun e₁ =>
+        reduceNatI mode fe eager lv depth e₁ >>= whnfNatI mode fe eager lv depth n fires o e₁) := by
+  rw [whnfLoopI.eq_2]; rfl
+
 section Walks2
 
 variable {env : Env} {f : Nat}
@@ -1190,6 +1410,58 @@ grind_pattern [conleche_grind] Runs.whnfFix_some_eq =>
   Runs (originFire (fueledFns mode eager env) env d o e₁) (some (t, e₂)),
   Runs (whnfFix (fueledFns mode eager env) env d k o e₁) v
 
+/-- The reduction loop at budget `n` simulates its specification (a named predicate, so that the
+induction hypothesis is an atom in `grind`'s context). -/
+@[expose] def WhnfLoopSpec (mode : CheckMode) (eager : Bool) (env : Env) (f d n : Nat) : Prop :=
+  ∀ {fires : Nat} {o : Option Expr} {i : Expr} {s₀ : CState}, CSOK mode eager env s₀ →
+    OptWS d o → Expr.WScoped d i →
+    ⦃fun s => s = s₀⦄ whnfLoopI mode (mkFEnv env) eager f d n fires o i
+    ⦃fun v s' => CSOK mode eager env s' ∧
+      Runs (whnfLoop (fueledFns mode eager env) env d n o i) v ∧ Expr.WScoped d v; ⊤⦄
+
+theorem WhnfLoopSpec.triple {d n : Nat} (h : WhnfLoopSpec mode eager env f d n) {fires : Nat}
+    {o : Option Expr} {i : Expr} {s₀ : CState} (hs : CSOK mode eager env s₀) (ho : OptWS d o)
+    (hw : Expr.WScoped d i) :
+    ⦃fun s => s = s₀⦄ whnfLoopI mode (mkFEnv env) eager f d n fires o i
+    ⦃fun v s' => CSOK mode eager env s' ∧
+      Runs (whnfLoop (fueledFns mode eager env) env d n o i) v ∧ Expr.WScoped d v; ⊤⦄ :=
+  h hs ho hw
+
+theorem whnfUnfC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d n : Nat}
+    (hn : WhnfLoopSpec mode eager env f d n) {fires : Nat} {o : Option Expr} {e₁ : Expr}
+    {s₀ : CState} (hs : CSOK mode eager env s₀) (ho : OptWS d o) (hw : Expr.WScoped d e₁)
+    (x : Option Expr) (hx : x = unfoldDefinition env e₁) :
+    ⦃fun s => s = s₀⦄ whnfUnfI mode (mkFEnv env) eager f d n fires o e₁ x
+    ⦃fun v s' => CSOK mode eager env s' ∧
+      Runs (whnfUnfP (fueledFns mode eager env) env d (whnfLoop (fueledFns mode eager env) env d n)
+        o e₁ x) v ∧ Expr.WScoped d v; ⊤⦄ := by
+  sym only [conleche_grind, whnfUnfP, unfoldDefinition_WScoped henv] =>
+    vcgen [whnfUnfI, whnfOrigI, originFireC_spec ih henv, tickRuleI, hn.triple] <;> finish
+
+theorem whnfPreC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d n : Nat}
+    (hn : WhnfLoopSpec mode eager env f d n) {fires : Nat} {o : Option Expr} {e₁ : Expr}
+    {s₀ : CState} (hs : CSOK mode eager env s₀) (ho : OptWS d o) (hw : Expr.WScoped d e₁)
+    (x : Option (Name × Expr)) (hx : RuleWS d x) :
+    ⦃fun s => s = s₀⦄ whnfPreI mode (mkFEnv env) eager f d n fires o e₁ x
+    ⦃fun v s' => CSOK mode eager env s' ∧
+      Runs (whnfPreP (fueledFns mode eager env) env d (whnfLoop (fueledFns mode eager env) env d n)
+        o e₁ x) v ∧ Expr.WScoped d v; ⊤⦄ := by
+  sym only [conleche_grind, whnfPreP] =>
+    vcgen [whnfPreI, hn.triple,
+      unfoldDefinitionC_spec (mode := mode) (eager := eager) (env := env),
+      whnfUnfC_spec ih henv hn] <;> finish
+
+theorem whnfNatC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d n : Nat}
+    (hn : WhnfLoopSpec mode eager env f d n) {fires : Nat} {o : Option Expr} {e₁ : Expr}
+    {s₀ : CState} (hs : CSOK mode eager env s₀) (ho : OptWS d o) (hw : Expr.WScoped d e₁)
+    (x : Option Expr) (hx : OptWS d x) :
+    ⦃fun s => s = s₀⦄ whnfNatI mode (mkFEnv env) eager f d n fires o e₁ x
+    ⦃fun v s' => CSOK mode eager env s' ∧
+      Runs (whnfNatP (fueledFns mode eager env) env d (whnfLoop (fueledFns mode eager env) env d n)
+        o e₁ x) v ∧ Expr.WScoped d v; ⊤⦄ := by
+  sym only [conleche_grind, whnfNatP] =>
+    vcgen [whnfNatI, hn.triple, preFireC_spec ih henv, whnfPreC_spec ih henv hn] <;> finish
+
 /-- The reduction loop simulates its specification, by induction on the
 shared step budget (task #106). -/
 theorem whnfLoopC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d : Nat} (n : Nat) :
@@ -1204,10 +1476,9 @@ theorem whnfLoopC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d : Nat
     sym only [conleche_grind] => vcgen [whnfLoopI.eq_def] <;> finish
   | succ n ihn =>
     intro fires o i s₀ hs ho hw
-    sym only [conleche_grind, whnfLoop, whnfStep, unfoldDefinition_WScoped henv] =>
-      vcgen [whnfLoopI.eq_def, ih.whnfCore_spec, reduceNatC_spec ih,
-        unfoldDefinitionC_spec (mode := mode) (eager := eager) (env := env),
-        originFireC_spec ih henv, tickRuleI, ihn] <;> finish
+    rw [whnfLoopI_succ]
+    sym only [conleche_grind, whnfLoop, whnfStep_pre] =>
+      vcgen [ih.whnfCore_spec, reduceNatC_spec ih, whnfNatC_spec ih henv ihn] <;> finish
 
 theorem whnfBodyC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) :
     BodySpec mode eager env (whnfBodyI mode (mkFEnv env) eager f)
