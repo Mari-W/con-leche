@@ -96,9 +96,19 @@ theorem ruleNamed_stepRules {d : Declaration} {t : Name} (h : RuleNamed (env.ste
   | useRules S =>
     rcases h with ⟨r, hr, rfl⟩ | ⟨e, he, rfl⟩
     · exact .inl (.inl ⟨r, hr, rfl⟩)
-    · simp only [Env.stepRules, ConLeche.RuleTable.step, ConLeche.activeTable, List.mem_map] at he
-      obtain ⟨r, hr, rfl⟩ := he
-      exact .inl (.inl ⟨r, (List.mem_filter.mp ((List.mergeSort_perm _ _).mem_iff.mp hr)).1, rfl⟩)
+    · simp only [Env.stepRules, ConLeche.RuleTable.step, ConLeche.activeTable] at he
+      -- every entry, the marked rules' extra ones included (`preEntries`), names a filtered rule
+      obtain ⟨r, hr, hre⟩ : ∃ r ∈ (env.rules.registered.filter fun r => S.contains r.thm).mergeSort
+          ConLeche.RewriteRule.before, r.thm = e.2 := by
+        rcases List.mem_append.mp he with he | he
+        · obtain ⟨r, hr, rfl⟩ := List.mem_map.mp he
+          exact ⟨r, hr, rfl⟩
+        · obtain ⟨r, hr, he⟩ := List.mem_flatMap.mp he
+          refine ⟨r, hr, ?_⟩
+          unfold ConLeche.preEntries at he
+          split at he <;> simp only [List.mem_cons, List.not_mem_nil, or_false] at he <;>
+            first | exact absurd he id | (rcases he with rfl | rfl <;> rfl) | (subst he; rfl)
+      exact .inl (.inl ⟨r, (List.mem_filter.mp ((List.mergeSort_perm _ _).mem_iff.mp hr)).1, hre⟩)
   | _ => exact .inl h
 
 /-- **The P carrier after a rule record**: the prefix's leaves and recorded blocks, and a

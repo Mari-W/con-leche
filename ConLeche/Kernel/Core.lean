@@ -1173,23 +1173,29 @@ def rewriteStep (r : CoreFns m) (env : Env) (depth : Nat) (stuck : Bool) (e : Ex
     else rewriteRules r env depth e (env.rulesFor c)
   | _ => pure none
 
-/-- **How many rewrite rules one head-normalization loop may fire** (official: per outermost
-`whnf_core`/`whnf` call, `LEAN_REWRITE_FIRE_BUDGET`).  The cached loops (`whnfCoreLoopI`,
-`whnfLoopI`) count their firings and reject past the budget, at the rule that would fire next, and
-the cached rules last bound their nested restarts by it (`nestEnterI`); the specification
-has no budget (its knot fuel bounds it).  A placeholder for a static termination check. -/
-@[irreducible, noinline] def ruleFireBudget : Nat := 65536  -- 2^16
+/-- **How many rewrite rules one head-normalization loop may fire**.  The official kernel has no
+budget per call any more, only the declaration's (`ruleDeclBudget`).  The cached loops
+(`whnfCoreLoopI`, `whnfLoopI`, `fireMoreI`) still count their firings and reject past this bound,
+which equals the declaration's, so a loop's count, a part of the declaration's, never reaches it
+first; and both errors read alike.  The specification has no budget (its knot fuel bounds it), and
+its `fireMore` runs at most this many firings. -/
+@[irreducible, noinline] def ruleFireBudget : Nat := 16777216  -- 2^24, `ruleDeclBudget`
 
 /-- The error past the firing budget, naming the rule that would fire. -/
 def ruleBudgetError (t : Name) : CheckError :=
-  .invalid s!"rewrite rule budget exhausted: {t} would fire past {ruleFireBudget} firings"
+  .invalid s!"rewrite rule budget exhausted: {t} would fire past {ruleFireBudget} firings in this declaration"
+
+/-- **How many rules-last restarts may nest** in the cached rules last (`nestEnterI`): a bound on
+the native stack, not a firing budget.  Every restart fires a rule, so the official kernel stops
+such a chain at its declaration's budget, and con-leche stops it earlier with the same error. -/
+@[irreducible, noinline] def ruleNestBudget : Nat := 65536  -- 2^16
 
 /-- **How many rewrite rules one declaration may fire** (official `LEAN_REWRITE_DECL_BUDGET`,
 counted in `m_rewrite_total` and never reset within the declaration).  The per-loop budget resets
 at every `whnfCore` call, so a rule whose right side unfolds back to its left side cycles through
 the lazy δ steps of `isDefEq` without ever exhausting it; this total stops such a cycle.  The
 cached loop counts every firing in the declaration's state (`CState.ruleTotal`, `tickRuleI`). -/
-@[irreducible, noinline] def ruleDeclBudget : Nat := 4194304  -- 2^22
+@[irreducible, noinline] def ruleDeclBudget : Nat := 16777216  -- 2^24
 
 /-- The error past the declaration's firing budget, naming the rule that would fire. -/
 def ruleDeclBudgetError (t : Name) : CheckError :=
@@ -1222,6 +1228,90 @@ def originFire (r : CoreFns m) (env : Env) (depth : Nat) (o : Option Expr) (e : 
       | none => pure none
     else pure none
   | none => pure none
+
+/-- **One key group's test** (official `reduce_before_delta`, DESIGN.md "Rules that fire before
+unfolding: the checker"): a group without a key takes every term; otherwise the argument at the
+key position, read against the key constant (`keyLit`), is a candidate when its head is the key,
+and where the key is a constructor and the argument is not in constructor form (`ctorForm`), the
+argument is replaced by its `whnf` and read once more.  The arguments after the test, with each
+replaced argument in place. -/
+def keyTest (r : CoreFns m) (env : Env) (depth : Nat) (key : Option (Nat × Name))
+    (args : List Expr) : m (Bool × List Expr) :=
+  match key with
+  | none => pure (true, args)
+  | some (p, kc) =>
+    match args[p]? with
+    | none => pure (false, args)
+    | some a =>
+      let a₁ := keyLit (natLitStored env) kc a
+      if headIs kc a₁ then pure (true, args.set p a₁)
+      else if isCtorConst env.find? kc && !ctorForm env.find? a₁ then do
+        let w ← r.whnf depth a₁
+        let a₂ := keyLit (natLitStored env) kc w
+        pure (headIs kc a₂, args.set p a₂)
+      else pure (false, args.set p a₁)
+
+/-- **The key groups' tests in their order** (official `reduce_before_delta`'s loop over
+`m_groups`): the candidate keys and the arguments after every test. -/
+def keyScan (r : CoreFns m) (env : Env) (depth : Nat) :
+    List (Option (Nat × Name)) → List Expr → m (List (Option (Nat × Name)) × List Expr)
+  | [], args => pure ([], args)
+  | k :: ks, args => do
+    let (b, args₁) ← keyTest r env depth k args
+    let (cs, args₂) ← keyScan r env depth ks args₁
+    pure (if b then k :: cs else cs, args₂)
+
+/-- **A marked rule at the term with its key arguments reduced**: the syntactic match of the
+left side (`ruleArgsSyn`) against `e'`, the matched view, and the firing's checks
+(`rewriteFire`). -/
+def preAttempt (r : CoreFns m) (env : Env) (depth : Nat) (e' : Expr) (t : Name) :
+    m (Option Expr) :=
+  match env.find? t with
+  | some (.thmInfo cv) =>
+    match ruleArgsSyn cv e' with
+    | some (args, us) => rewriteFire r env depth cv args us e'
+    | none => pure none
+  | _ => pure none
+
+/-- **A marked rule against the prefix of its own arity** (`rewriteAt` for the test before
+unfolding): `e` is the term and `e'` the same spine with its key arguments reduced.  The rule
+matches the prefix of `e'`, and the reduct is applied to the remaining arguments of `e`. -/
+def preAt (r : CoreFns m) (env : Env) (depth : Nat) (t : Name) : Expr → Expr → m (Option Expr)
+  | .app f a, .app f' a' => do
+    match ← preAttempt r env depth (.app f' a') t with
+    | some e₂ => pure (some e₂)
+    | none =>
+      match ← preAt r env depth t f f' with
+      | some f₂ => pure (some (.app f₂ a))
+      | none => pure none
+  | _, e' => preAttempt r env depth e' t
+
+/-- The marked rules in order: the first that fires, with its theorem. -/
+def preRules (r : CoreFns m) (env : Env) (depth : Nat) (e e' : Expr) :
+    List Name → m (Option (Name × Expr))
+  | [] => pure none
+  | t :: ts => do
+    match ← preAt r env depth t e e' with
+    | some e₂ => pure (some (t, e₂))
+    | none => preRules r env depth e e' ts
+
+/-- **The test before unfolding** (official `reduce_before_delta`): at a term whose head is about
+to be unfolded, the marked rules of the head (`preRulesFor`) that pass the key test
+(`keyScan`) are tried in firing order, matched syntactically against the term with its key
+arguments reduced.  A head that does not unfold, or has no marked rules, costs one lookup. -/
+def preFire (r : CoreFns m) (env : Env) (depth : Nat) (e : Expr) : m (Option (Name × Expr)) :=
+  match e.getAppFn with
+  | .const c us =>
+    if unfoldableHead env e then
+      match preRulesFor env.rulesFor c with
+      | [] => pure none
+      | ts => do
+        let ks := ts.map (ruleKey env.find? env.rulesFor c)
+        let (cs, args') ← keyScan r env depth ks.eraseDups e.getAppArgs
+        preRules r env depth e (Expr.mkAppN (.const c us) args')
+          (ts.zip ks |>.filterMap fun (t, k) => if cs.contains k then some t else none)
+    else pure none
+  | _ => pure none
 
 /-- **ι at the prefix of the recursor's arity** (official `inductive_reduce_rec`, which reads
 the first `major_idx + 1` arguments and applies the reduct to the rest): ι at the term, and
@@ -1409,6 +1499,9 @@ def whnfStep (r : CoreFns m) (env : Env) (depth : Nat)
   match ← reduceNat r env depth e₁ with
   | some e₂ => if e₂.isLit then pure e₂ else k o e₂
   | none =>
+    match ← preFire r env depth e₁ with
+    | some (_, e₂) => k o e₂
+    | none =>
     match unfoldDefinition env e₁ with
     | some e₂ => k (noteOrigin env o e₁) e₂
     | none => whnfFix r env depth k o e₁
@@ -1829,17 +1922,60 @@ def tryUnfoldProjApp (r : CoreFns m) (depth : Nat) (e : Expr) : m (Option Expr) 
 continue with the reduced pair, or a verdict, or "neither side
 unfolds". -/
 inductive DeltaStep where
-  | cont (a b : Expr)
+  /-- Continue with the pair; each flag says that a marked rule fired on that side (`lazyUnfold`),
+  so the loop drops an origin that names the fired term (`dropOrigin`). -/
+  | cont (a b : Expr) (fa fb : Bool)
   | eq
   | diff
   | unknown
 
 /-- The end of a lazy-delta step: `quick_is_def_eq` on the new pair. -/
-def deltaQuick (r : CoreFns m) (depth : Nat) (a b : Expr) : m DeltaStep := do
+def deltaQuick (r : CoreFns m) (depth : Nat) (a b : Expr) (fa fb : Bool) : m DeltaStep := do
   match ← quickDefEq mode r depth a b with
   | some true => pure .eq
   | some false => pure .diff
-  | none => pure (.cont a b)
+  | none => pure (.cont a b fa fb)
+
+/-- **One side's lazy step** (official `unfold_lazy`): a marked rule if one fires
+(`preFire`), δ otherwise, and the result through the cheap `whnfCore`; with it, whether a rule
+fired. -/
+def lazyUnfold (r : CoreFns m) (env : Env) (depth : Nat) (a : Expr) : m (Option (Expr × Bool)) := do
+  match ← preFire r env depth a with
+  | some (_, a₂) => do
+    let a₃ ← r.whnfCore true depth a₂
+    pure (some (a₃, true))
+  | none =>
+    match unfoldDefinition env a with
+    | some a₂ => do
+      let a₃ ← r.whnfCore true depth a₂
+      pure (some (a₃, false))
+    | none => pure none
+
+/-- Both sides unfold (official: `whnf_core(*unfold_definition(t_n))`, then the same for
+`s_n`). -/
+def lazyBothUnfold (r : CoreFns m) (env : Env) (depth : Nat) (a b : Expr) :
+    m (Option (Expr × Expr × Bool)) :=
+  match unfoldDefinition env a, unfoldDefinition env b with
+  | some a₂, some b₂ => do
+    let a₃ ← r.whnfCore true depth a₂
+    let b₃ ← r.whnfCore true depth b₂
+    pure (some (a₃, b₃, false))
+  | _, _ => pure none
+
+/-- **Both sides with the same head** (official `lazy_delta_reduction_step`'s last arm): the
+marked rules fire when they fire on both sides, and otherwise both sides unfold.  A rule that
+fired on the first side only is discarded. -/
+def lazyBoth (r : CoreFns m) (env : Env) (depth : Nat) (a b : Expr) :
+    m (Option (Expr × Expr × Bool)) := do
+  match ← preFire r env depth a with
+  | some (_, a₂) =>
+    match ← preFire r env depth b with
+    | some (_, b₂) => do
+      let a₃ ← r.whnfCore true depth a₂
+      let b₃ ← r.whnfCore true depth b₂
+      pure (some (a₃, b₃, true))
+    | none => lazyBothUnfold r env depth a b
+  | none => lazyBothUnfold r env depth a b
 
 /-- **One lazy-delta step** (the official kernel's
 `lazy_delta_reduction_step`): read the two heads' unfoldability and
@@ -1863,46 +1999,44 @@ def lazyDeltaStep (r : CoreFns m) (env : Env) (depth : Nat) (a b : Expr) :
   | false, false => pure .unknown
   | true, false =>
     match ← tryUnfoldProjApp r depth b with
-    | some b₂ => deltaQuick mode r depth a b₂
+    | some b₂ => deltaQuick mode r depth a b₂ false false
     | none =>
-      match unfoldDefinition env a with
-      | some a₂ => do
-        let a₃ ← r.whnfCore true depth a₂
-        deltaQuick mode r depth a₃ b
+      match ← lazyUnfold r env depth a with
+      | some (a₃, fa) => deltaQuick mode r depth a₃ b fa false
       | none => pure .unknown
   | false, true =>
     match ← tryUnfoldProjApp r depth a with
-    | some a₂ => deltaQuick mode r depth a₂ b
+    | some a₂ => deltaQuick mode r depth a₂ b false false
     | none =>
-      match unfoldDefinition env b with
-      | some b₂ => do
-        let b₃ ← r.whnfCore true depth b₂
-        deltaQuick mode r depth a b₃
+      match ← lazyUnfold r env depth b with
+      | some (b₃, fb) => deltaQuick mode r depth a b₃ false fb
       | none => pure .unknown
   | true, true =>
     let ha := headHint env a
     let hb := headHint env b
     if ReducibilityHint.lt hb ha then
-      match unfoldDefinition env a with
-      | some a₂ => do
-        let a₃ ← r.whnfCore true depth a₂
-        deltaQuick mode r depth a₃ b
+      match ← lazyUnfold r env depth a with
+      | some (a₃, fa) => deltaQuick mode r depth a₃ b fa false
       | none => pure .unknown
     else if ReducibilityHint.lt ha hb then
-      match unfoldDefinition env b with
-      | some b₂ => do
-        let b₃ ← r.whnfCore true depth b₂
-        deltaQuick mode r depth a b₃
+      match ← lazyUnfold r env depth b with
+      | some (b₃, fb) => deltaQuick mode r depth a b₃ false fb
+      | none => pure .unknown
+    else if !sameHeadName a b then
+      -- two different heads unfold: each may fire its own marked rules
+      match ← lazyUnfold r env depth a with
+      | some (a₃, fa) =>
+        match ← lazyUnfold r env depth b with
+        | some (b₃, fb) => deltaQuick mode r depth a₃ b₃ fa fb
+        | none => pure .unknown
       | none => pure .unknown
     else if ← (if ReducibilityHint.sameRegular ha hb && sameConstHeads a b then
         defeqSpine r env depth a b else pure false) then pure .eq
     else
-      match unfoldDefinition env a, unfoldDefinition env b with
-      | some a₂, some b₂ => do
-        let a₃ ← r.whnfCore true depth a₂
-        let b₃ ← r.whnfCore true depth b₂
-        deltaQuick mode r depth a₃ b₃
-      | _, _ => pure .unknown
+      -- the same head on both sides: its marked rules fire only if they fire on both sides
+      match ← lazyBoth r env depth a b with
+      | some (a₃, b₃, f) => deltaQuick mode r depth a₃ b₃ f f
+      | none => pure .unknown
 
 /-- The outcome of the lazy-delta loop: a verdict, or the pair it got
 stuck on with the two sides' origins (official `lazy_delta_reduction`
@@ -1953,8 +2087,9 @@ def lazyDeltaReduction (eager : Bool) (r : CoreFns m) (env : Env) (depth : Nat) 
       pure (.verdict v)
     | none =>
     match ← lazyDeltaStep mode r env depth a b with
-    | .cont a' b' =>
-      lazyDeltaReduction eager r env depth n (noteOrigin env oa a') (noteOrigin env ob b') a' b'
+    | .cont a' b' fa fb =>
+      lazyDeltaReduction eager r env depth n (noteOrigin env (dropOrigin fa oa a) a')
+        (noteOrigin env (dropOrigin fb ob b) b') a' b'
     | .eq => pure (.verdict true)
     | .diff => pure (.verdict false)
     | .unknown => pure (.unknown oa ob a b)
@@ -1969,7 +2104,7 @@ def lazyDeltaProjReduction (r : CoreFns m) (env : Env) (depth : Nat)
   | 0, _, _ => throw (.internal "fuel exhausted: lazy delta projection loop")
   | n + 1, a, b => do
     match ← lazyDeltaStep mode r env depth a b with
-    | .cont a' b' => lazyDeltaProjReduction r env depth sn i n a' b'
+    | .cont a' b' _ _ => lazyDeltaProjReduction r env depth sn i n a' b'
     | .eq => pure true
     | .diff | .unknown =>
       match ← reduceProjCore mode r env depth sn i a with

@@ -553,6 +553,59 @@ theorem whnfCore_bridge_succ (hwc : WhnfCoreBridge .verified eager env fuel)
 
 /-- The rules at an origin the chain from `e₀` passed through reduce `e₀` (`Red.rewrite` at the
 origin). -/
+/-- **A key argument is a reduct** of the original one: `whnf` through the bridge, the literal
+reading by `Red.natLit`. -/
+theorem KeyArg.red (hw : WhnfBridge μ eager env fuel) {d : Nat} {a b : Expr}
+    (h : KeyArg (pureFns μ eager env fuel) env d a b) : Red env d a b := by
+  induction h with
+  | refl => exact .refl
+  | lit kc _ ih =>
+    rcases keyLit_cases env kc _ with h' | h' <;> rw [h']
+    · exact ih
+    · exact .trans ih (.litToCtorIfNat _)
+  | whnf _ hwh ih => exact .trans ih (hw hwh)
+
+/-- **Arguments replaced by key arguments match position by position**: each replaced position
+is `MatchArg.red`. -/
+theorem matchRel_keyArgs (hw : WhnfBridge μ eager env fuel) {d : Nat} {P : List Expr} :
+    ∀ (args args' : List Expr) {f f' : Expr}, MatchRel env d P f f' →
+      args'.length = args.length →
+      (∀ (i : Nat) (h : i < args.length) (h' : i < args'.length),
+        KeyArg (pureFns μ eager env fuel) env d args[i] args'[i]) →
+      MatchRel env d P (Expr.mkAppN f args) (Expr.mkAppN f' args')
+  | [], [], _, _, hf, _, _ => hf
+  | a :: as, a' :: as', _, _, hf, hlen, hk => by
+    simp only [Expr.mkAppN]
+    refine matchRel_keyArgs as as' (.app hf (.red (KeyArg.red hw (hk 0 (by simp) (by simp))) .refl))
+      (by simpa using hlen) (fun i h h' => ?_)
+    exact hk (i + 1) (by simp; omega) (by simp; omega)
+  | [], _ :: _, _, _, _, hlen, _ => by simp at hlen
+  | _ :: _, [], _, _, _, hlen, _ => by simp at hlen
+
+/-- A view related by `MatchRel` to an application relates its function part, or is the same
+application. -/
+theorem MatchRel.app_inv {d : Nat} {P : List Expr} {f a f' a' : Expr}
+    (h : MatchRel env d P (.app f a) (.app f' a')) : MatchRel env d P f f' := by
+  cases h with
+  | refl => exact .refl
+  | app hf _ => exact hf
+
+/-- **A firing before unfolding is `Red.rewrite`**: the rule matched the spine with its key
+arguments replaced (`MatchRel` through `matchRel_keyArgs`), at the prefix of its arity, and the
+reduct takes the remaining original arguments (`Red.appFn`). -/
+theorem preFire_bridge (hw : WhnfBridge μ eager env fuel) (hd : DefEqBridge μ eager env fuel)
+    (hi : InferBridge μ eager env fuel) {d : Nat} {e e₂ : Expr} {t : Name}
+    (h : preFire (pureFns μ eager env fuel) env d e = .ok (some (t, e₂))) : Red env d e e₂ := by
+  obtain ⟨c, us, args', hc, hmem, hka, hat⟩ := preFire_inv h
+  have hm : MatchRel env d [] e (Expr.mkAppN (.const c us) args') := by
+    have := matchRel_keyArgs (P := []) hw e.getAppArgs args' (f := .const c us) .refl hka.1 hka.2
+    rwa [← hc, Expr.mkAppN_getApp] at this
+  refine preAt_ind (fun x x' y => MatchRel env d [] x x' → x.getAppFn = .const c us → Red env d x y)
+    (fun ha hm' hfn => ?_) (fun ih hm' hfn => .appFn (ih hm'.app_inv hfn)) e _ hat hm hc
+  obtain ⟨cv, args, us', hf, -, hfire⟩ := preAttempt_inv ha
+  obtain ⟨u, A, c', ls, l, hres, -, hlen, hsub, hcert, hlf⟩ := rewriteFire_inv hfire
+  exact .rewrite hf hlen (iotaCertsFull_bridge hd hi hcert) hres hfn hm' hlf hsub hmem
+
 theorem originFire_bridge (hw : WhnfBridge μ eager env fuel) (hd : DefEqBridge μ eager env fuel)
     (hi : InferBridge μ eager env fuel) {d : Nat} {o : Option Expr} {e₀ e e₂ : Expr} {t : Name}
     (h : originFire (pureFns μ eager env fuel) env d o e = .ok (some (t, e₂)))
@@ -576,12 +629,13 @@ theorem whnfStep_bridge (hwc : WhnfCoreBridge μ eager env fuel) (hw : WhnfBridg
   obtain ⟨e₁, hwc₁, hrest⟩ := whnfStep_inv h
   have h₁ : Red env d e₀ e₁ := .trans he (hwc hwc₁)
   rcases hrest with ⟨e₂, hnat, ⟨-, rfl⟩ | hk₂⟩ | ⟨-, e₂, hδ, hk₂⟩ |
-    ⟨-, -, ⟨-, rfl⟩ | ⟨t, e₂, hof, hk₂⟩⟩
+    ⟨-, -, ⟨-, rfl⟩ | ⟨t, e₂, hof, hk₂⟩⟩ | ⟨-, t, e₂, hpf, hk₂⟩
   · exact .trans h₁ (reduceNat_bridge hw hnat)
   · exact hk hk₂ (.trans h₁ (reduceNat_bridge hw hnat)) ho
   · exact hk hk₂ (.trans h₁ (.delta hδ)) (ho.note h₁)
   · exact h₁
   · exact hk hk₂ (originFire_bridge hw hd hi hof ho) (OriginP.none _)
+  · exact hk hk₂ (.trans h₁ (preFire_bridge hw hd hi hpf)) ho
 
 /-- The loop at every budget. -/
 theorem whnfLoop_bridge (hwc : WhnfCoreBridge μ eager env fuel) (hw : WhnfBridge μ eager env fuel)

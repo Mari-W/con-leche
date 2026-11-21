@@ -24,7 +24,7 @@ variable {env₁ env₂ : Env} {r₂ r₁ : CoreFns CheckM}
 
 /-- What a lazy-delta step hands on resolves. -/
 def DeltaRes (env : Env) : DeltaStep → Prop
-  | .cont a b => Res env a ∧ Res env b
+  | .cont a b _ _ => Res env a ∧ Res env b
   | _ => True
 
 /-- What the lazy-delta loop hands on resolves. -/
@@ -173,8 +173,8 @@ theorem tryUnfoldProjApp_rel {e : Expr} (he : Res env₁ e) :
   exact Rel.ite (fun _ => Rel.ok resO_none) fun _ =>
     Rel.ok fun x h => (Option.some.inj h) ▸ he'
 
-theorem deltaQuick_rel {a b : Expr} (ha : Res env₁ a) (hb : Res env₁ b) :
-    Rel (DeltaRes env₁) (deltaQuick mode r₂ d a b) (deltaQuick mode r₁ d a b) := by
+theorem deltaQuick_rel {a b : Expr} (ha : Res env₁ a) (hb : Res env₁ b) (fa fb : Bool) :
+    Rel (DeltaRes env₁) (deltaQuick mode r₂ d a b fa fb) (deltaQuick mode r₁ d a b fa fb) := by
   unfold deltaQuick
   refine Rel.bind (quickDefEq_rel K d mode ha hb) fun o _ => ?_
   cases o with
@@ -184,44 +184,65 @@ theorem deltaQuick_rel {a b : Expr} (ha : Res env₁ a) (hb : Res env₁ b) :
 variable (hx : EnvExt env₁ env₂)
 include hx
 
-/-- The unfolding of one side, then the cheap normalization and the easy cases. -/
-theorem deltaLeft_rel {a b : Expr} (ha : Res env₁ a) (hb : Res env₁ b) :
-    Rel (DeltaRes env₁)
-      (match unfoldDefinition env₂ a with
-       | some a₂ => do
-         let a₃ ← r₂.whnfCore true d a₂
-         deltaQuick mode r₂ d a₃ b
-       | none => pure .unknown)
-      (match unfoldDefinition env₁ a with
-       | some a₂ => do
-         let a₃ ← r₁.whnfCore true d a₂
-         deltaQuick mode r₁ d a₃ b
-       | none => pure .unknown) := by
-  rw [unfoldDefinition_ext hx ha]
-  cases hu : unfoldDefinition env₁ a with
-  | none => exact Rel.ok trivial
-  | some a₂ =>
-    exact Rel.bind (K.whnfCore true d (res_unfoldDefinition hx ha hu)) fun a₃ ha₃ =>
-      deltaQuick_rel K d mode ha₃ hb
+/-- What a lazy step hands on resolves. -/
+abbrev ResU (env : Env) (o : Option (Expr × Bool)) : Prop := ∀ x f, o = some (x, f) → Res env x
 
-theorem deltaRight_rel {a b : Expr} (ha : Res env₁ a) (hb : Res env₁ b) :
-    Rel (DeltaRes env₁)
-      (match unfoldDefinition env₂ b with
-       | some b₂ => do
-         let b₃ ← r₂.whnfCore true d b₂
-         deltaQuick mode r₂ d a b₃
-       | none => pure .unknown)
-      (match unfoldDefinition env₁ b with
-       | some b₂ => do
-         let b₃ ← r₁.whnfCore true d b₂
-         deltaQuick mode r₁ d a b₃
-       | none => pure .unknown) := by
-  rw [unfoldDefinition_ext hx hb]
-  cases hu : unfoldDefinition env₁ b with
-  | none => exact Rel.ok trivial
-  | some b₂ =>
-    exact Rel.bind (K.whnfCore true d (res_unfoldDefinition hx hb hu)) fun b₃ hb₃ =>
-      deltaQuick_rel K d mode ha hb₃
+/-- What both sides' step hands on resolves. -/
+abbrev ResB (env : Env) (o : Option (Expr × Expr × Bool)) : Prop :=
+  ∀ x y f, o = some (x, y, f) → Res env x ∧ Res env y
+
+/-- One side's lazy step, at an extension, is the prefix's. -/
+theorem lazyUnfold_rel {a : Expr} (ha : Res env₁ a) :
+    Rel (ResU env₁) (lazyUnfold r₂ env₂ d a) (lazyUnfold r₁ env₁ d a) := by
+  unfold lazyUnfold
+  refine Rel.bind (preFire_rel K d hx ha) fun o ho => ?_
+  cases o with
+  | some te =>
+    exact Rel.bind (K.whnfCore true d (ho te.1 te.2 rfl)) fun a₃ ha₃ =>
+      Rel.ok fun x f h => by obtain ⟨rfl, -⟩ := Prod.mk.inj (Option.some.inj h); exact ha₃
+  | none =>
+    dsimp only
+    rw [unfoldDefinition_ext hx ha]
+    cases hu : unfoldDefinition env₁ a with
+    | none => exact Rel.ok fun _ _ h => nomatch h
+    | some a₂ =>
+      exact Rel.bind (K.whnfCore true d (res_unfoldDefinition hx ha hu)) fun a₃ ha₃ =>
+        Rel.ok fun x f h => by obtain ⟨rfl, -⟩ := Prod.mk.inj (Option.some.inj h); exact ha₃
+
+theorem lazyBothUnfold_rel {a b : Expr} (ha : Res env₁ a) (hb : Res env₁ b) :
+    Rel (ResB env₁) (lazyBothUnfold r₂ env₂ d a b) (lazyBothUnfold r₁ env₁ d a b) := by
+  unfold lazyBothUnfold
+  rw [unfoldDefinition_ext hx ha, unfoldDefinition_ext hx hb]
+  cases hua : unfoldDefinition env₁ a with
+  | none => exact Rel.ok fun _ _ _ h => nomatch h
+  | some a₂ =>
+    cases hub : unfoldDefinition env₁ b with
+    | none => exact Rel.ok fun _ _ _ h => nomatch h
+    | some b₂ =>
+      exact Rel.bind (K.whnfCore true d (res_unfoldDefinition hx ha hua)) fun a₃ ha₃ =>
+        Rel.bind (K.whnfCore true d (res_unfoldDefinition hx hb hub)) fun b₃ hb₃ =>
+          Rel.ok fun x y f h => by
+            obtain ⟨rfl, h⟩ := Prod.mk.inj (Option.some.inj h)
+            obtain ⟨rfl, -⟩ := Prod.mk.inj h
+            exact ⟨ha₃, hb₃⟩
+
+theorem lazyBoth_rel {a b : Expr} (ha : Res env₁ a) (hb : Res env₁ b) :
+    Rel (ResB env₁) (lazyBoth r₂ env₂ d a b) (lazyBoth r₁ env₁ d a b) := by
+  unfold lazyBoth
+  refine Rel.bind (preFire_rel K d hx ha) fun o ho => ?_
+  cases o with
+  | some te =>
+    refine Rel.bind (preFire_rel K d hx hb) fun o' ho' => ?_
+    cases o' with
+    | some te' =>
+      exact Rel.bind (K.whnfCore true d (ho te.1 te.2 rfl)) fun a₃ ha₃ =>
+        Rel.bind (K.whnfCore true d (ho' te'.1 te'.2 rfl)) fun b₃ hb₃ =>
+          Rel.ok fun x y f h => by
+            obtain ⟨rfl, h⟩ := Prod.mk.inj (Option.some.inj h)
+            obtain ⟨rfl, -⟩ := Prod.mk.inj h
+            exact ⟨ha₃, hb₃⟩
+    | none => exact lazyBothUnfold_rel K d hx ha hb
+  | none => exact lazyBothUnfold_rel K d hx ha hb
 
 theorem lazyDeltaStep_rel {a b : Expr} (ha : Res env₁ a) (hb : Res env₁ b) :
     Rel (DeltaRes env₁) (lazyDeltaStep mode r₂ env₂ d a b) (lazyDeltaStep mode r₁ env₁ d a b) := by
@@ -234,33 +255,70 @@ theorem lazyDeltaStep_rel {a b : Expr} (ha : Res env₁ a) (hb : Res env₁ b) :
     | true =>
       refine Rel.bind (tryUnfoldProjApp_rel K d ha) fun o ho => ?_
       cases o with
-      | some a₂ => exact deltaQuick_rel K d mode (ho _ rfl) hb
-      | none => exact deltaRight_rel K d mode hx ha hb
+      | some a₂ => exact deltaQuick_rel K d mode (ho _ rfl) hb _ _
+      | none =>
+        refine Rel.bind (lazyUnfold_rel K d hx hb) fun o ho => ?_
+        cases o with
+        | none => exact Rel.ok trivial
+        | some p => obtain ⟨b₃, f⟩ := p; exact deltaQuick_rel K d mode ha (ho b₃ f rfl) _ _
   | true =>
     cases unfoldableHead env₁ b with
     | false =>
       refine Rel.bind (tryUnfoldProjApp_rel K d hb) fun o ho => ?_
       cases o with
-      | some b₂ => exact deltaQuick_rel K d mode ha (ho _ rfl)
-      | none => exact deltaLeft_rel K d mode hx ha hb
+      | some b₂ => exact deltaQuick_rel K d mode ha (ho _ rfl) _ _
+      | none =>
+        refine Rel.bind (lazyUnfold_rel K d hx ha) fun o ho => ?_
+        cases o with
+        | none => exact Rel.ok trivial
+        | some p => obtain ⟨a₃, f⟩ := p; exact deltaQuick_rel K d mode (ho a₃ f rfl) hb _ _
     | true =>
       dsimp only
       rw [headHint_ext hx ha, headHint_ext hx hb]
-      refine Rel.ite (fun _ => deltaLeft_rel K d mode hx ha hb) fun _ =>
-        Rel.ite (fun _ => deltaRight_rel K d mode hx ha hb) fun _ => ?_
+      have hUa : Rel (DeltaRes env₁)
+          (do match ← lazyUnfold r₂ env₂ d a with
+            | some (a₃, fa) => deltaQuick mode r₂ d a₃ b fa false
+            | none => pure .unknown)
+          (do match ← lazyUnfold r₁ env₁ d a with
+            | some (a₃, fa) => deltaQuick mode r₁ d a₃ b fa false
+            | none => pure .unknown) := by
+        refine Rel.bind (lazyUnfold_rel K d hx ha) fun o ho => ?_
+        cases o with
+        | none => exact Rel.ok trivial
+        | some p => obtain ⟨a₃, f⟩ := p; exact deltaQuick_rel K d mode (ho a₃ f rfl) hb _ _
+      have hUb : Rel (DeltaRes env₁)
+          (do match ← lazyUnfold r₂ env₂ d b with
+            | some (b₃, fb) => deltaQuick mode r₂ d a b₃ false fb
+            | none => pure .unknown)
+          (do match ← lazyUnfold r₁ env₁ d b with
+            | some (b₃, fb) => deltaQuick mode r₁ d a b₃ false fb
+            | none => pure .unknown) := by
+        refine Rel.bind (lazyUnfold_rel K d hx hb) fun o ho => ?_
+        cases o with
+        | none => exact Rel.ok trivial
+        | some p => obtain ⟨b₃, f⟩ := p; exact deltaQuick_rel K d mode ha (ho b₃ f rfl) _ _
+      refine Rel.ite (fun _ => hUa) fun _ => Rel.ite (fun _ => hUb) fun _ => ?_
+      refine Rel.ite (fun _ => ?_) fun _ => ?_
+      · refine Rel.bind (lazyUnfold_rel K d hx ha) fun o ho => ?_
+        cases o with
+        | none => exact Rel.ok trivial
+        | some p =>
+          obtain ⟨a₃, f⟩ := p
+          refine Rel.bind (lazyUnfold_rel K d hx hb) fun o' ho' => ?_
+          cases o' with
+          | none => exact Rel.ok trivial
+          | some p' =>
+            obtain ⟨b₃, f'⟩ := p'
+            exact deltaQuick_rel K d mode (ho a₃ f rfl) (ho' b₃ f' rfl) _ _
       refine Rel.bind (Q := TT) (Rel.ite (fun _ => defeqSpine_rel K d ha hb)
         fun _ => Rel.ok trivial) fun v _ => ?_
       refine Rel.iteB v (fun _ => Rel.ok trivial) fun _ => ?_
-      rw [unfoldDefinition_ext hx ha, unfoldDefinition_ext hx hb]
-      cases hua : unfoldDefinition env₁ a with
+      refine Rel.bind (lazyBoth_rel K d hx ha hb) fun o ho => ?_
+      cases o with
       | none => exact Rel.ok trivial
-      | some a₂ =>
-        cases hub : unfoldDefinition env₁ b with
-        | none => exact Rel.ok trivial
-        | some b₂ =>
-          exact Rel.bind (K.whnfCore true d (res_unfoldDefinition hx ha hua)) fun a₃ ha₃ =>
-            Rel.bind (K.whnfCore true d (res_unfoldDefinition hx hb hub)) fun b₃ hb₃ =>
-              deltaQuick_rel K d mode ha₃ hb₃
+      | some p =>
+        obtain ⟨a₃, b₃, f⟩ := p
+        exact deltaQuick_rel K d mode (ho a₃ b₃ f rfl).1 (ho a₃ b₃ f rfl).2 _ _
 
 omit K hx in
 theorem lazyDeltaReduction_rel (K : KR env₁ r₂ r₁) (d : Nat) (mode : CheckMode)
@@ -293,11 +351,11 @@ theorem lazyDeltaReduction_rel (K : KR env₁ r₂ r₁) (d : Nat) (mode : Check
           dsimp only
           refine Rel.bind (lazyDeltaStep_rel K d mode hx ha hb) fun st hst => ?_
           cases st with
-          | cont a' b' =>
+          | cont a' b' fa fb =>
             dsimp only
             rw [noteOrigin_ext hx hst.1, noteOrigin_ext hx hst.2]
-            exact lazyDeltaReduction_rel K d mode hx eager n (hoa.note hst.1) (hob.note hst.2)
-              hst.1 hst.2
+            exact lazyDeltaReduction_rel K d mode hx eager n ((hoa.drop fa a).note hst.1)
+              ((hob.drop fb b).note hst.2) hst.1 hst.2
           | eq => exact Rel.ok trivial
           | diff => exact Rel.ok trivial
           | unknown => exact Rel.ok ⟨ha, hb, hoa, hob⟩
@@ -334,7 +392,7 @@ theorem lazyDeltaProjReduction_rel (K : KR env₁ r₂ r₁) (d : Nat) (mode : C
         | some y => exact K.defeq d (ho _ rfl) (ho' _ rfl)
     refine Rel.bind (lazyDeltaStep_rel K d mode hx ha hb) fun st hst => ?_
     cases st with
-    | cont a' b' => exact lazyDeltaProjReduction_rel K d mode hx i hsn n hst.1 hst.2
+    | cont a' b' _ _ => exact lazyDeltaProjReduction_rel K d mode hx i hsn n hst.1 hst.2
     | eq => exact Rel.ok trivial
     | diff => exact htail
     | unknown => exact htail

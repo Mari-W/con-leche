@@ -605,6 +605,34 @@ theorem rewriteStep_occDeep {env : Env} {names : List Name} (hN : WhnfNamesFree 
       ⟨hf ((appClosed_occDeep names _ _).mp hx).1, ((appClosed_occDeep names _ _).mp hx).2⟩) e
     (rewriteStep_inv hrw) h0
 
+/-- A marked rule's firing at the replaced term is member free. -/
+theorem preAttempt_occDeep {env : Env} {names : List Name} (hN : WhnfNamesFree env names)
+    {r : CoreFns CheckM} {d : Nat} {e' e₂ : Expr} {t : Name}
+    (hrw : preAttempt r env d e' t = .ok (some e₂)) (h0 : e'.occDeep names = false) :
+    e₂.occDeep names = false := by
+  obtain ⟨cv, args, us, hf, -, hfire⟩ := preAttempt_inv hrw
+  obtain ⟨_, _, _, _, _, hres, -, -, hsub, -, -⟩ := rewriteFire_inv hfire
+  have hT := hN.1 t _ hf (hN.2.2.2.2.2.2.2.2.2 t cv hf)
+  have hR := piResidual_occDeep hres
+    (by rw [Expr.occDeep_instantiateLevelParams]; exact hT)
+    (fun x hx => appSubterms_occDeep e' h0 x (hsub x hx))
+  simp only [Expr.occDeep, Bool.or_eq_false_iff] at hR
+  exact hR.2
+
+/-- The test before unfolding is member free. -/
+theorem preFire_occDeep {env : Env} {names : List Name} (hN : WhnfNamesFree env names)
+    {r : CoreFns CheckM} {d : Nat}
+    (hwh : ∀ {a w : Expr}, r.whnf d a = .ok w → a.occDeep names = false → w.occDeep names = false)
+    {e e₂ : Expr} {t : Name}
+    (hrw : preFire r env d e = .ok (some (t, e₂))) (h0 : e.occDeep names = false) :
+    e₂.occDeep names = false :=
+  preFire_pres (appClosed_occDeep names) hwh
+    (fun kc a ha => by
+      rcases keyLit_cases env kc a with h' | h' <;> rw [h']
+      · exact ha
+      · exact litToCtorIfNat_occDeep hN ha)
+    (fun ha hx => preAttempt_occDeep hN ha hx) hrw h0
+
 /-- The rules fired again are member free. -/
 theorem fireMore_occDeep {env : Env} {names : List Name} (hN : WhnfNamesFree env names)
     {r : CoreFns CheckM} {d : Nat}
@@ -737,7 +765,7 @@ theorem whnfPres_occDeep {env : Env} {names : List Name} (hN : WhnfNamesFree env
           obtain ⟨e₁, hwc, hcase⟩ := whnfStep_inv h
           have h1 := ihCore hwc he
           rcases hcase with ⟨e₂, hrn, hfin⟩ | ⟨-, e₂, hu, hcont⟩ |
-            ⟨-, -, ⟨-, rfl⟩ | ⟨t, e₂, hof, hcont⟩⟩
+            ⟨-, -, ⟨-, rfl⟩ | ⟨t, e₂, hof, hcont⟩⟩ | ⟨-, t, e₂, hpf, hcont⟩
           · have h₂ : e₂.occDeep names = false := by
               rcases reduceNat_inv_bool hrn with ⟨k, rfl⟩ | ⟨bn, rfl, hbn⟩
               · rfl
@@ -753,6 +781,7 @@ theorem whnfPres_occDeep {env : Env} {names : List Name} (hN : WhnfNamesFree env
           · obtain ⟨o', e₃, rfl, -, hrw, hfm⟩ := originFire_inv hof
             exact ihN hcont (OriginP.none _) (fireMore_occDeep hN ihLoop hfm
               (rewriteStep_occDeep hN ihLoop hrw (ho _ rfl)))
+          · exact ihN hcont ho (preFire_occDeep hN ihLoop hpf h1)
       intro d e e' h he
       exact hloop whnfLoopFuel h (OriginP.none _) he
     · -- inferTypeCore

@@ -590,6 +590,54 @@ theorem originFireI_congr (hfe : fe₁.find? = fe₂.find?) (hru : fe₁.rulesFo
   simp only [rewriteStepI_congr hfe hru hbk h, isStuckResultC_congr hfe,
     fireMoreI_congr hfe hru hbk h]
 
+/-- `keyTestI` reads `fe` only through `find?`. -/
+theorem keyTestI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv) :
+    keyTestI mode fe₁ eager lv = keyTestI mode fe₂ eager lv := by
+  funext depth key args; rw [keyTestI.eq_def, keyTestI.eq_def]
+  simp only [hfe, FEnv.natLit_congr hfe, h]
+
+/-- `keyScanI` reads `fe` only through `find?`. -/
+theorem keyScanI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv) :
+    keyScanI mode fe₁ eager lv = keyScanI mode fe₂ eager lv := by
+  funext depth ks
+  induction ks with
+  | nil => funext args; rw [keyScanI.eq_def, keyScanI.eq_def]
+  | cons k ks ih =>
+    funext args; rw [keyScanI.eq_def, keyScanI.eq_def]; simp only [keyTestI_congr hfe h, ih]
+
+/-- `preAttemptI` reads `fe` only through `find?`. -/
+theorem preAttemptI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv) :
+    preAttemptI mode fe₁ eager lv = preAttemptI mode fe₂ eager lv := by
+  funext depth e' t; rw [preAttemptI.eq_def, preAttemptI.eq_def]
+  simp only [hfe, rewriteFireI_congr hfe h]
+
+/-- `preAtI` reads `fe` only through `find?`. -/
+theorem preAtI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv) :
+    preAtI mode fe₁ eager lv = preAtI mode fe₂ eager lv := by
+  funext depth t e
+  induction e with
+  | app f a ihf _ =>
+    funext e'; rw [preAtI.eq_def, preAtI.eq_def]
+    cases e' <;> simp only [preAttemptI_congr hfe h, ihf]
+  | _ => funext e'; rw [preAtI.eq_def, preAtI.eq_def]; simp only [preAttemptI_congr hfe h]
+
+/-- `preRulesI` reads `fe` only through `find?`. -/
+theorem preRulesI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv) :
+    preRulesI mode fe₁ eager lv = preRulesI mode fe₂ eager lv := by
+  funext depth e e' ts
+  induction ts with
+  | nil => rw [preRulesI.eq_def, preRulesI.eq_def]
+  | cons t ts ih =>
+    rw [preRulesI.eq_def, preRulesI.eq_def]
+    simp only [preAtI_congr hfe h, ih]
+
+/-- `preFireI` reads `fe` through `find?` and the rule map. -/
+theorem preFireI_congr (hfe : fe₁.find? = fe₂.find?) (hru : fe₁.rulesFor = fe₂.rulesFor)
+    (hbk : fe₁.base.blk = fe₂.base.blk) (h : SlotsEq mode fe₁ fe₂ lv) :
+    preFireI mode fe₁ eager lv = preFireI mode fe₂ eager lv := by
+  funext depth e; rw [preFireI.eq_def, preFireI.eq_def]
+  simp only [hfe, hru, unfoldableHeadC_congr hfe hbk, keyScanI_congr hfe h, preRulesI_congr hfe h]
+
 /-- A head without rules reads the rule map. -/
 theorem noRulesC_congr (hru : fe₁.rulesFor = fe₂.rulesFor) : noRulesC fe₁ = noRulesC fe₂ := by
   funext e; cases e <;> simp only [noRulesC, hru]
@@ -686,7 +734,7 @@ theorem whnfLoopI_congr (hfe : fe₁.find? = fe₂.find?) (hru : fe₁.rulesFor 
   | succ n ih =>
     funext fires o e; rw [whnfLoopI.eq_def, whnfLoopI.eq_def]
     simp only [ih, h, reduceNatI_congr hfe h, unfoldDefinitionI_congr hfe hbk,
-      noteOriginC_congr hfe hru hbk, originFireI_congr hfe hru hbk h]
+      noteOriginC_congr hfe hru hbk, originFireI_congr hfe hru hbk h, preFireI_congr hfe hru hbk h]
 
 /-- `whnfBodyI` reads `fe` only through `find?` and the rule map. -/
 theorem whnfBodyI_congr (hfe : fe₁.find? = fe₂.find?) (hru : fe₁.rulesFor = fe₂.rulesFor)
@@ -780,16 +828,25 @@ theorem quickDefEqI_congr (_hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode f
   funext depth a b; rw [quickDefEqI.eq_def, quickDefEqI.eq_def]; simp only [hb]
 
 /-- `lazyDeltaStepI` reads `fe` only through `find?`. -/
-theorem lazyDeltaStepI_congr (hfe : fe₁.find? = fe₂.find?) (hbk : fe₁.base.blk = fe₂.base.blk)
-    (h : SlotsEq mode fe₁ fe₂ lv) :
+theorem lazyDeltaStepI_congr (hfe : fe₁.find? = fe₂.find?) (hru : fe₁.rulesFor = fe₂.rulesFor)
+    (hbk : fe₁.base.blk = fe₂.base.blk) (h : SlotsEq mode fe₁ fe₂ lv) :
     lazyDeltaStepI mode fe₁ eager lv = lazyDeltaStepI mode fe₂ eager lv := by
   have htry : tryUnfoldProjAppI mode fe₁ eager lv = tryUnfoldProjAppI mode fe₂ eager lv := by
     funext depth e; rw [tryUnfoldProjAppI.eq_def, tryUnfoldProjAppI.eq_def]; simp only [h]
   have hq : deltaQuickI mode fe₁ eager lv = deltaQuickI mode fe₂ eager lv := by
-    funext depth a b; rw [deltaQuickI.eq_def, deltaQuickI.eq_def]
+    funext depth a b fa fb; rw [deltaQuickI.eq_def, deltaQuickI.eq_def]
     simp only [quickDefEqI_congr hfe h]
+  have hu : lazyUnfoldI mode fe₁ eager lv = lazyUnfoldI mode fe₂ eager lv := by
+    funext depth a; rw [lazyUnfoldI.eq_def, lazyUnfoldI.eq_def]
+    simp only [preFireI_congr hfe hru hbk h, unfoldDefinitionI_congr hfe hbk, h]
+  have hbu : lazyBothUnfoldI mode fe₁ eager lv = lazyBothUnfoldI mode fe₂ eager lv := by
+    funext depth a b; rw [lazyBothUnfoldI.eq_def, lazyBothUnfoldI.eq_def]
+    simp only [unfoldDefinitionI_congr hfe hbk, h]
+  have hb : lazyBothI mode fe₁ eager lv = lazyBothI mode fe₂ eager lv := by
+    funext depth a b; rw [lazyBothI.eq_def, lazyBothI.eq_def]
+    simp only [preFireI_congr hfe hru hbk h, hbu, h]
   funext depth a b; rw [lazyDeltaStepI.eq_def, lazyDeltaStepI.eq_def]
-  simp only [unfoldableHeadC_congr hfe hbk, unfoldDefinitionI_congr hfe hbk,
+  simp only [unfoldableHeadC_congr hfe hbk, hu, hb,
     headHintC_congr hfe, defeqSpineI_congr hfe h, htry, hq, h]
 
 /-- `lazyDeltaReductionI` reads `fe` only through `find?`. -/
@@ -804,12 +861,13 @@ theorem lazyDeltaReductionI_congr (hfe : fe₁.find? = fe₂.find?)
   | zero => funext oa ob a b; rw [lazyDeltaReductionI.eq_def, lazyDeltaReductionI.eq_def]
   | succ n ih =>
     funext oa ob a b; rw [lazyDeltaReductionI.eq_def, lazyDeltaReductionI.eq_def]
-    simp only [ih, hoff, reduceNatI_congr hfe h, lazyDeltaStepI_congr hfe hbk h, h,
+    simp only [ih, hoff, reduceNatI_congr hfe h, lazyDeltaStepI_congr hfe hru hbk h, h,
       noteOriginC_congr hfe hru hbk]
 
 /-- `lazyDeltaProjReductionI` reads `fe` only through `find?` and `findTable?`. -/
 theorem lazyDeltaProjReductionI_congr (hfe : fe₁.find? = fe₂.find?)
-    (htb : fe₁.findTable? = fe₂.findTable?) (hbk : fe₁.base.blk = fe₂.base.blk)
+    (htb : fe₁.findTable? = fe₂.findTable?) (hru : fe₁.rulesFor = fe₂.rulesFor)
+    (hbk : fe₁.base.blk = fe₂.base.blk)
     (h : SlotsEq mode fe₁ fe₂ lv) :
     lazyDeltaProjReductionI mode fe₁ eager lv = lazyDeltaProjReductionI mode fe₂ eager lv := by
   funext depth sn i n
@@ -817,7 +875,7 @@ theorem lazyDeltaProjReductionI_congr (hfe : fe₁.find? = fe₂.find?)
   | zero => funext a b; rw [lazyDeltaProjReductionI.eq_def, lazyDeltaProjReductionI.eq_def]
   | succ n ih =>
     funext a b; rw [lazyDeltaProjReductionI.eq_def, lazyDeltaProjReductionI.eq_def]
-    simp only [ih, lazyDeltaStepI_congr hfe hbk h, reduceProjCoreI_congr hfe htb h, h]
+    simp only [ih, lazyDeltaStepI_congr hfe hru hbk h, reduceProjCoreI_congr hfe htb h, h]
 
 /-- `defeqStuckI` reads `fe` only through `find?` and `findTable?`. -/
 theorem defeqStuckI_congr (hfe : fe₁.find? = fe₂.find?)
@@ -835,7 +893,7 @@ theorem defeqLazyI_congr (hfe : fe₁.find? = fe₂.find?)
     defeqLazyI mode fe₁ eager lv = defeqLazyI mode fe₂ eager lv := by
   have hpp : defeqProjPairI mode fe₁ eager lv = defeqProjPairI mode fe₂ eager lv := by
     funext depth a b; rw [defeqProjPairI.eq_def, defeqProjPairI.eq_def]
-    simp only [lazyDeltaProjReductionI_congr hfe htb hbk h]
+    simp only [lazyDeltaProjReductionI_congr hfe htb hru hbk h]
   have hrl : rulesLastI mode fe₁ eager lv = rulesLastI mode fe₂ eager lv := by
     funext depth oa ob a b; rw [rulesLastI.eq_def, rulesLastI.eq_def]
     simp only [originFireI_congr hfe hru hbk h, h]

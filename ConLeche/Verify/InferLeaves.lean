@@ -479,6 +479,57 @@ theorem appClosed_leavesIn (E : Expr) :
 theorem appClosed_looseBVars : AppClosed (fun x => x.looseBVarsBounded 0 = true) := fun f a => by
   simp only [looseBVarsBounded, Bool.and_eq_true]
 
+/-- A marked rule's right side has no leaf the replaced term lacks. -/
+theorem preAttempt_fvarLeaves {env : Env} (henv : EnvWF env) {r : CoreFns CheckM} {d : Nat}
+    {e' e₂ : Expr} {t : Name} (h : preAttempt r env d e' t = .ok (some e₂)) :
+    ∀ l ∈ e₂.fvarLeaves, l ∈ e'.fvarLeaves := by
+  obtain ⟨cv, args, us, hf, -, hfire⟩ := preAttempt_inv h
+  obtain ⟨_, _, _, _, _, hres, -, -, hsub, -, -⟩ := rewriteFire_inv hfire
+  have hT : (cv.type.instantiateLevelParams cv.levelParams us).hasFvar = false := by
+    rw [hasFvar_instantiateLevelParams]; exact (henv.consts _ (Env.find?_mem hf)).1
+  intro l hl
+  have := Expr.fvarLeaves_ruleRhs hres hT hsub l
+  simp only [fvarLeaves, List.mem_append] at this
+  exact this (.inr hl)
+
+/-- The test before unfolding has no leaf the term lacks. -/
+theorem preFire_fvarLeaves {env : Env} (henv : EnvWF env) {r : CoreFns CheckM} {d : Nat}
+    (hwh : ∀ {a w : Expr}, r.whnf d a = .ok w → ∀ l ∈ w.fvarLeaves, l ∈ a.fvarLeaves)
+    {e e₂ : Expr} {t : Name} (h : preFire r env d e = .ok (some (t, e₂))) :
+    ∀ l ∈ e₂.fvarLeaves, l ∈ e.fvarLeaves :=
+  preFire_pres (appClosed_leavesIn e) (fun hw hx l hl => hx l (hwh hw l hl))
+    (fun kc a ha l hl => by
+      rcases keyLit_cases env kc a with h' | h' <;> rw [h'] at hl
+      · exact ha l hl
+      · exact ha l (litToCtorIfNat_fvarLeaves l hl))
+    (fun ha hx l hl => hx l (preAttempt_fvarLeaves henv ha l hl)) h (fun _ h => h)
+
+/-- A marked rule's firing at the replaced term keeps the bvar bound. -/
+theorem preAttempt_looseBVars {env : Env} (henv : EnvWF env) {r : CoreFns CheckM} {d : Nat}
+    {e' e₂ : Expr} {t : Name} (h : preAttempt r env d e' t = .ok (some e₂))
+    (hb : e'.looseBVarsBounded 0 = true) : e₂.looseBVarsBounded 0 = true := by
+  obtain ⟨cv, args, us, hf, -, hfire⟩ := preAttempt_inv h
+  obtain ⟨_, _, _, _, _, hres, -, -, hsub, -, -⟩ := rewriteFire_inv hfire
+  have hT : (cv.type.instantiateLevelParams cv.levelParams us).looseBVarsBounded 0 = true := by
+    rw [looseBVarsBounded_instantiateLevelParams]
+    exact (henv.consts _ (Env.find?_mem hf)).2.2.2.1
+  have hR := piResidual_looseBVars hres hT (fun x hx => appSubterms_looseBVars e' (hsub x hx) hb)
+  simp only [looseBVarsBounded, Bool.and_eq_true] at hR
+  exact hR.2
+
+/-- The test before unfolding keeps the bvar bound. -/
+theorem preFire_looseBVars {env : Env} (henv : EnvWF env) {r : CoreFns CheckM} {d : Nat}
+    (hwh : ∀ {a w : Expr}, r.whnf d a = .ok w →
+      a.looseBVarsBounded 0 = true → w.looseBVarsBounded 0 = true)
+    {e e₂ : Expr} {t : Name} (h : preFire r env d e = .ok (some (t, e₂)))
+    (hb : e.looseBVarsBounded 0 = true) : e₂.looseBVarsBounded 0 = true :=
+  preFire_pres appClosed_looseBVars hwh
+    (fun kc a ha => by
+      rcases keyLit_cases env kc a with h' | h' <;> rw [h']
+      · exact ha
+      · exact litToCtorIfNat_looseBVars ha)
+    (fun ha hx => preAttempt_looseBVars henv ha hx) h hb
+
 set_option maxRecDepth 2048 in
 set_option maxHeartbeats 1600000 in
 /-- Head normalization and the reduction loop only shrink the leaf
@@ -628,7 +679,7 @@ theorem whnfPres_fvarLeaves {env : Env} (henv : EnvWF env) :
           obtain ⟨e₁, hwc, hcase⟩ := whnfStep_inv h
           have he₁ : ∀ l ∈ e₁.fvarLeaves, Q l := fun l hl => he l (ihCore hwc l hl)
           rcases hcase with ⟨e₂, hrn, ⟨-, rfl⟩ | hcont⟩ | ⟨-, e₂, hu, hcont⟩ |
-            ⟨-, -, ⟨-, rfl⟩ | ⟨t, e₂, hof, hcont⟩⟩
+            ⟨-, -, ⟨-, rfl⟩ | ⟨t, e₂, hof, hcont⟩⟩ | ⟨-, t, e₂, hpf, hcont⟩
           · rcases reduceNat_inv hrn with ⟨k, rfl⟩ | ⟨bn, rfl⟩ <;>
               simp [Expr.fvarLeaves] at hl
           · rcases reduceNat_inv hrn with ⟨k, rfl⟩ | ⟨bn, rfl⟩ <;>
@@ -640,6 +691,7 @@ theorem whnfPres_fvarLeaves {env : Env} (henv : EnvWF env) :
             exact ihN Q hcont (OriginP.none _)
               (fun l hl => ho _ rfl l
                 (rewriteStep_fvarLeaves henv ihLoop hrw l (fireMore_fvarLeaves henv ihLoop hfm l hl))) l hl
+          · exact ihN Q hcont ho (fun l hl => he₁ l (preFire_fvarLeaves henv ihLoop hpf l hl)) l hl
       intro d e e' h l hl
       exact hloop whnfLoopFuel (· ∈ e.fvarLeaves) h (OriginP.none _) (fun l hl => hl) l hl
 
@@ -770,7 +822,7 @@ theorem whnfPres_looseBVars {env : Env} (henv : EnvWF env) :
           obtain ⟨e₁, hwc, hcase⟩ := whnfStep_inv h
           have hbe₁ := ihCore hwc hb
           rcases hcase with ⟨e₂, hrn, ⟨-, rfl⟩ | hcont⟩ | ⟨-, e₂, hu, hcont⟩ |
-            ⟨-, -, ⟨-, rfl⟩ | ⟨t, e₂, hof, hcont⟩⟩
+            ⟨-, -, ⟨-, rfl⟩ | ⟨t, e₂, hof, hcont⟩⟩ | ⟨-, t, e₂, hpf, hcont⟩
           · rcases reduceNat_inv hrn with ⟨k, rfl⟩ | ⟨bn, rfl⟩ <;> simp [looseBVarsBounded]
           · rcases reduceNat_inv hrn with ⟨k, rfl⟩ | ⟨bn, rfl⟩ <;>
               exact ihN hcont ho (by simp [looseBVarsBounded])
@@ -779,6 +831,7 @@ theorem whnfPres_looseBVars {env : Env} (henv : EnvWF env) :
           · obtain ⟨o', e₃, rfl, -, hrw, hfm⟩ := originFire_inv hof
             exact ihN hcont (OriginP.none _) (fireMore_looseBVars henv ihLoop hfm
               (rewriteStep_looseBVars henv ihLoop hrw (ho _ rfl)))
+          · exact ihN hcont ho (preFire_looseBVars henv ihLoop hpf hbe₁)
       intro d e e' h hb
       exact hloop whnfLoopFuel h (OriginP.none _) hb
 

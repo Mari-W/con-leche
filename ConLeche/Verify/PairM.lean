@@ -746,6 +746,232 @@ theorem originFire_snd_proj (d : Nat) (o : Option Expr) (e : Expr) :
     · rfl
   · rfl
 
+theorem keyTest_fst_proj (d : Nat) (key : Option (Nat × Name)) (args : List Expr) :
+    (keyTest (pairFns r₁ r₂ h) env d key args).val.1 = keyTest r₁ env d key args := by
+  unfold keyTest
+  repeat (first
+    | rfl
+    | ((rw [PairM.fst_bind]; congr 1 <;> try rfl) <;> try funext _)
+    | (dsimp only [])
+    | split)
+
+theorem keyScan_fst_proj (d : Nat) :
+    ∀ (ks : List (Option (Nat × Name))) (args : List Expr),
+      (keyScan (pairFns r₁ r₂ h) env d ks args).val.1 = keyScan r₁ env d ks args
+  | [], _ => rfl
+  | k :: ks, args => by
+    unfold keyScan
+    rw [PairM.fst_bind, keyTest_fst_proj]
+    congr 1
+    funext x
+    rw [PairM.fst_bind, keyScan_fst_proj d ks]
+    rfl
+
+theorem preAttempt_fst_proj (d : Nat) (e' : Expr) (t : Name) :
+    (preAttempt (pairFns r₁ r₂ h) env d e' t).val.1 = preAttempt r₁ env d e' t := by
+  unfold preAttempt rewriteFire
+  repeat (first
+    | rfl
+    | (rw [iotaCertsFull_fst])
+    | ((rw [PairM.fst_bind]; congr 1 <;> try rfl) <;> try funext _)
+    | (dsimp only [])
+    | split)
+
+theorem preAt_fst_proj (d : Nat) (t : Name) (e : Expr) :
+    ∀ e' : Expr, (preAt (pairFns r₁ r₂ h) env d t e e').val.1 = preAt r₁ env d t e e' := by
+  have hn : ∀ {x y : Expr}, (∀ f a f' a', ¬(x = .app f a ∧ y = .app f' a')) →
+      (preAt (pairFns r₁ r₂ h) env d t x y).val.1 = preAt r₁ env d t x y := fun hxy => by
+    rw [preAt_nonApp _ _ _ _ hxy, preAt_nonApp _ _ _ _ hxy]
+    exact preAttempt_fst_proj d _ t
+  induction e with
+  | app f a ihf _ =>
+    intro e'
+    cases e' with
+    | app f' a' =>
+      rw [preAt, preAt, PairM.fst_bind, preAttempt_fst_proj]
+      congr 1
+      funext o
+      cases o with
+      | some e₂ => rfl
+      | none =>
+        dsimp only
+        rw [PairM.fst_bind, ihf f']
+        congr 1
+        funext o'
+        cases o' <;> rfl
+    | _ => exact hn (by intro _ _ _ _ hh; cases hh.2)
+  | _ => intro e'; exact hn (by intro _ _ _ _ hh; cases hh.1)
+
+theorem preRules_fst_proj (d : Nat) (e e' : Expr) :
+    ∀ ts : List Name,
+      (preRules (pairFns r₁ r₂ h) env d e e' ts).val.1 = preRules r₁ env d e e' ts
+  | [] => rfl
+  | t :: ts => by
+    unfold preRules
+    rw [PairM.fst_bind, preAt_fst_proj]
+    congr 1
+    funext o
+    cases o with
+    | some e₂ => rfl
+    | none => exact preRules_fst_proj d e e' ts
+
+theorem preFire_fst_proj (d : Nat) (e : Expr) :
+    (preFire (pairFns r₁ r₂ h) env d e).val.1 = preFire r₁ env d e := by
+  unfold preFire
+  split
+  · split
+    · split
+      · rfl
+      · rw [PairM.fst_bind, keyScan_fst_proj]
+        congr 1
+        funext x
+        exact preRules_fst_proj d _ _ _
+    · rfl
+  · rfl
+
+theorem lazyUnfold_fst_proj (d : Nat) (a : Expr) :
+    (lazyUnfold (pairFns r₁ r₂ h) env d a).val.1 = lazyUnfold r₁ env d a := by
+  unfold lazyUnfold
+  repeat (first
+    | rfl
+    | (rw [preFire_fst_proj])
+    | ((rw [PairM.fst_bind]; congr 1 <;> try rfl) <;> try funext _)
+    | (dsimp only [])
+    | split)
+
+theorem lazyBothUnfold_fst_proj (d : Nat) (a b : Expr) :
+    (lazyBothUnfold (pairFns r₁ r₂ h) env d a b).val.1 = lazyBothUnfold r₁ env d a b := by
+  unfold lazyBothUnfold
+  repeat (first
+    | rfl
+    | ((rw [PairM.fst_bind]; congr 1 <;> try rfl) <;> try funext _)
+    | (dsimp only [])
+    | split)
+
+theorem lazyBoth_fst_proj (d : Nat) (a b : Expr) :
+    (lazyBoth (pairFns r₁ r₂ h) env d a b).val.1 = lazyBoth r₁ env d a b := by
+  unfold lazyBoth
+  repeat (first
+    | rfl
+    | (rw [preFire_fst_proj])
+    | (rw [lazyBothUnfold_fst_proj])
+    | ((rw [PairM.fst_bind]; congr 1 <;> try rfl) <;> try funext _)
+    | (dsimp only [])
+    | split)
+
+theorem keyTest_snd_proj (d : Nat) (key : Option (Nat × Name)) (args : List Expr) :
+    (keyTest (pairFns r₁ r₂ h) env d key args).val.2 = keyTest r₂ env d key args := by
+  unfold keyTest
+  repeat (first
+    | rfl
+    | ((rw [PairM.snd_bind]; congr 1 <;> try rfl) <;> try funext _)
+    | (dsimp only [])
+    | split)
+
+theorem keyScan_snd_proj (d : Nat) :
+    ∀ (ks : List (Option (Nat × Name))) (args : List Expr),
+      (keyScan (pairFns r₁ r₂ h) env d ks args).val.2 = keyScan r₂ env d ks args
+  | [], _ => rfl
+  | k :: ks, args => by
+    unfold keyScan
+    rw [PairM.snd_bind, keyTest_snd_proj]
+    congr 1
+    funext x
+    rw [PairM.snd_bind, keyScan_snd_proj d ks]
+    rfl
+
+theorem preAttempt_snd_proj (d : Nat) (e' : Expr) (t : Name) :
+    (preAttempt (pairFns r₁ r₂ h) env d e' t).val.2 = preAttempt r₂ env d e' t := by
+  unfold preAttempt rewriteFire
+  repeat (first
+    | rfl
+    | (rw [iotaCertsFull_snd])
+    | ((rw [PairM.snd_bind]; congr 1 <;> try rfl) <;> try funext _)
+    | (dsimp only [])
+    | split)
+
+theorem preAt_snd_proj (d : Nat) (t : Name) (e : Expr) :
+    ∀ e' : Expr, (preAt (pairFns r₁ r₂ h) env d t e e').val.2 = preAt r₂ env d t e e' := by
+  have hn : ∀ {x y : Expr}, (∀ f a f' a', ¬(x = .app f a ∧ y = .app f' a')) →
+      (preAt (pairFns r₁ r₂ h) env d t x y).val.2 = preAt r₂ env d t x y := fun hxy => by
+    rw [preAt_nonApp _ _ _ _ hxy, preAt_nonApp _ _ _ _ hxy]
+    exact preAttempt_snd_proj d _ t
+  induction e with
+  | app f a ihf _ =>
+    intro e'
+    cases e' with
+    | app f' a' =>
+      rw [preAt, preAt, PairM.snd_bind, preAttempt_snd_proj]
+      congr 1
+      funext o
+      cases o with
+      | some e₂ => rfl
+      | none =>
+        dsimp only
+        rw [PairM.snd_bind, ihf f']
+        congr 1
+        funext o'
+        cases o' <;> rfl
+    | _ => exact hn (by intro _ _ _ _ hh; cases hh.2)
+  | _ => intro e'; exact hn (by intro _ _ _ _ hh; cases hh.1)
+
+theorem preRules_snd_proj (d : Nat) (e e' : Expr) :
+    ∀ ts : List Name,
+      (preRules (pairFns r₁ r₂ h) env d e e' ts).val.2 = preRules r₂ env d e e' ts
+  | [] => rfl
+  | t :: ts => by
+    unfold preRules
+    rw [PairM.snd_bind, preAt_snd_proj]
+    congr 1
+    funext o
+    cases o with
+    | some e₂ => rfl
+    | none => exact preRules_snd_proj d e e' ts
+
+theorem preFire_snd_proj (d : Nat) (e : Expr) :
+    (preFire (pairFns r₁ r₂ h) env d e).val.2 = preFire r₂ env d e := by
+  unfold preFire
+  split
+  · split
+    · split
+      · rfl
+      · rw [PairM.snd_bind, keyScan_snd_proj]
+        congr 1
+        funext x
+        exact preRules_snd_proj d _ _ _
+    · rfl
+  · rfl
+
+theorem lazyUnfold_snd_proj (d : Nat) (a : Expr) :
+    (lazyUnfold (pairFns r₁ r₂ h) env d a).val.2 = lazyUnfold r₂ env d a := by
+  unfold lazyUnfold
+  repeat (first
+    | rfl
+    | (rw [preFire_snd_proj])
+    | ((rw [PairM.snd_bind]; congr 1 <;> try rfl) <;> try funext _)
+    | (dsimp only [])
+    | split)
+
+theorem lazyBothUnfold_snd_proj (d : Nat) (a b : Expr) :
+    (lazyBothUnfold (pairFns r₁ r₂ h) env d a b).val.2 = lazyBothUnfold r₂ env d a b := by
+  unfold lazyBothUnfold
+  repeat (first
+    | rfl
+    | ((rw [PairM.snd_bind]; congr 1 <;> try rfl) <;> try funext _)
+    | (dsimp only [])
+    | split)
+
+theorem lazyBoth_snd_proj (d : Nat) (a b : Expr) :
+    (lazyBoth (pairFns r₁ r₂ h) env d a b).val.2 = lazyBoth r₂ env d a b := by
+  unfold lazyBoth
+  repeat (first
+    | rfl
+    | (rw [preFire_snd_proj])
+    | (rw [lazyBothUnfold_snd_proj])
+    | ((rw [PairM.snd_bind]; congr 1 <;> try rfl) <;> try funext _)
+    | (dsimp only [])
+    | split)
+
 theorem ensureSort_fst_proj (d : Nat) (e : Expr) :
     (ensureSort (pairFns r₁ r₂ h) env d e).val.1 =
       ensureSort r₁ env d e := by
@@ -940,6 +1166,7 @@ macro "fst_step2" : tactic =>
     | (rw [rewriteStep_fst_proj])
     | (rw [fireMore_fst_proj])
     | (rw [originFire_fst_proj])
+    | (rw [preFire_fst_proj])
     | (rw [ensureSort_fst_proj])
     | (rw [proofIrrel_fst_proj])
     | (rw [propIrrel_fst_proj])
@@ -971,6 +1198,7 @@ macro "snd_step2" : tactic =>
     | (rw [rewriteStep_snd_proj])
     | (rw [fireMore_snd_proj])
     | (rw [originFire_snd_proj])
+    | (rw [preFire_snd_proj])
     | (rw [ensureSort_snd_proj])
     | (rw [proofIrrel_snd_proj])
     | (rw [propIrrel_snd_proj])
@@ -1530,13 +1758,13 @@ theorem tryUnfoldProjApp_snd_proj (d : Nat) (e : Expr) :
   unfold tryUnfoldProjApp
   snd_tac3
 
-theorem deltaQuick_fst_proj (d : Nat) (a b : Expr) :
-    (deltaQuick mode (pairFns r₁ r₂ h) d a b).val.1 = deltaQuick mode r₁ d a b := by
+theorem deltaQuick_fst_proj (d : Nat) (a b : Expr) (fa fb : Bool) :
+    (deltaQuick mode (pairFns r₁ r₂ h) d a b fa fb).val.1 = deltaQuick mode r₁ d a b fa fb := by
   unfold deltaQuick
   fst_core3 (rw [quickDefEq_fst_proj])
 
-theorem deltaQuick_snd_proj (d : Nat) (a b : Expr) :
-    (deltaQuick mode (pairFns r₁ r₂ h) d a b).val.2 = deltaQuick mode r₂ d a b := by
+theorem deltaQuick_snd_proj (d : Nat) (a b : Expr) (fa fb : Bool) :
+    (deltaQuick mode (pairFns r₁ r₂ h) d a b fa fb).val.2 = deltaQuick mode r₂ d a b fa fb := by
   unfold deltaQuick
   snd_core3 (rw [quickDefEq_snd_proj])
 
@@ -1544,13 +1772,13 @@ theorem lazyDeltaStep_fst_proj (d : Nat) (a b : Expr) :
     (lazyDeltaStep mode (pairFns r₁ r₂ h) env d a b).val.1 =
       lazyDeltaStep mode r₁ env d a b := by
   unfold lazyDeltaStep
-  fst_core3 (first | rw [deltaQuick_fst_proj] | rw [tryUnfoldProjApp_fst_proj] | rw [defeqSpine_fst])
+  fst_core3 (first | rw [deltaQuick_fst_proj] | rw [tryUnfoldProjApp_fst_proj] | rw [defeqSpine_fst] | rw [lazyUnfold_fst_proj] | rw [lazyBoth_fst_proj])
 
 theorem lazyDeltaStep_snd_proj (d : Nat) (a b : Expr) :
     (lazyDeltaStep mode (pairFns r₁ r₂ h) env d a b).val.2 =
       lazyDeltaStep mode r₂ env d a b := by
   unfold lazyDeltaStep
-  snd_core3 (first | rw [deltaQuick_snd_proj] | rw [tryUnfoldProjApp_snd_proj] | rw [defeqSpine_snd])
+  snd_core3 (first | rw [deltaQuick_snd_proj] | rw [tryUnfoldProjApp_snd_proj] | rw [defeqSpine_snd] | rw [lazyUnfold_snd_proj] | rw [lazyBoth_snd_proj])
 
 theorem lazyDeltaReduction_fst_proj (d : Nat) :
     ∀ (n : Nat) (oa ob : Option Expr) (a b : Expr),
@@ -1634,6 +1862,7 @@ macro "fst_core4" x:tactic : tactic =>
     | (rw [rewriteStep_fst_proj])
     | (rw [fireMore_fst_proj])
     | (rw [originFire_fst_proj])
+    | (rw [preFire_fst_proj])
     | (rw [ensureSort_fst_proj])
     | (rw [proofIrrel_fst_proj])
     | (rw [propIrrel_fst_proj])
@@ -1700,6 +1929,7 @@ macro "snd_core4" x:tactic : tactic =>
     | (rw [rewriteStep_snd_proj])
     | (rw [fireMore_snd_proj])
     | (rw [originFire_snd_proj])
+    | (rw [preFire_snd_proj])
     | (rw [ensureSort_snd_proj])
     | (rw [proofIrrel_snd_proj])
     | (rw [propIrrel_snd_proj])

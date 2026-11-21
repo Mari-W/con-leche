@@ -379,11 +379,11 @@ past `ruleDeclBudget` firings in the declaration, the rule `t` that would fire i
 @[inline] def appView (e f' a f₁ a₁ : Expr) : Expr :=
   if f₁ == f' && a₁ == a then e else .app f₁ a₁
 
-/-- **Enter a rules-last restart** (`rulesLastI`): past `ruleFireBudget` nested restarts, the
+/-- **Enter a rules-last restart** (`rulesLastI`): past `ruleNestBudget` nested restarts, the
 rule `t` that would fire is rejected (`ruleBudgetError`), before a rule cycle through the
 restarts exhausts the native stack. -/
 @[inline] def nestEnterI (t : Name) : CheckCM Unit := do
-  if (← get).ruleNest < ruleFireBudget then modify CState.nestEnter
+  if (← get).ruleNest < ruleNestBudget then modify CState.nestEnter
   else throw (ruleBudgetError t)
 
 /-- Leave a rules-last restart. -/
@@ -1297,6 +1297,89 @@ def originFireI (eager : Bool) (lv : Nat) (depth : Nat) (o : Option Expr) (e : E
   | none => pure none
 termination_by (lv, 28, 5, 0)
 
+/-- Twin of `keyTest`. -/
+def keyTestI (eager : Bool) (lv : Nat) (depth : Nat) (key : Option (Nat × Name))
+    (args : List Expr) : CheckCM (Bool × List Expr) :=
+  match key with
+  | none => pure (true, args)
+  | some (p, kc) =>
+    match args[p]? with
+    | none => pure (false, args)
+    | some a =>
+      let a₁ := keyLit fe.natLit kc a
+      if headIs kc a₁ then pure (true, args.set p a₁)
+      else if isCtorConst fe.find? kc && !ctorForm fe.find? a₁ then do
+        let w ← whnfI eager lv depth a₁
+        let a₂ := keyLit fe.natLit kc w
+        pure (headIs kc a₂, args.set p a₂)
+      else pure (false, args.set p a₁)
+termination_by (lv, 28, 0, 0)
+
+/-- Twin of `keyScan`. -/
+def keyScanI (eager : Bool) (lv : Nat) (depth : Nat) :
+    List (Option (Nat × Name)) → List Expr → CheckCM (List (Option (Nat × Name)) × List Expr)
+  | [], args => pure ([], args)
+  | k :: ks, args => do
+    let (b, args₁) ← keyTestI eager lv depth k args
+    let (cs, args₂) ← keyScanI eager lv depth ks args₁
+    pure (if b then k :: cs else cs, args₂)
+termination_by ks _ => (lv, 28, 1, ks.length)
+
+/-- Twin of `preAttempt`. -/
+def preAttemptI (eager : Bool) (lv : Nat) (depth : Nat) (e' : Expr) (t : Name) :
+    CheckCM (Option Expr) :=
+  match fe.find? t with
+  | some (.thmInfo cv) =>
+    match ruleArgsSyn cv e' with
+    | some (args, us) => rewriteFireI eager lv depth t cv args us e'
+    | none => pure none
+  | _ => pure none
+termination_by (lv, 28, 2, 0)
+
+/-- Twin of `preAt`. -/
+def preAtI (eager : Bool) (lv : Nat) (depth : Nat) (t : Name) :
+    Expr → Expr → CheckCM (Option Expr)
+  | .app f a, .app f' a' => do
+    match ← preAttemptI eager lv depth (.app f' a') t with
+    | some e₂ => pure (some e₂)
+    | none =>
+      match ← preAtI eager lv depth t f f' with
+      | some f₂ => pure (some (.app f₂ a))
+      | none => pure none
+  | _, e' => preAttemptI eager lv depth e' t
+termination_by e _ => (lv, 28, 2, 1 + sizeOf e)
+
+/-- Twin of `preRules`. -/
+def preRulesI (eager : Bool) (lv : Nat) (depth : Nat) (e e' : Expr) :
+    List Name → CheckCM (Option (Name × Expr))
+  | [] => pure none
+  | t :: ts => do
+    match ← preAtI eager lv depth t e e' with
+    | some e₂ => pure (some (t, e₂))
+    | none => preRulesI eager lv depth e e' ts
+termination_by ts => (lv, 28, 3, ts.length)
+
+/-- Twin of `preFire`: a firing counts against the declaration's budget (`tickRuleI`), at every
+site, as the official kernel counts it in `fire_first_rule`. -/
+def preFireI (eager : Bool) (lv : Nat) (depth : Nat) (e : Expr) : CheckCM (Option (Name × Expr)) :=
+  match Expr.getAppFn e with
+  | .const c us =>
+    if unfoldableHeadC fe e then
+      match preRulesFor fe.rulesFor c with
+      | [] => pure none
+      | ts => do
+        let ks := ts.map (ruleKey fe.find? fe.rulesFor c)
+        let (cs, args') ← keyScanI eager lv depth ks.eraseDups (Expr.getAppArgs e)
+        match ← preRulesI eager lv depth e (Expr.mkAppN (.const c us) args')
+            (ts.zip ks |>.filterMap fun (t, k) => if cs.contains k then some t else none) with
+        | some (t, e₂) => do
+          tickRuleI t
+          pure (some (t, e₂))
+        | none => pure none
+    else pure none
+  | _ => pure none
+termination_by (lv, 28, 5, 1)
+
 /-- Bulk β of `whnfCoreStepI`: `t` is the raw (unsubstituted) lambda body
 after the binders consumed so far, their arguments the spine range
 `args[s:i]` (innermost last), `args[i:]` the spine left.  The body is
@@ -1563,6 +1646,9 @@ def whnfLoopI (eager : Bool) (lv : Nat) (depth : Nat) :
     -- `whnfStep`)
     | some e₂ => if e₂.isLit then pure e₂ else whnfLoopI eager lv depth n fires o e₂
     | none =>
+      match ← preFireI eager lv depth e₁ with
+      | some (_, e₂) => whnfLoopI eager lv depth n fires o e₂
+      | none =>
       match ← unfoldDefinitionI fe e₁ with
       | some e₂ => whnfLoopI eager lv depth n fires (noteOriginC fe o e₁) e₂
       | none =>
@@ -1979,12 +2065,53 @@ def tryUnfoldProjAppI (eager : Bool) (lv : Nat) (depth : Nat) (e : Expr) :
 termination_by (lv, 56, 0, 0)
 
 /-- Twin of `deltaQuick`. -/
-def deltaQuickI (eager : Bool) (lv : Nat) (depth : Nat) (a b : Expr) : CheckCM DeltaStep := do
+def deltaQuickI (eager : Bool) (lv : Nat) (depth : Nat) (a b : Expr) (fa fb : Bool) :
+    CheckCM DeltaStep := do
   match ← quickDefEqI eager lv depth a b with
   | some true => pure .eq
   | some false => pure .diff
-  | none => pure (.cont a b)
+  | none => pure (.cont a b fa fb)
 termination_by (lv, 57, 0, 0)
+
+/-- Twin of `lazyUnfold`. -/
+def lazyUnfoldI (eager : Bool) (lv : Nat) (depth : Nat) (a : Expr) :
+    CheckCM (Option (Expr × Bool)) := do
+  match ← preFireI eager lv depth a with
+  | some (_, a₂) => do
+    let a₃ ← whnfCoreI eager lv true depth a₂
+    pure (some (a₃, true))
+  | none =>
+    match ← unfoldDefinitionI fe a with
+    | some a₂ => do
+      let a₃ ← whnfCoreI eager lv true depth a₂
+      pure (some (a₃, false))
+    | none => pure none
+termination_by (lv, 57, 1, 0)
+
+/-- Twin of `lazyBothUnfold`. -/
+def lazyBothUnfoldI (eager : Bool) (lv : Nat) (depth : Nat) (a b : Expr) :
+    CheckCM (Option (Expr × Expr × Bool)) := do
+  match ← unfoldDefinitionI fe a, ← unfoldDefinitionI fe b with
+  | some a₂, some b₂ => do
+    let a₃ ← whnfCoreI eager lv true depth a₂
+    let b₃ ← whnfCoreI eager lv true depth b₂
+    pure (some (a₃, b₃, false))
+  | _, _ => pure none
+termination_by (lv, 57, 1, 0)
+
+/-- Twin of `lazyBoth`. -/
+def lazyBothI (eager : Bool) (lv : Nat) (depth : Nat) (a b : Expr) :
+    CheckCM (Option (Expr × Expr × Bool)) := do
+  match ← preFireI eager lv depth a with
+  | some (_, a₂) =>
+    match ← preFireI eager lv depth b with
+    | some (_, b₂) => do
+      let a₃ ← whnfCoreI eager lv true depth a₂
+      let b₃ ← whnfCoreI eager lv true depth b₂
+      pure (some (a₃, b₃, true))
+    | none => lazyBothUnfoldI eager lv depth a b
+  | none => lazyBothUnfoldI eager lv depth a b
+termination_by (lv, 57, 2, 0)
 
 /-- Twin of `lazyDeltaStep`. -/
 def lazyDeltaStepI (eager : Bool) (lv : Nat) (depth : Nat) (a b : Expr) :
@@ -1993,47 +2120,43 @@ def lazyDeltaStepI (eager : Bool) (lv : Nat) (depth : Nat) (a b : Expr) :
   | false, false => pure .unknown
   | true, false =>
     match ← tryUnfoldProjAppI eager lv depth b with
-    | some b₂ => deltaQuickI eager lv depth a b₂
+    | some b₂ => deltaQuickI eager lv depth a b₂ false false
     | none =>
-      match ← unfoldDefinitionI fe a with
-      | some a₂ => do
-        let a₃ ← whnfCoreI eager lv true depth a₂
-        deltaQuickI eager lv depth a₃ b
+      match ← lazyUnfoldI eager lv depth a with
+      | some (a₃, fa) => deltaQuickI eager lv depth a₃ b fa false
       | none => pure .unknown
   | false, true =>
     match ← tryUnfoldProjAppI eager lv depth a with
-    | some a₂ => deltaQuickI eager lv depth a₂ b
+    | some a₂ => deltaQuickI eager lv depth a₂ b false false
     | none =>
-      match ← unfoldDefinitionI fe b with
-      | some b₂ => do
-        let b₃ ← whnfCoreI eager lv true depth b₂
-        deltaQuickI eager lv depth a b₃
+      match ← lazyUnfoldI eager lv depth b with
+      | some (b₃, fb) => deltaQuickI eager lv depth a b₃ false fb
       | none => pure .unknown
   | true, true => do
     let ha ← pure (headHintC fe a)
     let hb ← pure (headHintC fe b)
     if ReducibilityHint.lt hb ha then
-      match ← unfoldDefinitionI fe a with
-      | some a₂ => do
-        let a₃ ← whnfCoreI eager lv true depth a₂
-        deltaQuickI eager lv depth a₃ b
+      match ← lazyUnfoldI eager lv depth a with
+      | some (a₃, fa) => deltaQuickI eager lv depth a₃ b fa false
       | none => pure .unknown
     else if ReducibilityHint.lt ha hb then
-      match ← unfoldDefinitionI fe b with
-      | some b₂ => do
-        let b₃ ← whnfCoreI eager lv true depth b₂
-        deltaQuickI eager lv depth a b₃
+      match ← lazyUnfoldI eager lv depth b with
+      | some (b₃, fb) => deltaQuickI eager lv depth a b₃ false fb
+      | none => pure .unknown
+    else if !sameHeadName a b then
+      match ← lazyUnfoldI eager lv depth a with
+      | some (a₃, fa) =>
+        match ← lazyUnfoldI eager lv depth b with
+        | some (b₃, fb) => deltaQuickI eager lv depth a₃ b₃ fa fb
+        | none => pure .unknown
       | none => pure .unknown
     else if ← (if ReducibilityHint.sameRegular ha hb &&
         (← pure (sameConstHeadsC a b)) then
         defeqSpineI eager lv depth a b else pure false) then pure .eq
     else
-      match ← unfoldDefinitionI fe a, ← unfoldDefinitionI fe b with
-      | some a₂, some b₂ => do
-        let a₃ ← whnfCoreI eager lv true depth a₂
-        let b₃ ← whnfCoreI eager lv true depth b₂
-        deltaQuickI eager lv depth a₃ b₃
-      | _, _ => pure .unknown
+      match ← lazyBothI eager lv depth a b with
+      | some (a₃, b₃, f) => deltaQuickI eager lv depth a₃ b₃ f f
+      | none => pure .unknown
 termination_by (lv, 58, 0, 0)
 
 /-- Twin of `lazyDeltaReduction`. -/
@@ -2057,8 +2180,9 @@ def lazyDeltaReductionI (eager : Bool) (lv : Nat) (depth : Nat) :
       pure (.verdict v)
     | none =>
     match ← lazyDeltaStepI eager lv depth a b with
-    | .cont a' b' =>
-      lazyDeltaReductionI eager lv depth n (noteOriginC fe oa a') (noteOriginC fe ob b') a' b'
+    | .cont a' b' fa fb =>
+      lazyDeltaReductionI eager lv depth n (noteOriginC fe (dropOrigin fa oa a) a')
+        (noteOriginC fe (dropOrigin fb ob b) b') a' b'
     | .eq => pure (.verdict true)
     | .diff => pure (.verdict false)
     | .unknown => pure (.unknown oa ob a b)
@@ -2070,7 +2194,7 @@ def lazyDeltaProjReductionI (eager : Bool) (lv : Nat) (depth : Nat)
   | 0, _, _ => throw (.internal "fuel exhausted: lazy delta projection loop")
   | n + 1, a, b => do
     match ← lazyDeltaStepI eager lv depth a b with
-    | .cont a' b' => lazyDeltaProjReductionI eager lv depth sn i n a' b'
+    | .cont a' b' _ _ => lazyDeltaProjReductionI eager lv depth sn i n a' b'
     | .eq => pure true
     | .diff | .unknown =>
       match ← reduceProjCoreI eager lv depth sn i a with

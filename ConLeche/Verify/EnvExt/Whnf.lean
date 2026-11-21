@@ -775,6 +775,269 @@ theorem originFire_rel {o : Option Expr} {e : Expr} (ho : OriginP (Res env₁) o
         exact he₃
     | none => exact Rel.ok fun _ _ h => nomatch h
 
+/-! ### The test before unfolding at an extension -/
+
+theorem keyLit_ext {kc : Name} {a : Expr} (ha : Res env₁ a) :
+    keyLit (natLitStored env₂) kc a = keyLit (natLitStored env₁) kc a := by
+  unfold keyLit
+  split
+  · match a with
+    | .lit (.natVal n) => simp only [natLit_of_res hx ha]
+    | .lit (.strVal _) | .bvar _ | .fvar _ _ | .sort _ | .const _ _ | .app _ _
+    | .lam _ _ | .forallE _ _ | .letE _ _ _ | .proj _ _ _ => rfl
+  · rfl
+
+omit K hx in
+theorem res_keyLit {kc : Name} {a : Expr} (ha : Res env₁ a) :
+    Res env₁ (keyLit (natLitStored env₁) kc a) := by
+  rcases keyLit_cases env₁ kc a with h | h <;> rw [h]
+  · exact ha
+  · exact res_litToCtorIfNat ha
+
+omit K in
+theorem ctorForm_ext {a : Expr} (ha : Res env₁ a) :
+    ctorForm env₂.find? a = ctorForm env₁.find? a := by
+  unfold ctorForm
+  split
+  · rfl
+  · cases hfn : a.getAppFn <;> try rfl
+    dsimp only
+    rw [hx.find_of_isSome (res_head ha hfn)]
+
+omit K in
+theorem isCtorConst_ext {kc : Name} (hk : (env₁.find? kc).isSome = true) :
+    isCtorConst env₂.find? kc = isCtorConst env₁.find? kc := by
+  unfold isCtorConst; rw [hx.find_of_isSome hk]
+
+omit K hx in
+theorem res_ruleTele {env : Env} : ∀ {e : Expr}, Res env e → Res env (ruleTele e).2
+  | .forallE _ b, h => by
+    simp only [ruleTele]
+    exact res_ruleTele (res_forall.mp h).2
+  | .bvar _, h | .fvar .., h | .sort _, h | .const .., h | .app .., h | .lam .., h
+  | .letE .., h | .lit _, h | .proj .., h => by simpa [ruleTele] using h
+
+omit K hx in
+/-- A key's constant is the head of a resolved argument of the left side. -/
+theorem ruleKey_res {c t : Name} {p : Nat} {kc : Name}
+    (hf : StoredFacts env₁) (ht : (env₁.find? t).isSome = true)
+    (h : ruleKey env₁.find? env₁.rulesFor c t = some (p, kc)) : (env₁.find? kc).isSome = true := by
+  unfold ruleKey at h
+  cases hft : env₁.find? t with
+  | none => rw [hft] at ht; exact nomatch ht
+  | some ci =>
+    rw [hft] at h
+    cases ci
+    case thmInfo cv =>
+      dsimp only at h
+      have hty : Res env₁ cv.type := hf.type hft
+      cases hl : ruleLhs? cv with
+      | none => rw [hl] at h; exact nomatch h
+      | some l₀ =>
+        rw [hl] at h
+        dsimp only at h
+        have hl₀ : Res env₁ l₀ := by
+          unfold ruleLhs? at hl
+          have hb := res_ruleTele hty
+          split at hl
+          · rename_i heq
+            obtain rfl := Option.some.inj hl
+            rw [heq] at hb
+            exact (res_app.mp (res_app.mp hb).1).2
+          · exact nomatch hl
+        have hmem : (p, kc) ∈ constArgPositions l₀.getAppArgs := by
+          split at h
+          · exact nomatch h
+          · obtain rfl := Option.some.inj h; exact List.mem_singleton_self _
+          · rename_i k ks _
+            split at h
+            · rename_i k' hk'
+              obtain rfl := Option.some.inj h
+              exact List.mem_of_find?_eq_some hk'
+            · obtain rfl := Option.some.inj h; exact List.mem_cons_self
+        unfold constArgPositions at hmem
+        obtain ⟨⟨i, a⟩, hia, hm⟩ := List.mem_filterMap.mp hmem
+        have ha : Res env₁ a := res_getAppArgs hl₀ a (List.of_mem_zip hia).2
+        dsimp only at hm
+        split at hm
+        · rename_i kc' ls hfn
+          simp only [Option.some.injEq, Prod.mk.injEq] at hm
+          obtain ⟨-, rfl⟩ := hm
+          exact res_head ha hfn
+        · exact nomatch hm
+    all_goals exact nomatch h
+
+omit K in
+theorem ruleKey_ext {c t : Name} (ht : (env₁.find? t).isSome = true) :
+    ruleKey env₂.find? env₂.rulesFor c t = ruleKey env₁.find? env₁.rulesFor c t := by
+  unfold ruleKey
+  simp only [hx.rules, hx.find_of_isSome ht]
+
+omit K hx in
+theorem res_set {args : List Expr} (ha : ∀ a ∈ args, Res env₁ a) {p : Nat} {x : Expr}
+    (hx' : Res env₁ x) : ∀ y ∈ args.set p x, Res env₁ y := fun y hy => by
+  rcases List.mem_or_eq_of_mem_set hy with hy | rfl
+  · exact ha y hy
+  · exact hx'
+
+/-- One key test, at an extension, is the prefix's. -/
+theorem keyTest_rel {key : Option (Nat × Name)}
+    (hk : ∀ p kc, key = some (p, kc) → (env₁.find? kc).isSome = true) {args : List Expr}
+    (ha : ∀ a ∈ args, Res env₁ a) :
+    Rel (fun x : Bool × List Expr => ∀ a ∈ x.2, Res env₁ a)
+      (keyTest r₂ env₂ d key args) (keyTest r₁ env₁ d key args) := by
+  unfold keyTest
+  split
+  · exact Rel.ok ha
+  · rename_i p kc
+    split
+    · exact Rel.ok ha
+    · rename_i a hp
+      have hra : Res env₁ a := ha a (List.mem_of_getElem? hp)
+      dsimp only
+      rw [keyLit_ext K d hx hra, ctorForm_ext hx (res_keyLit hra), isCtorConst_ext hx (hk p kc rfl)]
+      refine Rel.ite (fun _ => Rel.ok (res_set ha (res_keyLit hra))) fun _ => ?_
+      refine Rel.ite (fun _ => ?_) fun _ => Rel.ok (res_set ha (res_keyLit hra))
+      refine Rel.bind (K.whnf d (res_keyLit hra)) fun w hw => ?_
+      rw [keyLit_ext K d hx hw]
+      exact Rel.ok (res_set ha (res_keyLit hw))
+
+/-- The key tests in order, at an extension, are the prefix's. -/
+theorem keyScan_rel :
+    ∀ (ks : List (Option (Nat × Name))),
+      (∀ k ∈ ks, ∀ p kc, k = some (p, kc) → (env₁.find? kc).isSome = true) →
+      ∀ {args : List Expr}, (∀ a ∈ args, Res env₁ a) →
+      Rel (fun x : List (Option (Nat × Name)) × List Expr => ∀ a ∈ x.2, Res env₁ a)
+        (keyScan r₂ env₂ d ks args) (keyScan r₁ env₁ d ks args)
+  | [], _, _, ha => Rel.ok ha
+  | k :: ks, hks, args, ha => by
+    unfold keyScan
+    refine Rel.bind (keyTest_rel K d hx (hks k List.mem_cons_self) ha) fun x hx₁ => ?_
+    obtain ⟨b, args₁⟩ := x
+    refine Rel.bind (keyScan_rel ks (fun k' hk' => hks k' (List.mem_cons_of_mem _ hk')) hx₁)
+      fun y hy => ?_
+    obtain ⟨cs, args₂⟩ := y
+    exact Rel.ok hy
+
+/-- A marked rule's firing at the replaced term, at an extension, is the prefix's. -/
+theorem preAttempt_rel {e' : Expr} (he : Res env₁ e') {t : Name}
+    (ht : (env₁.find? t).isSome = true) :
+    Rel (ResO env₁) (preAttempt r₂ env₂ d e' t) (preAttempt r₁ env₁ d e' t) := by
+  unfold preAttempt rewriteFire
+  rw [hx.find_of_isSome ht]
+  cases hft : env₁.find? t with
+  | none => exact Rel.ok resO_none
+  | some ci =>
+    cases ci
+    case thmInfo cv =>
+      try dsimp only
+      cases hm : ruleArgsSyn cv e' with
+      | none => exact Rel.ok resO_none
+      | some au =>
+        obtain ⟨args, us⟩ := au
+        try dsimp only
+        have hT : Res env₁ (cv.type.instantiateLevelParams cv.levelParams us) :=
+          res_inst _ _ (hx.facts.type hft)
+        split
+        · rename_i eqn u A l rhs hres
+          rw [bind_eqSpine?_eq_some] at hres
+          · refine Rel.ite (fun hchk => ?_) fun _ => Rel.ok resO_none
+            obtain ⟨-, -, -, hsub, -⟩ := hchk
+            have hargs : ∀ a ∈ args, Res env₁ a := fun a ha => res_appSubterms e' (hsub a ha) he
+            have hR := res_piResidual hT hargs hres
+            have hr : Res env₁ rhs := (res_app.mp hR).2
+            refine Rel.bind (iotaCertsFull_rel K d _ args hT hargs) fun b _ => ?_
+            refine Rel.iteB b (fun _ => Rel.ok fun x hxe => ?_) fun _ => Rel.ok resO_none
+            obtain rfl := Option.some.inj hxe
+            exact hr
+        · exact Rel.ok resO_none
+    all_goals exact Rel.ok resO_none
+
+/-- A marked rule at the prefix of its arity, at an extension, is the prefix's. -/
+theorem preAt_rel {t : Name} (ht : (env₁.find? t).isSome = true) :
+    ∀ {e e' : Expr}, Res env₁ e → Res env₁ e' →
+      Rel (ResO env₁) (preAt r₂ env₂ d t e e') (preAt r₁ env₁ d t e e') := by
+  intro e
+  induction e with
+  | app f a ihf _ =>
+    intro e' he he'
+    cases e' with
+    | app f' a' =>
+      rw [preAt, preAt]
+      refine Rel.bind (preAttempt_rel K d hx he' ht) fun o ho => ?_
+      cases o with
+      | some e₂ => exact Rel.ok ho
+      | none =>
+        obtain ⟨hf, ha⟩ := res_app.mp he
+        refine Rel.bind (ihf hf (res_app.mp he').1) fun o' ho' => ?_
+        cases o' with
+        | some f₂ =>
+          exact Rel.ok fun x h => (Option.some.inj h) ▸ res_app.mpr ⟨ho' f₂ rfl, ha⟩
+        | none => exact Rel.ok resO_none
+    | _ =>
+      rw [preAt_nonApp _ _ _ _ (by intro _ _ _ _ hh; cases hh.2),
+        preAt_nonApp _ _ _ _ (by intro _ _ _ _ hh; cases hh.2)]
+      exact preAttempt_rel K d hx he' ht
+  | _ =>
+    intro e' he he'
+    rw [preAt_nonApp _ _ _ _ (by intro _ _ _ _ hh; cases hh.1),
+      preAt_nonApp _ _ _ _ (by intro _ _ _ _ hh; cases hh.1)]
+    exact preAttempt_rel K d hx he' ht
+
+theorem preRules_rel {e e' : Expr} (he : Res env₁ e) (he' : Res env₁ e') :
+    ∀ ts : List Name, (∀ t ∈ ts, (env₁.find? t).isSome = true) →
+      Rel (ResOR env₁) (preRules r₂ env₂ d e e' ts) (preRules r₁ env₁ d e e' ts)
+  | [], _ => Rel.ok fun _ _ h => nomatch h
+  | t :: ts, hts => by
+    unfold preRules
+    refine Rel.bind (preAt_rel K d hx (hts t List.mem_cons_self) he he') fun o ho => ?_
+    cases o with
+    | some e₂ =>
+      exact Rel.ok fun t' x h => by
+        obtain ⟨-, rfl⟩ := Prod.mk.inj (Option.some.inj h)
+        exact ho _ rfl
+    | none =>
+      exact preRules_rel he he' ts fun t' ht' => hts t' (List.mem_cons_of_mem _ ht')
+
+/-- **The test before unfolding at an extension is the prefix's**: the same marked rules (the
+rules are the extension's), the same keys, and every run on resolved terms. -/
+theorem preFire_rel {e : Expr} (he : Res env₁ e) :
+    Rel (ResOR env₁) (preFire r₂ env₂ d e) (preFire r₁ env₁ d e) := by
+  unfold preFire
+  split
+  · rename_i c us hfn
+    rw [unfoldableHead_ext hx he]
+    refine Rel.ite (fun _ => ?_) fun _ => Rel.ok fun _ _ h => nomatch h
+    have hpr : preRulesFor env₂.rulesFor c = preRulesFor env₁.rulesFor c := by
+      simp only [preRulesFor, hx.rules]
+    have hfind : ∀ t ∈ preRulesFor env₁.rulesFor c, (env₁.find? t).isSome = true := fun t ht =>
+      find_of_mem_rulesFor (List.mem_filter.mp ht).1
+    have hks : (preRulesFor env₁.rulesFor c).map (ruleKey env₂.find? env₂.rulesFor c) =
+        (preRulesFor env₁.rulesFor c).map (ruleKey env₁.find? env₁.rulesFor c) :=
+      List.map_congr_left fun t ht => ruleKey_ext hx (hfind t ht)
+    rw [hpr]
+    split
+    · exact Rel.ok fun _ _ h => nomatch h
+    · rw [hks]
+      have hkr : ∀ k ∈ ((preRulesFor env₁.rulesFor c).map (ruleKey env₁.find? env₁.rulesFor c)).eraseDups,
+          ∀ p kc, k = some (p, kc) → (env₁.find? kc).isSome = true := by
+        intro k hk p kc hkk
+        obtain ⟨t, ht, rfl⟩ := List.mem_map.mp (List.mem_eraseDups.mp hk)
+        exact ruleKey_res hx.facts (hfind t ht) hkk
+      refine Rel.bind (keyScan_rel K d hx _ hkr (res_getAppArgs he)) fun x hx₁ => ?_
+      obtain ⟨cs, args'⟩ := x
+      have he' : Res env₁ (Expr.mkAppN (.const c us) args') :=
+        res_mkAppN (by rw [← hfn]; exact res_getAppFn he) hx₁
+      refine preRules_rel K d hx he he' _ fun t ht => ?_
+      obtain ⟨⟨t', k⟩, hz, hk⟩ := List.mem_filterMap.mp ht
+      have htt : t' = t := by
+        dsimp only at hk
+        by_cases hck : cs.contains k = true
+        · rw [if_pos hck] at hk; exact Option.some.inj hk
+        · rw [if_neg hck] at hk; exact nomatch hk
+      exact htt ▸ hfind t' (List.of_mem_zip hz).1
+  · exact Rel.ok fun _ _ h => nomatch h
+
 /-- ι at the prefix of the recursor's arity, at an extension, is the prefix's. -/
 theorem iotaAt_rel (mode : CheckMode) : ∀ {e : Expr}, Res env₁ e →
     Rel (ResO env₁) (iotaAt mode r₂ env₂ d e) (iotaAt mode r₁ env₁ d e)
@@ -875,6 +1138,11 @@ theorem whnfLoop_rel : ∀ (n : Nat) {o : Option Expr} {e : Expr}, OriginP (Res 
       · exact Rel.ok (ho _ rfl)
       · exact whnfLoop_rel n hor (ho _ rfl)
     | none =>
+      dsimp only
+      refine Rel.bind (preFire_rel K d hx he₁) fun po hpo => ?_
+      cases po with
+      | some te => exact whnfLoop_rel n hor (hpo te.1 te.2 rfl)
+      | none =>
       dsimp only
       rw [unfoldDefinition_ext hx he₁, noteOrigin_ext hx he₁]
       cases hu : unfoldDefinition env₁ e₁ with

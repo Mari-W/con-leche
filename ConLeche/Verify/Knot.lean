@@ -290,7 +290,7 @@ abbrev tryUnfoldProjAppFueled (mode : CheckMode) (eager : Bool) (env : Env) (fue
     CheckM (Option Expr) := tryUnfoldProjApp (pureFns mode eager env fuel)
 
 abbrev deltaQuickFueled (mode : CheckMode) (eager : Bool) (env : Env) (fuel : Nat) : Nat → Expr →
-    Expr →
+    Expr → Bool → Bool →
     CheckM DeltaStep := deltaQuick mode (pureFns mode eager env fuel)
 
 abbrev lazyDeltaStepFueled (mode : CheckMode) (eager : Bool) (env : Env) (fuel : Nat) : Nat → Expr
@@ -418,6 +418,18 @@ theorem rewriteAt_nonApp {m : Type → Type} [Monad m] [MonadExceptOf CheckError
   | app f a => exact absurd rfl (he f a)
   | _ => rw [rewriteAt]; exact fun _ _ hh => nomatch hh
 
+/-- `preAt` at a pair of terms that are not both applications is the rule's match at the
+second. -/
+theorem preAt_nonApp {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
+    (r : CoreFns m) (env : Env) (d : Nat) (t : Name) {e e' : Expr}
+    (he : ∀ f a f' a', ¬(e = .app f a ∧ e' = .app f' a')) :
+    preAt r env d t e e' = preAttempt r env d e' t := by
+  unfold preAt
+  split
+  · rename_i f a f' a'
+    exact absurd ⟨rfl, rfl⟩ (he f a f' a')
+  · rfl
+
 /-- `iotaAt` at a term that is no application is the ι step there. -/
 theorem iotaAt_nonApp {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
     (r : CoreFns m) (env : Env) (d : Nat) {e : Expr} (he : ∀ f a, e ≠ .app f a) :
@@ -451,5 +463,20 @@ theorem OriginP.note {P : Expr → Prop} {env : Env} {o : Option Expr} {e : Expr
   rcases noteOrigin_cases h with h' | rfl
   · exact ho _ h'
   · exact he
+
+/-- A dropped origin is the old one or none. -/
+theorem dropOrigin_cases (f : Bool) (o : Option Expr) (a : Expr) :
+    dropOrigin f o a = o ∨ dropOrigin f o a = none := by
+  unfold dropOrigin
+  split
+  · exact .inr rfl
+  · exact .inl rfl
+
+/-- Dropping an origin keeps the invariant. -/
+theorem OriginP.drop {P : Expr → Prop} {o : Option Expr} (ho : OriginP P o) (f : Bool) (a : Expr) :
+    OriginP P (dropOrigin f o a) := by
+  rcases dropOrigin_cases f o a with h | h <;> rw [h]
+  · exact ho
+  · exact OriginP.none P
 
 end ConLeche

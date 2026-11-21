@@ -507,10 +507,30 @@ structure RewriteRule where
 def RewriteRule.before (a b : RewriteRule) : Bool :=
   b.prio < a.prio || (a.prio == b.prio && Name.cmp a.thm b.thm != .gt)
 
+/-- **The table name of the rules of `c` that fire before unfolding** (`@[rewrite ↓]`): no
+constant has this name, because Lean gives no declaration a numeric component followed by
+`rewrite↓`.  The active table lists each marked rule of `c` under it as well as under `c`, so
+`Env.rulesFor (preHeadName c)` reads them in firing order through the ordinary rule index. -/
+def preHeadName (c : Name) : Name := .str (.num c 1358036438) "rewrite↓"
+
+/-- **The table name of the marked rules of `c` whose key is argument `i`**, at `k = i + 1`
+(the export's `beforeDeltaKey`). -/
+def preKeyName (c : Name) (k : Nat) : Name := .num (preHeadName c) k
+
+/-- The extra entries of a marked rule: under `preHeadName`, and under `preKeyName` when it has
+a key. -/
+def preEntries (r : RewriteRule) : List (Name × Name) :=
+  match r.pre with
+  | none => []
+  | some 0 => [(preHeadName r.head, r.thm)]
+  | some (k + 1) => [(preHeadName r.head, r.thm), (preKeyName r.head (k + 1), r.thm)]
+
 /-- **The active table of a rule set `S`**: the registered rules whose theorem is in `S`, in
-firing order, as `(head, theorem)` entries.  `S` is trusted as given. -/
+firing order, as `(head, theorem)` entries, followed by the entries of the marked rules among
+them (`preEntries`).  `S` is trusted as given. -/
 def activeTable (reg : List RewriteRule) (S : List Name) : List (Name × Name) :=
-  ((reg.filter fun r => S.contains r.thm).mergeSort RewriteRule.before).map fun r => (r.head, r.thm)
+  let rs := (reg.filter fun r => S.contains r.thm).mergeSort RewriteRule.before
+  rs.map (fun r => (r.head, r.thm)) ++ rs.flatMap preEntries
 
 /-- The rewrite rules of an environment: the active table, `(head, theorem)` entries in firing
 order (`Env.rulesFor`), every registered rule, newest first, and the active tables the

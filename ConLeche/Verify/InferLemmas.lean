@@ -725,6 +725,251 @@ theorem rewriteStep_mem {r : CoreFns CheckM} {env : Env} {d : Nat} {stuck : Bool
     · exact ⟨c, ls, hc, (rewriteRules_inv h).1⟩
   · simp [pure, Except.pure] at h
 
+/-! ### The test before unfolding (`preFire`)
+
+A firing of a marked rule at `e` matches the term `e'` that is `e`'s spine with its key arguments
+replaced (`keyScan`).  Each replaced argument is reached from the original one by `whnf` and the
+`Nat` literal reading of a key (`KeyArg`), and the firing at a prefix applies the reduct to the
+remaining arguments of `e` (`preAt_ind`). -/
+
+/-- **A key argument and what the key tests made of it**: a chain of `whnf` steps and `Nat`
+literal readings (`keyLit`). -/
+inductive KeyArg (r : CoreFns CheckM) (env : Env) (d : Nat) : Expr → Expr → Prop where
+  | refl (a : Expr) : KeyArg r env d a a
+  | lit {a b : Expr} (kc : Name) : KeyArg r env d a b → KeyArg r env d a (keyLit (natLitStored env) kc b)
+  | whnf {a b w : Expr} : KeyArg r env d a b → r.whnf d b = .ok w → KeyArg r env d a w
+
+theorem KeyArg.trans {r : CoreFns CheckM} {env : Env} {d : Nat} {a b c : Expr}
+    (h₁ : KeyArg r env d a b) (h₂ : KeyArg r env d b c) : KeyArg r env d a c := by
+  induction h₂ with
+  | refl => exact h₁
+  | lit kc _ ih => exact .lit kc ih
+  | whnf _ hw ih => exact .whnf ih hw
+
+/-- A property kept by `whnf` and by the literal reading is kept along a key argument's chain. -/
+theorem KeyArg.pres {r : CoreFns CheckM} {env : Env} {d : Nat} (P : Expr → Prop)
+    (hwh : ∀ {a w : Expr}, r.whnf d a = .ok w → P a → P w)
+    (hlit : ∀ (kc : Name) {a : Expr}, P a → P (keyLit (natLitStored env) kc a))
+    {a b : Expr} (h : KeyArg r env d a b) (ha : P a) : P b := by
+  induction h with
+  | refl => exact ha
+  | lit kc _ ih => exact hlit kc ih
+  | whnf _ hw ih => exact hwh hw ih
+
+/-- **Arguments and what the key tests made of them**, position by position. -/
+def KeyArgs (r : CoreFns CheckM) (env : Env) (d : Nat) (args args' : List Expr) : Prop :=
+  args'.length = args.length ∧
+    ∀ (i : Nat) (h : i < args.length) (h' : i < args'.length), KeyArg r env d args[i] args'[i]
+
+theorem KeyArgs.refl {r : CoreFns CheckM} {env : Env} {d : Nat} (args : List Expr) :
+    KeyArgs r env d args args :=
+  ⟨rfl, fun _ _ _ => .refl _⟩
+
+theorem KeyArgs.trans {r : CoreFns CheckM} {env : Env} {d : Nat} {a b c : List Expr}
+    (h₁ : KeyArgs r env d a b) (h₂ : KeyArgs r env d b c) : KeyArgs r env d a c :=
+  ⟨h₂.1.trans h₁.1, fun i hi hi' =>
+    (h₁.2 i hi (by rw [h₁.1]; exact hi)).trans (h₂.2 i (by rw [h₁.1]; exact hi) hi')⟩
+
+/-- Replacing one argument by a key argument of it. -/
+theorem KeyArgs.set {r : CoreFns CheckM} {env : Env} {d : Nat} {args : List Expr} {p : Nat}
+    {a x : Expr} (hp : args[p]? = some a) (hx : KeyArg r env d a x) :
+    KeyArgs r env d args (args.set p x) := by
+  refine ⟨List.length_set, fun i hi hi' => ?_⟩
+  rw [List.getElem_set]
+  split
+  · subst_vars
+    rw [List.getElem?_eq_getElem hi, Option.some.injEq] at hp
+    exact hp ▸ hx
+  · exact .refl _
+
+/-- One key test reaches its arguments by key steps. -/
+theorem keyTest_keyArgs {r : CoreFns CheckM} {env : Env} {d : Nat} {key : Option (Nat × Name)}
+    {args args' : List Expr} {b : Bool} (h : keyTest r env d key args = .ok (b, args')) :
+    KeyArgs r env d args args' := by
+  unfold keyTest at h
+  split at h
+  · simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+    exact h.2 ▸ KeyArgs.refl _
+  · rename_i p kc
+    split at h
+    · simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+      exact h.2 ▸ KeyArgs.refl _
+    · rename_i a ha
+      dsimp only at h
+      split at h
+      · simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+        exact h.2 ▸ KeyArgs.set ha (.lit kc (.refl _))
+      · split at h
+        · obtain ⟨w, hw, h⟩ := bindM_ok h
+          simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+          exact h.2 ▸ KeyArgs.set ha (.lit kc (.whnf (.lit kc (.refl _)) hw))
+        · simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+          exact h.2 ▸ KeyArgs.set ha (.lit kc (.refl _))
+
+/-- The key tests in order reach their arguments by key steps. -/
+theorem keyScan_keyArgs {r : CoreFns CheckM} {env : Env} {d : Nat} :
+    ∀ {ks : List (Option (Nat × Name))} {args args' : List Expr} {cs : List (Option (Nat × Name))},
+      keyScan r env d ks args = .ok (cs, args') → KeyArgs r env d args args'
+  | [], args, args', cs, h => by
+    simp only [keyScan, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+    exact h.2 ▸ KeyArgs.refl _
+  | k :: ks, args, args', cs, h => by
+    unfold keyScan at h
+    obtain ⟨⟨b, args₁⟩, h₁, h⟩ := bindM_ok h
+    obtain ⟨⟨cs', args₂⟩, h₂, h⟩ := bindM_ok h
+    simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+    exact h.2 ▸ (keyTest_keyArgs h₁).trans (keyScan_keyArgs h₂)
+
+/-- Inversion for the marked rules in order: a firing is one of the rules', the first. -/
+theorem preRules_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {e e' e₂ : Expr} {t : Name} :
+    ∀ {ts : List Name}, preRules r env d e e' ts = .ok (some (t, e₂)) →
+      t ∈ ts ∧ preAt r env d t e e' = .ok (some e₂)
+  | [], h => by simp [preRules, pure, Except.pure] at h
+  | t' :: ts, h => by
+    unfold preRules at h
+    simp only [bind, Except.bind] at h
+    split at h
+    · exact nomatch h
+    rename_i o ho
+    cases o with
+    | some x =>
+      simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      exact ⟨List.mem_cons_self, ho⟩
+    | none =>
+      obtain ⟨hm, ha⟩ := preRules_inv h
+      exact ⟨List.mem_cons_of_mem _ hm, ha⟩
+
+/-- **Inversion for the test before unfolding**: the term's head is a constant with the firing
+rule in force (`preRulesFor` keeps only rules of `Env.rulesFor`), and the rule fired at the prefix
+of its arity of the spine with its key arguments replaced. -/
+theorem preFire_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {e e₂ : Expr} {t : Name}
+    (h : preFire r env d e = .ok (some (t, e₂))) :
+    ∃ c us args', e.getAppFn = .const c us ∧ t ∈ env.rulesFor c ∧
+      KeyArgs r env d e.getAppArgs args' ∧
+      preAt r env d t e (Expr.mkAppN (.const c us) args') = .ok (some e₂) := by
+  unfold preFire at h
+  split at h
+  · rename_i c us hc
+    split at h
+    · split at h
+      · simp [pure, Except.pure] at h
+      · rename_i ts hts
+        obtain ⟨⟨cs, args'⟩, hks, h⟩ := bindM_ok h
+        obtain ⟨hmem, hat⟩ := preRules_inv h
+        refine ⟨c, us, args', hc, ?_, keyScan_keyArgs hks, hat⟩
+        obtain ⟨⟨t', k⟩, hz, hk⟩ := List.mem_filterMap.mp hmem
+        have htt : t' = t := by
+          dsimp only at hk
+          by_cases hck : cs.contains k = true
+          · rw [if_pos hck] at hk; exact Option.some.inj hk
+          · rw [if_neg hck] at hk; exact nomatch hk
+        subst htt
+        have ht : t' ∈ preRulesFor env.rulesFor c := (List.of_mem_zip hz).1
+        unfold preRulesFor at ht
+        exact List.contains_iff_mem.mp (List.mem_filter.mp ht).2
+    · simp [pure, Except.pure] at h
+  · simp [pure, Except.pure] at h
+
+/-- **A property of a firing before unfolding, carried to the firing at a prefix**: a relation
+among the term, the term with its key arguments replaced and the reduct, which every rule's firing
+at the replaced term establishes, and which applying the terms to an argument keeps (the reduct
+takes the original argument). -/
+theorem preAt_ind {r : CoreFns CheckM} {env : Env} {d : Nat} {t : Name}
+    (P : Expr → Expr → Expr → Prop)
+    (hat : ∀ {x x' y : Expr}, preAttempt r env d x' t = .ok (some y) → P x x' y)
+    (happ : ∀ {f a f' a' f₂ : Expr}, P f f' f₂ → P (.app f a) (.app f' a') (.app f₂ a)) :
+    ∀ (e e' : Expr) {e₂ : Expr}, preAt r env d t e e' = .ok (some e₂) → P e e' e₂ := by
+  intro e
+  induction e with
+  | app f a ihf _ =>
+    intro e' e₂ h
+    cases e' with
+    | app f' a' =>
+      rw [preAt] at h
+      simp only [bind, Except.bind] at h
+      split at h
+      · exact nomatch h
+      rename_i o ho
+      cases o with
+      | some x =>
+        simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq] at h
+        exact h ▸ hat ho
+      | none =>
+        dsimp only at h
+        split at h
+        · exact nomatch h
+        rename_i o' ho'
+        cases o' with
+        | some f₂ =>
+          simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq] at h
+          subst h
+          exact happ (ihf f' ho')
+        | none => simp [pure, Except.pure] at h
+    | _ =>
+      rw [preAt_nonApp _ _ _ _ (by intro _ _ _ _ hh; cases hh.2)] at h
+      exact hat h
+  | _ =>
+    intro e' e₂ h
+    rw [preAt_nonApp _ _ _ _ (by intro _ _ _ _ hh; cases hh.1)] at h
+    exact hat h
+
+/-- **Inversion for a rule's firing checks** (`rewriteFire`): read back at the view `e₁`. -/
+theorem rewriteFire_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {cv : ConstantVal}
+    {args : List Expr} {us : List Level} {e₁ e₂ : Expr}
+    (h : rewriteFire r env d cv args us e₁ = .ok (some e₂)) :
+    ∃ (u : Level) (A : Expr) (c : Name) (ls : List Level) (l : Expr),
+      piResidual (cv.type.instantiateLevelParams cv.levelParams us) args
+        = some (.app (.app (.app (.const eqName [u]) A) l) e₂) ∧
+      e₁.getAppFn = .const c ls ∧ us.length = cv.levelParams.length ∧
+      (∀ x ∈ args, x ∈ appSubterms e₁) ∧
+      iotaCertsFull r env d (cv.type.instantiateLevelParams cv.levelParams us) args = .ok true ∧
+      e₁.levelFormEq l = true := by
+  unfold rewriteFire at h
+  split at h
+  · rename_i eqn u A l rhs hres
+    rw [bind_eqSpine?_eq_some] at hres
+    split at h
+    · rename_i hchk
+      obtain ⟨rfl, hlen, hle, hsub, hcst⟩ := hchk
+      obtain ⟨c, ls, hhead⟩ : ∃ c ls, e₁.getAppFn = .const c ls := by
+        revert hcst
+        cases e₁.getAppFn <;> simp [Expr.isConstB]
+      obtain ⟨b, hcert, h⟩ := bindM_ok h
+      split at h
+      · rename_i hb
+        obtain rfl : rhs = e₂ := by simpa [pure, Except.pure] using h
+        exact ⟨u, A, c, ls, l, hres, hhead, hlen, hsub, by rw [hcert, hb], hle⟩
+      · simp [pure, Except.pure] at h
+    · simp [pure, Except.pure] at h
+  · simp [pure, Except.pure] at h
+
+/-- **Inversion for a marked rule's firing at the replaced term**. -/
+theorem preAttempt_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {e' e₂ : Expr} {t : Name}
+    (h : preAttempt r env d e' t = .ok (some e₂)) :
+    ∃ (cv : ConstantVal) (args : List Expr) (us : List Level),
+      env.find? t = some (.thmInfo cv) ∧ ruleArgsSyn cv e' = some (args, us) ∧
+      rewriteFire r env d cv args us e' = .ok (some e₂) := by
+  unfold preAttempt at h
+  split at h
+  · rename_i cv hf
+    split at h
+    · rename_i args us hm
+      exact ⟨cv, args, us, hf, hm, h⟩
+    · simp [pure, Except.pure] at h
+  · simp [pure, Except.pure] at h
+
+/-- `keyLit` is the identity or the `Nat` literal's constructor form (`litToCtorIfNat`). -/
+theorem keyLit_cases (env : Env) (kc : Name) (a : Expr) :
+    keyLit (natLitStored env) kc a = a ∨ keyLit (natLitStored env) kc a = litToCtorIfNat env a := by
+  unfold keyLit
+  split
+  · right
+    cases a <;> try rfl
+    rename_i l
+    cases l <;> rfl
+  · left; rfl
+
 /-- Inversion for ι-then-rules: the ι step fired, or it did not and a rule did. -/
 theorem iotaThenRule_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {e e'' : Expr}
     (h : iotaThenRule mode r env d e = .ok (some e'')) :
@@ -804,7 +1049,10 @@ theorem whnfStep_inv {env : Env} {fuel d : Nat} {k : Option Expr → Expr → Ch
         unfoldDefinition env e₁ = none ∧
         ((originFire (pureFns mode eager env fuel) env d o e₁ = .ok none ∧ e' = e₁) ∨
          ∃ t e₂, originFire (pureFns mode eager env fuel) env d o e₁ = .ok (some (t, e₂)) ∧
-           k none e₂ = .ok e'))) := by
+           k none e₂ = .ok e')) ∨
+       (reduceNatFueled mode eager env fuel d e₁ = .ok none ∧
+        ∃ t e₂, preFire (pureFns mode eager env fuel) env d e₁ = .ok (some (t, e₂)) ∧
+          k o e₂ = .ok e')) := by
   simp only [whnfStep, whnfFix, Bind.bind, Except.bind] at h
   simp only [whnfCore_def] at h
   cases hwc : whnfCore mode eager env fuel d e with
@@ -830,6 +1078,17 @@ theorem whnfStep_inv {env : Env} {fuel d : Nat} {k : Option Expr → Expr → Ch
       exact Or.inr h
   | none =>
   dsimp only at h
+  cases hpf : preFire (pureFns mode eager env fuel) env d e₁ with
+  | error err => rw [hpf] at h; exact nomatch h
+  | ok po =>
+  rw [hpf] at h
+  dsimp only at h
+  cases po with
+  | some te =>
+    obtain ⟨t, e₂⟩ := te
+    exact ⟨e₁, rfl, Or.inr (Or.inr (Or.inr ⟨hrn, t, e₂, hpf, h⟩))⟩
+  | none =>
+  dsimp only at h
   cases hu : unfoldDefinition env e₁ with
   | some e₂ =>
     rw [hu] at h
@@ -845,10 +1104,10 @@ theorem whnfStep_inv {env : Env} {fuel d : Nat} {k : Option Expr → Expr → Ch
     cases ro with
     | none =>
       simp only [pure, Except.pure, Except.ok.injEq] at h
-      exact ⟨e₁, rfl, Or.inr (Or.inr ⟨hrn, hu, Or.inl ⟨hof, h.symm⟩⟩)⟩
+      exact ⟨e₁, rfl, Or.inr (Or.inr (Or.inl ⟨hrn, hu, Or.inl ⟨hof, h.symm⟩⟩))⟩
     | some te =>
       obtain ⟨t, e₂⟩ := te
-      exact ⟨e₁, rfl, Or.inr (Or.inr ⟨hrn, hu, Or.inr ⟨t, e₂, hof, h⟩⟩)⟩
+      exact ⟨e₁, rfl, Or.inr (Or.inr (Or.inl ⟨hrn, hu, Or.inr ⟨t, e₂, hof, h⟩⟩))⟩
 
 /-- Inversion for the rules at an origin: the origin is set, the term is stuck, and the rewrite
 step fired at the origin (with `stuck`). -/
@@ -1254,6 +1513,26 @@ theorem AppClosed.mkAppN {P : Expr → Prop} (hP : AppClosed P) :
     intro f hf hxs
     exact ih ((hP f x).mpr ⟨hf, hxs x List.mem_cons_self⟩)
       (fun y hy => hxs y (List.mem_cons_of_mem _ hy))
+
+/-- **The test before unfolding keeps an application-closed property** that `whnf` and the
+literal reading keep, and that every marked rule's firing at the replaced term keeps. -/
+theorem preFire_pres {r : CoreFns CheckM} {env : Env} {d : Nat} {P : Expr → Prop}
+    (hP : AppClosed P)
+    (hwh : ∀ {a w : Expr}, r.whnf d a = .ok w → P a → P w)
+    (hlit : ∀ (kc : Name) {a : Expr}, P a → P (keyLit (natLitStored env) kc a))
+    (hat : ∀ {x y : Expr} {t : Name}, preAttempt r env d x t = .ok (some y) → P x → P y)
+    {e e₂ : Expr} {t : Name} (h : preFire r env d e = .ok (some (t, e₂))) (he : P e) : P e₂ := by
+  obtain ⟨c, us, args', hc, -, hka, hat'⟩ := preFire_inv h
+  have hargs' : ∀ x ∈ args', P x := by
+    intro x hx
+    obtain ⟨i, hi', rfl⟩ := List.getElem_of_mem hx
+    have hi : i < e.getAppArgs.length := by rw [← hka.1]; exact hi'
+    exact (hka.2 i hi hi').pres P hwh hlit (hP.getAppArgs he _ (List.getElem_mem hi))
+  have he' : P (Expr.mkAppN (.const c us) args') := hP.mkAppN (hc ▸ hP.getAppFn he) hargs'
+  exact preAt_ind (fun x x' y => P x → P x' → P y) (fun ha _ hx' => hat ha hx')
+    (fun ih hfa hfa' => (hP _ _).mpr ⟨ih ((hP _ _).mp hfa).1 ((hP _ _).mp hfa').1,
+      ((hP _ _).mp hfa).2⟩)
+    e _ hat' he he'
 
 /-- **The β arm's term keeps an application-closed property**: the λ body at the spine's first
 argument, applied to the rest. -/
@@ -3506,6 +3785,31 @@ theorem fireMore_WScoped {env : Env} (henv : EnvWF env) {r : CoreFns CheckM} {d 
 
 theorem appClosed_WScoped (d : Nat) : AppClosed (WScoped d) := fun _ _ => by simp only [WScoped]
 
+/-- A marked rule's firing at the replaced term keeps well-scopedness. -/
+theorem preAttempt_WScoped {env : Env} (henv : EnvWF env) {r : CoreFns CheckM} {d : Nat}
+    {e' e₂ : Expr} {t : Name} (h : preAttempt r env d e' t = .ok (some e₂))
+    (hw : WScoped d e') : WScoped d e₂ := by
+  obtain ⟨cv, args, us, hf, -, hfire⟩ := preAttempt_inv h
+  obtain ⟨u, A, c, ls, l, hres, -, -, hsub, -, -⟩ := rewriteFire_inv hfire
+  have hT : WScoped d (cv.type.instantiateLevelParams cv.levelParams us) :=
+    WScoped.of_not_hasFvar (by
+      rw [hasFvar_instantiateLevelParams]; exact (henv.consts _ (Env.find?_mem hf)).1)
+  have hR := piResidual_WScoped hres hT (fun x hx => appSubterms_WScoped e' (hsub x hx) hw)
+  simp only [WScoped] at hR
+  exact hR.2
+
+/-- The test before unfolding keeps well-scopedness. -/
+theorem preFire_WScoped {env : Env} (henv : EnvWF env) {r : CoreFns CheckM} {d : Nat}
+    (hwh : ∀ {a w : Expr}, r.whnf d a = .ok w → WScoped d a → WScoped d w)
+    {e e₂ : Expr} {t : Name} (h : preFire r env d e = .ok (some (t, e₂)))
+    (hw : WScoped d e) : WScoped d e₂ :=
+  preFire_pres (appClosed_WScoped d) hwh
+    (fun kc a ha => by
+      rcases keyLit_cases env kc a with h' | h' <;> rw [h']
+      · exact ha
+      · exact litToCtorIfNat_WScoped ha)
+    (fun ha hx => preAttempt_WScoped henv ha hx) h hw
+
 set_option maxRecDepth 2048 in
 set_option maxHeartbeats 1600000 in
 /-- Head normalization and the reduction loop preserve
@@ -3629,7 +3933,7 @@ theorem whnfPres_WScoped {env : Env} (henv : EnvWF env) :
           obtain ⟨e₁, hwc, hcase⟩ := whnfStep_inv h
           have hwe₁ : WScoped d e₁ := ihCore hwc hw
           rcases hcase with ⟨e₂, hrn, ⟨-, rfl⟩ | hcont⟩ | ⟨-, e₂, hu, hcont⟩ |
-            ⟨-, -, ⟨-, rfl⟩ | ⟨t, e₂, hof, hcont⟩⟩
+            ⟨-, -, ⟨-, rfl⟩ | ⟨t, e₂, hof, hcont⟩⟩ | ⟨-, t, e₂, hpf, hcont⟩
           · rcases reduceNat_inv hrn with ⟨k, rfl⟩ | ⟨bn, rfl⟩ <;> simp [WScoped]
           · rcases reduceNat_inv hrn with ⟨k, rfl⟩ | ⟨bn, rfl⟩ <;>
               exact ihN hcont ho (by simp [WScoped])
@@ -3638,6 +3942,7 @@ theorem whnfPres_WScoped {env : Env} (henv : EnvWF env) :
           · obtain ⟨o', e₃, rfl, -, hrw, hfm⟩ := originFire_inv hof
             exact ihN hcont (OriginP.none _) (fireMore_WScoped henv ihLoop hfm
               (rewriteStep_WScoped henv ihLoop hrw (ho _ rfl)))
+          · exact ihN hcont ho (preFire_WScoped henv ihLoop hpf hwe₁)
       intro d e e' h hw
       exact hloop whnfLoopFuel h (OriginP.none _) hw
 
@@ -3699,8 +4004,8 @@ section LazyPres
 variable {env : Env} {fuel d : Nat}
 
 /-- `deltaQuick` hands on its own pair. -/
-theorem deltaQuick_cont {x y a' b' : Expr}
-    (h : deltaQuickFueled mode eager env fuel d x y = .ok (.cont a' b')) :
+theorem deltaQuick_cont {x y a' b' : Expr} {fa fb fa' fb' : Bool}
+    (h : deltaQuickFueled mode eager env fuel d x y fa fb = .ok (.cont a' b' fa' fb')) :
     a' = x ∧ b' = y := by
   simp only [deltaQuickFueled, deltaQuick, Bind.bind, Except.bind, quickDefEq_fold] at h
   cases hq : quickDefEqFueled mode eager env fuel d x y with
@@ -3711,25 +4016,101 @@ theorem deltaQuick_cont {x y a' b' : Expr}
   match o, h with
   | none, h =>
     simp only [pure, Except.pure, Except.ok.injEq, DeltaStep.cont.injEq] at h
-    exact ⟨h.1.symm, h.2.symm⟩
+    exact ⟨h.1.symm, h.2.1.symm⟩
   | some true, h => simp [pure, Except.pure] at h
   | some false, h => simp [pure, Except.pure] at h
 
-/-- **The lazy-delta step's pair** is reached by unfolding and
-`whnfCore`. -/
+/-- One side's lazy step keeps a property that unfolding, `whnfCore` and the test before unfolding
+keep. -/
+theorem lazyUnfold_pres (P : Expr → Prop)
+    (hu : ∀ {x y : Expr}, unfoldDefinition env x = some y → P x → P y)
+    (hC : ∀ {c : Bool} {x y : Expr}, whnfCore mode eager env fuel d x c = .ok y → P x → P y)
+    (hpf : ∀ {x y : Expr} {t : Name}, preFire (pureFns mode eager env fuel) env d x = .ok (some (t, y)) →
+      P x → P y)
+    {x y : Expr} {f : Bool}
+    (h : lazyUnfold (pureFns mode eager env fuel) env d x = .ok (some (y, f))) (hx : P x) : P y := by
+  unfold lazyUnfold at h
+  obtain ⟨o, ho, h⟩ := bindM_ok h
+  cases o with
+  | some te =>
+    obtain ⟨t, x₂⟩ := te
+    obtain ⟨x₃, hx₃, h⟩ := bindM_ok h
+    simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, -⟩ := h
+    exact hC (c := true) (by rw [whnfCore_def] at hx₃; exact hx₃) (hpf ho hx)
+  | none =>
+    dsimp only at h
+    split at h
+    · rename_i x₂ hx₂
+      obtain ⟨x₃, hx₃, h⟩ := bindM_ok h
+      simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, -⟩ := h
+      exact hC (c := true) (by rw [whnfCore_def] at hx₃; exact hx₃) (hu hx₂ hx)
+    · simp [pure, Except.pure] at h
+
+/-- Both sides' unfolding keeps a property that unfolding and `whnfCore` keep. -/
+theorem lazyBothUnfold_pres (P : Expr → Prop)
+    (hu : ∀ {x y : Expr}, unfoldDefinition env x = some y → P x → P y)
+    (hC : ∀ {c : Bool} {x y : Expr}, whnfCore mode eager env fuel d x c = .ok y → P x → P y)
+    {a b a' b' : Expr} {f : Bool}
+    (h : lazyBothUnfold (pureFns mode eager env fuel) env d a b = .ok (some (a', b', f)))
+    (ha : P a) (hb : P b) : P a' ∧ P b' := by
+  unfold lazyBothUnfold at h
+  split at h
+  · rename_i a₂ b₂ ha₂ hb₂
+    obtain ⟨a₃, ha₃, h⟩ := bindM_ok h
+    obtain ⟨b₃, hb₃, h⟩ := bindM_ok h
+    simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, rfl, -⟩ := h
+    exact ⟨hC (c := true) (by rw [whnfCore_def] at ha₃; exact ha₃) (hu ha₂ ha),
+      hC (c := true) (by rw [whnfCore_def] at hb₃; exact hb₃) (hu hb₂ hb)⟩
+  · simp [pure, Except.pure] at h
+
+/-- The same head on both sides keeps a property that unfolding, `whnfCore` and the test before
+unfolding keep. -/
+theorem lazyBoth_pres (P : Expr → Prop)
+    (hu : ∀ {x y : Expr}, unfoldDefinition env x = some y → P x → P y)
+    (hC : ∀ {c : Bool} {x y : Expr}, whnfCore mode eager env fuel d x c = .ok y → P x → P y)
+    (hpf : ∀ {x y : Expr} {t : Name}, preFire (pureFns mode eager env fuel) env d x = .ok (some (t, y)) →
+      P x → P y)
+    {a b a' b' : Expr} {f : Bool}
+    (h : lazyBoth (pureFns mode eager env fuel) env d a b = .ok (some (a', b', f)))
+    (ha : P a) (hb : P b) : P a' ∧ P b' := by
+  unfold lazyBoth at h
+  obtain ⟨o, ho, h⟩ := bindM_ok h
+  cases o with
+  | some te =>
+    obtain ⟨t, a₂⟩ := te
+    dsimp only at h
+    obtain ⟨o', ho', h⟩ := bindM_ok h
+    cases o' with
+    | some te' =>
+      obtain ⟨t', b₂⟩ := te'
+      dsimp only at h
+      obtain ⟨a₃, ha₃, h⟩ := bindM_ok h
+      obtain ⟨b₃, hb₃, h⟩ := bindM_ok h
+      simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, rfl, -⟩ := h
+      exact ⟨hC (c := true) (by rw [whnfCore_def] at ha₃; exact ha₃) (hpf ho ha),
+        hC (c := true) (by rw [whnfCore_def] at hb₃; exact hb₃) (hpf ho' hb)⟩
+    | none => exact lazyBothUnfold_pres P hu hC h ha hb
+  | none => exact lazyBothUnfold_pres P hu hC h ha hb
+
+/-- **The lazy-delta step's pair** is reached by unfolding, `whnfCore` and the test before
+unfolding. -/
 theorem lazyDeltaStep_pres (P : Expr → Prop)
     (hu : ∀ {x y : Expr}, unfoldDefinition env x = some y → P x → P y)
     (hC : ∀ {c : Bool} {x y : Expr}, whnfCore mode eager env fuel d x c = .ok y → P x → P y)
-    {a b a' b' : Expr}
-    (h : lazyDeltaStepFueled mode eager env fuel d a b = .ok (.cont a' b'))
+    (hpf : ∀ {x y : Expr} {t : Name}, preFire (pureFns mode eager env fuel) env d x = .ok (some (t, y)) →
+      P x → P y)
+    {a b a' b' : Expr} {fa fb : Bool}
+    (h : lazyDeltaStepFueled mode eager env fuel d a b = .ok (.cont a' b' fa fb))
     (ha : P a) (hb : P b) : P a' ∧ P b' := by
-  simp only [lazyDeltaStepFueled, lazyDeltaStep, Bind.bind, Except.bind,
-    whnfCore_def, tryUnfoldProjApp_fold, deltaQuick_fold, defeqSpine_fold] at h
-  have hT : ∀ {x x' : Expr}, tryUnfoldProjAppFueled mode eager env fuel d x = .ok (some x') →
+  unfold lazyDeltaStepFueled lazyDeltaStep at h
+  have hT : ∀ {x x' : Expr}, tryUnfoldProjApp (pureFns mode eager env fuel) d x = .ok (some x') →
       P x → P x' := by
     intro x x' ht hx
-    simp only [tryUnfoldProjAppFueled, tryUnfoldProjApp, Bind.bind, Except.bind,
-      whnfCore_def] at ht
+    simp only [tryUnfoldProjApp, Bind.bind, Except.bind, whnfCore_def] at ht
     split at ht
     · cases hw : whnfCore mode eager env fuel d x with
       | error err => rw [hw] at ht; exact nomatch ht
@@ -3742,97 +4123,67 @@ theorem lazyDeltaStep_pres (P : Expr → Prop)
         subst ht
         exact hC hw hx
     · simp [pure, Except.pure] at ht
-  have hQ : ∀ {x y : Expr}, deltaQuickFueled mode eager env fuel d x y = .ok (.cont a' b') →
+  have hQ : ∀ {x y : Expr} {fx fy : Bool},
+      deltaQuick mode (pureFns mode eager env fuel) d x y fx fy = .ok (.cont a' b' fa fb) →
       P x → P y → P a' ∧ P b' := by
-    intro x y hq hx hy
+    intro x y fx fy hq hx hy
     obtain ⟨rfl, rfl⟩ := deltaQuick_cont hq
     exact ⟨hx, hy⟩
+  have hU := fun {x y : Expr} {f : Bool} (hh : lazyUnfold (pureFns mode eager env fuel) env d x =
+    .ok (some (y, f))) (hx : P x) => lazyUnfold_pres P hu hC hpf hh hx
   cases hda : unfoldableHead env a <;> cases hdb : unfoldableHead env b <;>
-    rw [hda, hdb] at h <;> dsimp only at h
+    simp only [hda, hdb] at h
   · simp [pure, Except.pure] at h
-  · cases ht : tryUnfoldProjAppFueled mode eager env fuel d a with
-    | error err => rw [ht] at h; exact nomatch h
-    | ok o =>
-    rw [ht] at h
-    dsimp only at h
-    cases o with
-    | some a₂ => exact hQ h (hT ht ha) hb
-    | none =>
-      dsimp only at h
-      cases hu' : unfoldDefinition env b with
-      | none => rw [hu'] at h; simp [pure, Except.pure] at h
-      | some b₂ =>
-        rw [hu'] at h; dsimp only at h
-        cases hw : whnfCore mode eager env fuel d b₂ true with
-        | error err => rw [hw] at h; exact nomatch h
-        | ok b₃ => rw [hw] at h; exact hQ h ha (hC hw (hu hu' hb))
-  · cases ht : tryUnfoldProjAppFueled mode eager env fuel d b with
-    | error err => rw [ht] at h; exact nomatch h
-    | ok o =>
-    rw [ht] at h
-    dsimp only at h
-    cases o with
-    | some b₂ => exact hQ h ha (hT ht hb)
-    | none =>
-      dsimp only at h
-      cases hu' : unfoldDefinition env a with
-      | none => rw [hu'] at h; simp [pure, Except.pure] at h
-      | some a₂ =>
-        rw [hu'] at h; dsimp only at h
-        cases hw : whnfCore mode eager env fuel d a₂ true with
-        | error err => rw [hw] at h; exact nomatch h
-        | ok a₃ => rw [hw] at h; exact hQ h (hC hw (hu hu' ha)) hb
+  · obtain ⟨o, ht, h⟩ := bindM_ok h
+    rcases o with _ | a₂
+    · obtain ⟨o', ho', h⟩ := bindM_ok h
+      rcases o' with _ | ⟨b₃, f⟩
+      · simp [pure, Except.pure] at h
+      · exact hQ h ha (hU ho' hb)
+    · exact hQ h (hT ht ha) hb
+  · obtain ⟨o, ht, h⟩ := bindM_ok h
+    rcases o with _ | b₂
+    · obtain ⟨o', ho', h⟩ := bindM_ok h
+      rcases o' with _ | ⟨a₃, f⟩
+      · simp [pure, Except.pure] at h
+      · exact hQ h (hU ho' ha) hb
+    · exact hQ h ha (hT ht hb)
   · split at h
-    · cases hu' : unfoldDefinition env a with
-      | none => rw [hu'] at h; simp [pure, Except.pure] at h
-      | some a₂ =>
-        rw [hu'] at h; dsimp only at h
-        cases hw : whnfCore mode eager env fuel d a₂ true with
-        | error err => rw [hw] at h; exact nomatch h
-        | ok a₃ => rw [hw] at h; exact hQ h (hC hw (hu hu' ha)) hb
+    · obtain ⟨o', ho', h⟩ := bindM_ok h
+      rcases o' with _ | ⟨a₃, f⟩
+      · simp [pure, Except.pure] at h
+      · exact hQ h (hU ho' ha) hb
     split at h
-    · cases hu' : unfoldDefinition env b with
-      | none => rw [hu'] at h; simp [pure, Except.pure] at h
-      | some b₂ =>
-        rw [hu'] at h; dsimp only at h
-        cases hw : whnfCore mode eager env fuel d b₂ true with
-        | error err => rw [hw] at h; exact nomatch h
-        | ok b₃ => rw [hw] at h; exact hQ h ha (hC hw (hu hu' hb))
-    cases hsp : (if ReducibilityHint.sameRegular (headHint env a) (headHint env b) &&
-        sameConstHeads a b then defeqSpineFueled mode eager env fuel d a b
-        else pure false) with
-    | error err => rw [hsp] at h; exact nomatch h
-    | ok sp =>
-    rw [hsp] at h
-    dsimp only at h
+    · obtain ⟨o', ho', h⟩ := bindM_ok h
+      rcases o' with _ | ⟨b₃, f⟩
+      · simp [pure, Except.pure] at h
+      · exact hQ h ha (hU ho' hb)
+    split at h
+    · obtain ⟨o', ho', h⟩ := bindM_ok h
+      rcases o' with _ | ⟨a₃, f⟩
+      · simp [pure, Except.pure] at h
+      · obtain ⟨o'', ho'', h⟩ := bindM_ok h
+        rcases o'' with _ | ⟨b₃, f'⟩
+        · simp [pure, Except.pure] at h
+        · exact hQ h (hU ho' ha) (hU ho'' hb)
+    obtain ⟨sp, -, h⟩ := bindM_ok h
     cases sp with
     | true => simp [pure, Except.pure] at h
     | false =>
     simp only [Bool.false_eq_true, ↓reduceIte] at h
-    cases hua : unfoldDefinition env a with
-    | none => rw [hua] at h; simp [pure, Except.pure] at h
-    | some a₂ =>
-    cases hub : unfoldDefinition env b with
-    | none => rw [hua, hub] at h; simp [pure, Except.pure] at h
-    | some b₂ =>
-    rw [hua, hub] at h
-    dsimp only at h
-    cases hwa : whnfCore mode eager env fuel d a₂ true with
-    | error err => rw [hwa] at h; exact nomatch h
-    | ok a₃ =>
-    rw [hwa] at h
-    dsimp only at h
-    cases hwb : whnfCore mode eager env fuel d b₂ true with
-    | error err => rw [hwb] at h; exact nomatch h
-    | ok b₃ =>
-    rw [hwb] at h
-    exact hQ h (hC hwa (hu hua ha)) (hC hwb (hu hub hb))
+    obtain ⟨o, ho, h⟩ := bindM_ok h
+    rcases o with _ | ⟨a₃, b₃, f⟩
+    · simp [pure, Except.pure] at h
+    · obtain ⟨ha₃, hb₃⟩ := lazyBoth_pres P hu hC hpf ho ha hb
+      exact hQ h ha₃ hb₃
 
 /-- **The lazy-delta loop's stuck pair** is reached by unfolding and
 `whnfCore`. -/
 theorem lazyDeltaReduction_pres (P : Expr → Prop)
     (hu : ∀ {x y : Expr}, unfoldDefinition env x = some y → P x → P y)
-    (hC : ∀ {c : Bool} {x y : Expr}, whnfCore mode eager env fuel d x c = .ok y → P x → P y) :
+    (hC : ∀ {c : Bool} {x y : Expr}, whnfCore mode eager env fuel d x c = .ok y → P x → P y)
+    (hpf : ∀ {x y : Expr} {t : Name}, preFire (pureFns mode eager env fuel) env d x = .ok (some (t, y)) →
+      P x → P y) :
     ∀ (n : Nat) {oa ob oa₁ ob₁ : Option Expr} {a b a₁ b₁ : Expr},
       lazyDeltaReductionFueled mode eager env fuel d n oa ob a b =
         .ok (.unknown oa₁ ob₁ a₁ b₁) →
@@ -3887,9 +4238,10 @@ theorem lazyDeltaReduction_pres (P : Expr → Prop)
     rw [hs] at h
     dsimp only at h
     cases st with
-    | cont a' b' =>
-      obtain ⟨ha', hb'⟩ := lazyDeltaStep_pres P hu hC hs ha hb
-      exact lazyDeltaReduction_pres P hu hC n h (hoa.note ha') (hob.note hb') ha' hb'
+    | cont a' b' fa fb =>
+      obtain ⟨ha', hb'⟩ := lazyDeltaStep_pres P hu hC hpf hs ha hb
+      exact lazyDeltaReduction_pres P hu hC hpf n h ((hoa.drop fa a).note ha')
+        ((hob.drop fb b).note hb') ha' hb'
     | eq => simp [pure, Except.pure] at h
     | diff => simp [pure, Except.pure] at h
     | unknown =>

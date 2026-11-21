@@ -897,6 +897,142 @@ instance (cv : ConstantVal) (us : List Level) (args : List Expr) (e : Expr) (eqn
     (l rhs : Expr) : Decidable (RuleGate cv us args e eqn l rhs) :=
   inferInstanceAs (Decidable (_ ∧ _))
 
+/-! ### Rules that fire before unfolding (`@[rewrite ↓]`)
+
+The pure half of the test before unfolding (`preFire`, `Kernel/Core.lean`): the constructor form
+of a key argument, the key of a marked rule, and the syntactic match of its left side.  The test
+only chooses which reduction the checker takes, and a firing is `Red.rewrite` (DESIGN.md, "Rules
+that fire before unfolding: the checker"). -/
+
+/-- **Constructor form** (official `reduce_before_delta`'s key test): a literal, or a spine
+headed by a stored constructor. -/
+def ctorForm (find? : Name → Option ConstantInfo) : Expr → Bool
+  | .lit _ => true
+  | e =>
+    match e.getAppFn with
+    | .const c _ =>
+      match find? c with
+      | some (.ctorInfo _ _ _ _) => true
+      | _ => false
+    | _ => false
+
+/-- Is `kc` a stored constructor? -/
+def isCtorConst (find? : Name → Option ConstantInfo) (kc : Name) : Bool :=
+  match find? kc with
+  | some (.ctorInfo _ _ _ _) => true
+  | _ => false
+
+/-- Is the head of `e` the constant `kc`, at any levels? -/
+def headIs (kc : Name) (e : Expr) : Bool :=
+  match e.getAppFn with
+  | .const c _ => c == kc
+  | _ => false
+
+/-- **A key argument read against the key constant `kc`**: a `Nat` literal in constructor form
+when the key is `Nat.zero` or `Nat.succ` (official `nat_lit_to_constructor`), anything else as it
+is.  `natLit` is `natLitStored`. -/
+def keyLit (natLit : Bool) (kc : Name) (a : Expr) : Expr :=
+  if kc == natZeroName || kc == natSuccName then
+    match a with
+    | .lit (.natVal n) => if natLit then natLitToConstructor n else a
+    | _ => a
+  else a
+
+/-- The left side of a stored rule theorem: its statement's `Eq` spine's left side under the
+statement's binders. -/
+def ruleLhs? (cv : ConstantVal) : Option Expr :=
+  match (ruleTele cv.type).2 with
+  | .app (.app (.app (.const _ [_]) _) l₀) _ => some l₀
+  | _ => none
+
+/-- The argument positions of a left side whose pattern has a constant head, with the constant. -/
+def constArgPositions (args : List Expr) : List (Nat × Name) :=
+  ((List.range args.length).zip args).filterMap fun (i, a) =>
+    match a.getAppFn with
+    | .const kc _ => some (i, kc)
+    | _ => none
+
+/-- **The key of the marked rule `t` of the head `c`** (official `rewrite_rule_key`): an argument
+position of its left side whose pattern has a constant head, with that constant.  Where the left
+side has several, the active table names the one the export chose (`preKeyName`), and the first
+otherwise. -/
+def ruleKey (find? : Name → Option ConstantInfo) (rulesFor : Name → List Name) (c t : Name) :
+    Option (Nat × Name) :=
+  match find? t with
+  | some (.thmInfo cv) =>
+    match ruleLhs? cv with
+    | some l₀ =>
+      match constArgPositions l₀.getAppArgs with
+      | [] => none
+      | [k] => some k
+      | k :: ks =>
+        match (k :: ks).find? (fun pk => (rulesFor (preKeyName c (pk.1 + 1))).contains t) with
+        | some k' => some k'
+        | none => some k
+    | none => none
+  | _ => none
+
+/-- **A repeated pattern variable, syntactically** (official `match_rewrite_pattern` with
+`m_rewrite_syntactic`): the variable `k` of the `n` binders takes the subterm it meets, and where
+it is bound already, it meets only a syntactically equal term. -/
+def ruleBindSyn (n k : Nat) (st : List (Option Expr) × List (Option Level)) (e : Expr) :
+    Option (List (Option Expr) × List (Option Level)) :=
+  match ruleSlot? n k st.1 with
+  | none => none
+  | some none => some (st.1.set (n - 1 - k) (some e), st.2)
+  | some (some e') => if e' = e then some st else none
+
+/-- **A left side matched syntactically** (official `match_rewrite_app` and
+`match_rewrite_pattern` with `m_rewrite_syntactic`): the spine of the pattern against the spine
+of the term, no argument reduced and retried, a repeated variable only against a syntactically
+equal term.  The matched view is the term itself. -/
+def ruleMatchSyn (n : Nat) (lps : List Name) :
+    Expr → List (Option Expr) × List (Option Level) → Expr →
+      Option (List (Option Expr) × List (Option Level))
+  | .app f p, st, .app f' a =>
+    match ruleMatchSyn n lps f st f' with
+    | none => none
+    | some st₁ =>
+      match p.bvarIdx? with
+      | some j => ruleBindSyn n j st₁ a
+      | none => ruleMatchSyn n lps p st₁ a
+  | .const c ls, (sl, lv), .const c' ls' =>
+    if c = c' then (matchLevels lps lv ls ls').map fun lv => (sl, lv) else none
+  | _, _, _ => none
+
+/-- **The arguments and levels at which a stored theorem's left side matches the term
+syntactically**, in binder order and in the order of the theorem's level parameters
+(`ruleLevels`). -/
+def ruleArgsSyn (cv : ConstantVal) (e : Expr) : Option (List Expr × List Level) :=
+  match (ruleTele cv.type).2 with
+  | .app (.app (.app (.const _ [_]) _) l₀) _ =>
+    let n := (ruleTele cv.type).1
+    match ruleMatchSyn n cv.levelParams l₀
+        (List.replicate n none, List.replicate cv.levelParams.length none) e with
+    | some (sl, lv) =>
+      match sl.mapM id, ruleLevels cv.levelParams lv l₀ with
+      | some args, some us => some (args, us)
+      | _, _ => none
+    | none => none
+  | _ => none
+
+/-- The marked rules of the head `c` in firing order, each one also in force at `c`
+(`Env.rulesFor`), so that a firing is `Red.rewrite`. -/
+def preRulesFor (rulesFor : Name → List Name) (c : Name) : List Name :=
+  (rulesFor (preHeadName c)).filter fun t => (rulesFor c).contains t
+
+/-- Drop the origin `o` when a marked rule fired on the term `a` it names (official
+`unfold_lazy`: `if (origin && *origin && is_eqp(**origin, e)) *origin = none_expr()`). -/
+def dropOrigin (fired : Bool) (o : Option Expr) (a : Expr) : Option Expr :=
+  if fired && decide (o = some a) then none else o
+
+/-- Do `a` and `b` have constant heads of the same name (official `is_eqp` on the two
+`is_delta` results in `lazy_delta_reduction_step`)? -/
+def sameHeadName (a b : Expr) : Bool :=
+  match a.getAppFn, b.getAppFn with
+  | .const n _, .const n' _ => n == n'
+  | _, _ => false
+
 /-- The fabricated projections of a structure-eta spine: the
 `.proj T j b` nodes, one per field of the family's projection table
 (the node is what the table types and reduces). -/
