@@ -634,9 +634,6 @@ theorem keyScan_atF (d : Nat) (F : Nat) :
     dsimp only
     rw [FueledM.atF_bind, keyScan_atF d F ks args₁]
     congr 1
-    funext q
-    obtain ⟨cs, args₂⟩ := q
-    rfl
 
 theorem preAttempt_atF (d : Nat) (e' : Expr) (t : Name) (F : Nat) :
     (preAttempt (fueledFns mode eager env) env d e' t).val F =
@@ -725,7 +722,8 @@ theorem lazyDeltaStep_atF (d : Nat) (a b : Expr) (F : Nat) :
     (lazyDeltaStep mi (fueledFns mode eager env) env d a b).val F =
       lazyDeltaStep mi (pureFns mode eager env F) env d a b := by
   unfold lazyDeltaStep
-  atF_core3 (first | rw [deltaQuick_atF] | rw [tryUnfoldProjApp_atF] | rw [defeqSpine_atF]
+  atF_core3 (first
+    | rw [deltaQuick_atF] | rw [tryUnfoldProjApp_atF] | rw [defeqSpine_atF]
     | rw [lazyUnfold_atF] | rw [lazyBoth_atF])
 
 theorem lazyDeltaReduction_atF (d : Nat) (F : Nat) :
