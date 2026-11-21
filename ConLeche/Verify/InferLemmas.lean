@@ -757,7 +757,7 @@ theorem KeyArg.pres {r : CoreFns CheckM} {env : Env} {d : Nat} (P : Expr → Pro
   | whnf _ hw ih => exact hwh hw ih
 
 /-- **Arguments and what the key tests made of them**, position by position. -/
-def KeyArgs (r : CoreFns CheckM) (env : Env) (d : Nat) (args args' : List Expr) : Prop :=
+@[expose] def KeyArgs (r : CoreFns CheckM) (env : Env) (d : Nat) (args args' : List Expr) : Prop :=
   args'.length = args.length ∧
     ∀ (i : Nat) (h : i < args.length) (h' : i < args'.length), KeyArg r env d args[i] args'[i]
 

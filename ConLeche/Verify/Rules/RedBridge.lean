@@ -553,7 +553,7 @@ theorem whnfCore_bridge_succ (hwc : WhnfCoreBridge .verified eager env fuel)
 
 /-- **A key argument is a reduct** of the original one: `whnf` through the bridge, the literal
 reading by `Red.natLit`. -/
-theorem KeyArg.red (hw : WhnfBridge μ eager env fuel) {d : Nat} {a b : Expr}
+private theorem KeyArg.red (hw : WhnfBridge μ eager env fuel) {d : Nat} {a b : Expr}
     (h : KeyArg (pureFns μ eager env fuel) env d a b) : Red env d a b := by
   induction h with
   | refl => exact .refl
@@ -565,7 +565,7 @@ theorem KeyArg.red (hw : WhnfBridge μ eager env fuel) {d : Nat} {a b : Expr}
 
 /-- **Arguments replaced by key arguments match position by position**: each replaced position
 is `MatchArg.red`. -/
-theorem matchRel_keyArgs (hw : WhnfBridge μ eager env fuel) {d : Nat} {P : List Expr} :
+private theorem matchRel_keyArgs (hw : WhnfBridge μ eager env fuel) {d : Nat} {P : List Expr} :
     ∀ (args args' : List Expr) {f f' : Expr}, MatchRel env d P f f' →
       args'.length = args.length →
       (∀ (i : Nat) (h : i < args.length) (h' : i < args'.length),
@@ -574,7 +574,7 @@ theorem matchRel_keyArgs (hw : WhnfBridge μ eager env fuel) {d : Nat} {P : List
   | [], [], _, _, hf, _, _ => hf
   | a :: as, a' :: as', _, _, hf, hlen, hk => by
     simp only [Expr.mkAppN]
-    refine matchRel_keyArgs as as' (.app hf (.red (KeyArg.red hw (hk 0 (by simp) (by simp))) .refl))
+    refine matchRel_keyArgs hw as as' (.app hf (.red (KeyArg.red hw (hk 0 (by simp) (by simp))) .refl))
       (by simpa using hlen) (fun i h h' => ?_)
     exact hk (i + 1) (by simp; omega) (by simp; omega)
   | [], _ :: _, _, _, _, hlen, _ => by simp at hlen
@@ -596,8 +596,9 @@ theorem preFire_bridge (hw : WhnfBridge μ eager env fuel) (hd : DefEqBridge μ 
     (h : preFire (pureFns μ eager env fuel) env d e = .ok (some (t, e₂))) : Red env d e e₂ := by
   obtain ⟨c, us, args', hc, hmem, hka, hat⟩ := preFire_inv h
   have hm : MatchRel env d [] e (Expr.mkAppN (.const c us) args') := by
+    have h0 : Expr.mkAppN (.const c us) e.getAppArgs = e := by rw [← hc, Expr.mkAppN_getApp]
     have := matchRel_keyArgs (P := []) hw e.getAppArgs args' (f := .const c us) .refl hka.1 hka.2
-    rwa [← hc, Expr.mkAppN_getApp] at this
+    rwa [h0] at this
   refine preAt_ind (fun x x' y => MatchRel env d [] x x' → x.getAppFn = .const c us → Red env d x y)
     (fun ha hm' hfn => ?_) (fun ih hm' hfn => .appFn (ih hm'.app_inv hfn)) e _ hat hm hc
   obtain ⟨cv, args, us', hf, -, hfire⟩ := preAttempt_inv ha

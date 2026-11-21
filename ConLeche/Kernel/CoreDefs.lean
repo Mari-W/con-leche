@@ -904,17 +904,23 @@ of a key argument, the key of a marked rule, and the syntactic match of its left
 only chooses which reduction the checker takes, and a firing is `Red.rewrite` (DESIGN.md, "Rules
 that fire before unfolding: the checker"). -/
 
+/-- Is `e` a literal? -/
+def litB : Expr → Bool
+  | .lit _ => true
+  | _ => false
+
+/-- Is `e` a stored constructor? -/
+def ctorHeadB (find? : Name → Option ConstantInfo) : Expr → Bool
+  | .const c _ =>
+    match find? c with
+    | some (.ctorInfo _ _ _ _) => true
+    | _ => false
+  | _ => false
+
 /-- **Constructor form** (official `reduce_before_delta`'s key test): a literal, or a spine
 headed by a stored constructor. -/
-def ctorForm (find? : Name → Option ConstantInfo) : Expr → Bool
-  | .lit _ => true
-  | e =>
-    match e.getAppFn with
-    | .const c _ =>
-      match find? c with
-      | some (.ctorInfo _ _ _ _) => true
-      | _ => false
-    | _ => false
+def ctorForm (find? : Name → Option ConstantInfo) (e : Expr) : Bool :=
+  litB e || ctorHeadB find? e.getAppFn
 
 /-- Is `kc` a stored constructor? -/
 def isCtorConst (find? : Name → Option ConstantInfo) (kc : Name) : Bool :=

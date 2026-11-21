@@ -798,12 +798,10 @@ theorem res_keyLit {kc : Name} {a : Expr} (ha : Res env₁ a) :
 omit K in
 theorem ctorForm_ext {a : Expr} (ha : Res env₁ a) :
     ctorForm env₂.find? a = ctorForm env₁.find? a := by
-  unfold ctorForm
-  split
-  · rfl
-  · cases hfn : a.getAppFn <;> try rfl
-    dsimp only
-    rw [hx.find_of_isSome (res_head ha hfn)]
+  unfold ctorForm ctorHeadB
+  cases hfn : a.getAppFn <;> try rfl
+  dsimp only
+  rw [hx.find_of_isSome (res_head ha hfn)]
 
 omit K in
 theorem isCtorConst_ext {kc : Name} (hk : (env₁.find? kc).isSome = true) :
