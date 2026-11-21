@@ -116512,3 +116512,22 @@ Fixtures: `tests/e2e/rewrite_rule_pre_*.ndjson` (source `scripts/rewrite-fixture
 C++ kernel's verdict. The budget fixture `rewrite_rule_pre_loop` runs 2^24 firings in 54 s on
 ahumoa, so `tests/arena.sh` gives it 300 s. The key cases are exported with a trivial statement
 and patched, because the elaborator's `rfl` does not reduce a key.
+
+## The rule gate's subterm check (2026-11-22, gate-walk)
+
+**Building `appSubterms` made every firing cost the size of the term's tree.** `RuleGate` checks
+that every matched argument is in `appSubterms e₁`, and its `Decidable` instance built that list,
+in tree order and without sharing, at every firing. On a fold over a long list literal
+(`List.foldr f i (h :: t)` with `t` the rest of a certificate list) the tree is the whole list, so
+a fold of length `n` costs `n²`. On the ClusterAlgebras module `TypeE.CertificateData.E8Rel3`
+(605 declarations and their dependencies, exported with `rules-max.txt`, `--jobs=1`) the rules
+made the check 4.9 times slower, 301.9 G to 1471.0 G instructions, with 23% of the samples in
+`List.reverseAux` under `appSubterms` and 37% in allocation and freeing.
+
+The instance `instDecidableMemAppSubterms` now decides `x ∈ appSubterms e` by a walk that stops at
+the first hit. It walks to depth 6 first (`memAppUpTo`), where a matched argument of a first-order
+left side sits, and then the whole tree (`memAppAll`, `memAppAll_iff`). `RuleGate`, `Red.rewrite`,
+the model and every proof are unchanged, because they see only the proposition. The same module
+now takes 618.0 G with the rules against 301.9 G without. The remaining cost of a firing is spread
+over the certificate pass, instantiation and allocation, with no symbol above 2.4% outside the
+allocator.
