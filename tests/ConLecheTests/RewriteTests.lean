@@ -96,7 +96,7 @@ binder the left side does not bind). -/
 -- a looping rule set is rejected by the cached loop's firing budget, naming the rule (the
 -- specification has no budget: its knot fuel, `2^62` levels, bounds it, so it is not run here)
 #guard cachedV [(nm "code", nm "code_refl")] declY ==
-  "rewrite rule budget exhausted: code_refl would fire past 65536 firings"
+  "rewrite rule budget exhausted: code_refl would fire past 16777216 firings in this declaration"
 
 /-! ### Registration and rule sets
 
@@ -128,7 +128,7 @@ The same declarations as records: a rule is registered (`rewriteDecl`) and fires
     .useRules [nm "code_eq", nm "code_refl"], declY] == ("ok", "ok")
 #guard verdict (·.1) (cachedSeq [reg "code_eq" 1000, reg "code_refl" 2000,
     .useRules [nm "code_eq", nm "code_refl"], declY]) ==
-  "rewrite rule budget exhausted: code_refl would fire past 65536 firings"
+  "rewrite rule budget exhausted: code_refl would fire past 16777216 firings in this declaration"
 -- equal priorities: `Name.cmp` (`code_eq` before `code_refl`)
 #guard seqV [reg "code_refl", reg "code_eq", .useRules [nm "code_refl", nm "code_eq"], declY] ==
   ("ok", "ok")
