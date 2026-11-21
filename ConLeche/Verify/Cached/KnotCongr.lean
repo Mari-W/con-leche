@@ -847,7 +847,7 @@ theorem lazyDeltaStepI_congr (hfe : fe₁.find? = fe₂.find?) (hru : fe₁.rule
     simp only [preFireI_congr hfe hru hbk h, hbu, h]
   funext depth a b; rw [lazyDeltaStepI.eq_def, lazyDeltaStepI.eq_def]
   simp only [unfoldableHeadC_congr hfe hbk, hu, hb,
-    headHintC_congr hfe, defeqSpineI_congr hfe h, htry, hq, h]
+    headHintC_congr hfe, defeqSpineI_congr hfe h, htry, hq]
 
 /-- `lazyDeltaReductionI` reads `fe` only through `find?`. -/
 theorem lazyDeltaReductionI_congr (hfe : fe₁.find? = fe₂.find?)

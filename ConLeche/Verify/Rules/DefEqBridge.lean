@@ -365,7 +365,7 @@ theorem lazyDeltaStep_bridge (hwc : WhnfCoreBridge .verified eager env fuel)
     (h : lazyDeltaStepFueled .verified eager env fuel d a b = .ok r) :
     StepSound env d a b r := by
   simp only [lazyDeltaStepFueled, lazyDeltaStep, Bind.bind, Except.bind,
-    whnfCore_def, tryUnfoldProjApp_fold, deltaQuick_fold, defeqSpine_fold] at h
+    tryUnfoldProjApp_fold, deltaQuick_fold, defeqSpine_fold] at h
   -- one side's lazy step, then `deltaQuick`
   have hL : ∀ {a₃ : Expr} {fa : Bool},
       lazyUnfold (pureFns .verified eager env fuel) env d a = .ok (some (a₃, fa)) →
