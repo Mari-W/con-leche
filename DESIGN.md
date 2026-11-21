@@ -116507,5 +116507,8 @@ Three deviations from the C++ kernel, all on the side of rejecting more:
   A dropped origin only loses a rules-last firing.
 * 2^16 nested rules-last restarts reject, where the C++ kernel stops only at 2^24 firings.
 
-The budget fixture (`rewrite_rule_pre_loop`) needs about 2^24 firings and may exceed the 60 s
-timeout of the end-to-end runner.
+Fixtures: `tests/e2e/rewrite_rule_pre_*.ndjson` (source `scripts/rewrite-fixtures/RrPre.lean`,
+`mk.py pre`) mirror lean4 `tests/elab/rewriteRulesBeforeDelta.lean`, 13 streams, each with the
+C++ kernel's verdict. The budget fixture `rewrite_rule_pre_loop` runs 2^24 firings in 54 s on
+ahumoa, so `tests/arena.sh` gives it 300 s. The key cases are exported with a trivial statement
+and patched, because the elaborator's `rfl` does not reduce a key.
