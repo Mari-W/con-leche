@@ -116469,3 +116469,44 @@ the head's rules with `pre = some k` whose key matches, with syntactic matching 
 without `ruleOrRetry`, `ruleBindVar` without the defeq fallback); `whnfStep` tries it before
 `unfoldDefinition` without noting an origin; `lazyDeltaStep` follows the chosen policy, and a side
 that fired drops its origin when the origin is the fired term.
+
+## Rules that fire before unfolding: the checker (2026-11-21, rules-before-delta)
+
+The checker follows lean4 7a4b752bfd (`reduce_before_delta`, key reduction, budget per
+declaration). The spec checker has `preFire` (`Kernel/Core.lean`). At a term whose head unfolds,
+it takes the head's marked rules (`preRulesFor`) and runs the key test of each key group
+(`keyTest`, `keyScan`). A key argument is read against the key constant (`keyLit` turns a `Nat`
+literal into `Nat.zero` or `Nat.succ`). Where the key is a constructor and the argument is not in
+constructor form (`ctorForm`), the argument is replaced by its `whnf`. The rules of the groups
+that pass are matched syntactically (`ruleMatchSyn`, `ruleArgsSyn`) against the spine with the
+replaced arguments, in firing order, each at the prefix of its own arity (`preAt`). `whnfStep`
+calls `preFire` after `reduceNat` and before `unfoldDefinition`, without noting an origin. The
+lazy δ step takes policy 1 of the C++ kernel. A side that unfolds alone fires its marked rules
+first (`lazyUnfold`). Two different heads each fire on their own side. The same head on both
+sides fires only where a rule fires on both sides, and both sides unfold otherwise (`lazyBoth`).
+`DeltaStep.cont` carries one flag per side, and the loop drops an origin that names the fired term
+(`dropOrigin`). The cached twins are `keyTestI` to `preFireI`, `lazyUnfoldI` and `lazyBothI`
+(`Cached/CoreC.lean`). Each firing counts against the declaration's budget (`tickRuleI`).
+
+Marked rules reach the checker as extra entries of the active rule table, under `preHeadName c`
+and, with a key, `preKeyName c k` (`Kernel/Env.lean` `preEntries`). The rule index and all its
+congruence proofs therefore carry the flag without an `FEnv` change. The model is unchanged, as
+the record of 2026-11-19 argues. A firing is `Red.rewrite`, with `MatchArg.red` at each replaced
+key argument (`preFire_bridge` in `Verify/Rules/RedBridge.lean`).
+
+Budgets. `ruleDeclBudget` and the per-loop `ruleFireBudget` are both 2^24 and give the same
+message. The bound on nested rules-last restarts is the separate `ruleNestBudget`, 2^16.
+
+Three deviations from the C++ kernel, all on the side of rejecting more:
+
+* The reduct of a firing at a prefix takes the original arguments beyond the rule's arity. The C++
+  kernel applies it to the reduced ones. `Red` has no congruence for arguments, so the checker
+  keeps the arguments it can account for. A term where the difference matters is reduced further
+  by the next step either way.
+* `dropOrigin` compares the origin with the fired term structurally. The C++ kernel compares
+  pointers (`is_eqp`), so the checker drops an origin in some cases where the C++ kernel keeps it.
+  A dropped origin only loses a rules-last firing.
+* 2^16 nested rules-last restarts reject, where the C++ kernel stops only at 2^24 firings.
+
+The budget fixture (`rewrite_rule_pre_loop`) needs about 2^24 firings and may exceed the 60 s
+timeout of the end-to-end runner.
