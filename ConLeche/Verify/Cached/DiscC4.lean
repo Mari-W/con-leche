@@ -1335,6 +1335,7 @@ lambdas `grind` would compare them). -/
   | none => preFire r env depth e₁ >>= whnfPreP r env depth k o e₁
 
 /-- The pure loop step with its continuations named. -/
+omit [MonadExceptOf CheckError m] in
 theorem whnfStep_pre (r : CoreFns m) (env : Env) (depth : Nat)
     (k : Option Expr → Expr → m Expr) (o : Option Expr) (e : Expr) :
     whnfStep r env depth k o e =
