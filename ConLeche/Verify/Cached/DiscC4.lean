@@ -543,10 +543,10 @@ theorem fireMoreC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d : Nat
 /-! ### The test before unfolding (`preFire`) -/
 
 /-- A key test's scope side condition: the arguments it hands on are well scoped. -/
-@[expose] def KeyWS {α : Type} (d : Nat) (p : α × List Expr) : Prop := AllWS d p.2
+@[expose] def KeyArgsWS {α : Type} (d : Nat) (p : α × List Expr) : Prop := AllWS d p.2
 
-@[conleche_grind =] theorem KeyWS.mk_eq {α : Type} (d : Nat) (x : α) (xs : List Expr) :
-    KeyWS d (x, xs) = AllWS d xs := rfl
+@[conleche_grind =] theorem KeyArgsWS.mk_eq {α : Type} (d : Nat) (x : α) (xs : List Expr) :
+    KeyArgsWS d (x, xs) = AllWS d xs := rfl
 
 /-- Replacing an argument by a well-scoped one keeps the arguments well scoped. -/
 theorem AllWS.set {d : Nat} {xs : List Expr} (h : AllWS d xs) (p : Nat) {a : Expr}
@@ -570,7 +570,7 @@ theorem keyTestC_spec (ih : SSimC mode eager env f) {d : Nat} (key : Option (Nat
     {args : List Expr} {s₀ : CState} (hs : CSOK mode eager env s₀) (hw : AllWS d args) :
     ⦃fun s => s = s₀⦄ keyTestI mode (mkFEnv env) eager f d key args
     ⦃fun v s' => CSOK mode eager env s' ∧
-      Runs (keyTest (fueledFns mode eager env) env d key args) v ∧ KeyWS d v; ⊤⦄ := by
+      Runs (keyTest (fueledFns mode eager env) env d key args) v ∧ KeyArgsWS d v; ⊤⦄ := by
   unfold keyTestI keyTest
   rw [mkFEnv_natLit]
   cases key with
@@ -591,7 +591,7 @@ theorem keyScanC_spec (ih : SSimC mode eager env f) {d : Nat} :
     CSOK mode eager env s₀ → AllWS d args →
     ⦃fun s => s = s₀⦄ keyScanI mode (mkFEnv env) eager f d ks args
     ⦃fun v s' => CSOK mode eager env s' ∧
-      Runs (keyScan (fueledFns mode eager env) env d ks args) v ∧ KeyWS d v; ⊤⦄ := by
+      Runs (keyScan (fueledFns mode eager env) env d ks args) v ∧ KeyArgsWS d v; ⊤⦄ := by
   intro ks
   induction ks with
   | nil =>
