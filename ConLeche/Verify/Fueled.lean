@@ -614,9 +614,110 @@ theorem tryUnfoldProjApp_atF (d : Nat) (e : Expr) (F : Nat) :
   unfold tryUnfoldProjApp
   atF_tac3
 
-theorem deltaQuick_atF (d : Nat) (a b : Expr) (F : Nat) :
-    (deltaQuick mi (fueledFns mode eager env) d a b).val F =
-      deltaQuick mi (pureFns mode eager env F) d a b := by
+theorem keyTest_atF (d : Nat) (key : Option (Nat × Name)) (args : List Expr) (F : Nat) :
+    (keyTest (fueledFns mode eager env) env d key args).val F =
+      keyTest (pureFns mode eager env F) env d key args := by
+  unfold keyTest
+  atF_tac3
+
+theorem keyScan_atF (d : Nat) (F : Nat) :
+    ∀ (ks : List (Option (Nat × Name))) (args : List Expr),
+      (keyScan (fueledFns mode eager env) env d ks args).val F =
+        keyScan (pureFns mode eager env F) env d ks args
+  | [], _ => rfl
+  | k :: ks, args => by
+    unfold keyScan
+    rw [FueledM.atF_bind, keyTest_atF]
+    congr 1
+    funext p
+    obtain ⟨b, args₁⟩ := p
+    dsimp only
+    rw [FueledM.atF_bind, keyScan_atF d F ks args₁]
+    congr 1
+    funext q
+    obtain ⟨cs, args₂⟩ := q
+    rfl
+
+theorem preAttempt_atF (d : Nat) (e' : Expr) (t : Name) (F : Nat) :
+    (preAttempt (fueledFns mode eager env) env d e' t).val F =
+      preAttempt (pureFns mode eager env F) env d e' t := by
+  unfold preAttempt rewriteFire
+  atF_step3
+
+theorem preAt_atF (d : Nat) (t : Name) (F : Nat) :
+    ∀ e e' : Expr, (preAt (fueledFns mode eager env) env d t e e').val F =
+      preAt (pureFns mode eager env F) env d t e e' := by
+  intro e
+  induction e with
+  | app f a ihf _ =>
+    intro e'
+    cases e' with
+    | app f' a' =>
+      rw [preAt, preAt, FueledM.atF_bind, preAttempt_atF]
+      congr 1
+      funext o
+      cases o with
+      | some e₂ => rfl
+      | none =>
+        dsimp only
+        rw [FueledM.atF_bind, ihf f']
+        congr 1
+        funext o'
+        cases o' <;> rfl
+    | _ => rw [preAt.eq_def, preAt.eq_def]; exact preAttempt_atF d _ t F
+  | _ => intro e'; rw [preAt.eq_def, preAt.eq_def]; exact preAttempt_atF d _ t F
+
+theorem preRules_atF (d : Nat) (e e' : Expr) (F : Nat) :
+    ∀ ts : List Name, (preRules (fueledFns mode eager env) env d e e' ts).val F =
+      preRules (pureFns mode eager env F) env d e e' ts
+  | [] => rfl
+  | t :: ts => by
+    unfold preRules
+    rw [FueledM.atF_bind, preAt_atF]
+    congr 1
+    funext o
+    cases o with
+    | some e₂ => rfl
+    | none => exact preRules_atF d e e' F ts
+
+theorem preFire_atF (d : Nat) (e : Expr) (F : Nat) :
+    (preFire (fueledFns mode eager env) env d e).val F =
+      preFire (pureFns mode eager env F) env d e := by
+  unfold preFire
+  split
+  · split
+    · split
+      · rfl
+      · try dsimp only
+        rw [FueledM.atF_bind, keyScan_atF]
+        congr 1
+        funext p
+        obtain ⟨cs, args'⟩ := p
+        exact preRules_atF d _ _ F _
+    · rfl
+  · rfl
+
+theorem lazyUnfold_atF (d : Nat) (a : Expr) (F : Nat) :
+    (lazyUnfold (fueledFns mode eager env) env d a).val F =
+      lazyUnfold (pureFns mode eager env F) env d a := by
+  unfold lazyUnfold
+  atF_core3 (rw [preFire_atF])
+
+theorem lazyBothUnfold_atF (d : Nat) (a b : Expr) (F : Nat) :
+    (lazyBothUnfold (fueledFns mode eager env) env d a b).val F =
+      lazyBothUnfold (pureFns mode eager env F) env d a b := by
+  unfold lazyBothUnfold
+  atF_step3
+
+theorem lazyBoth_atF (d : Nat) (a b : Expr) (F : Nat) :
+    (lazyBoth (fueledFns mode eager env) env d a b).val F =
+      lazyBoth (pureFns mode eager env F) env d a b := by
+  unfold lazyBoth
+  atF_core3 (first | rw [preFire_atF] | rw [lazyBothUnfold_atF])
+
+theorem deltaQuick_atF (d : Nat) (a b : Expr) (fa fb : Bool) (F : Nat) :
+    (deltaQuick mi (fueledFns mode eager env) d a b fa fb).val F =
+      deltaQuick mi (pureFns mode eager env F) d a b fa fb := by
   unfold deltaQuick
   atF_core3 (rw [quickDefEq_atF])
 
@@ -624,7 +725,8 @@ theorem lazyDeltaStep_atF (d : Nat) (a b : Expr) (F : Nat) :
     (lazyDeltaStep mi (fueledFns mode eager env) env d a b).val F =
       lazyDeltaStep mi (pureFns mode eager env F) env d a b := by
   unfold lazyDeltaStep
-  atF_core3 (first | rw [deltaQuick_atF] | rw [tryUnfoldProjApp_atF] | rw [defeqSpine_atF])
+  atF_core3 (first | rw [deltaQuick_atF] | rw [tryUnfoldProjApp_atF] | rw [defeqSpine_atF]
+    | rw [lazyUnfold_atF] | rw [lazyBoth_atF])
 
 theorem lazyDeltaReduction_atF (d : Nat) (F : Nat) :
     ∀ (n : Nat) (oa ob : Option Expr) (a b : Expr),
@@ -816,6 +918,7 @@ macro "atF_core4" x:tactic : tactic =>
     | (rw [rewriteStep_atF])
     | (rw [fireMore_atF])
     | (rw [originFire_atF])
+    | (rw [preFire_atF])
     | (rw [ensureSort_atF])
     | (rw [checkProjGuard_atF])
     | (rw [iotaCaseAt_atF])
