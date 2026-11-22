@@ -247,7 +247,6 @@ ConLeche.Expr.EqPair.dflt
 ConLeche.Expr.app
 ConLeche.Expr.beqDec
 ConLeche.Expr.beqGoX
-ConLeche.Expr.beqMemo
 ConLeche.Expr.bvar
 ConLeche.Expr.bvarPool
 ConLeche.Expr.const

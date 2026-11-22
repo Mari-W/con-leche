@@ -794,7 +794,7 @@ def appSubterms : Expr → List Expr
   | e => [e]
 
 /-- `x ∈ appSubterms e` by a walk over the application tree that stops at the first hit, without
-building the list. It compares by `==`, the memoised equality with its pointer and hash tests. -/
+building the list. It compares by `==`, `Expr`'s decidable equality, which tests pointers first. -/
 def memAppAll (x : Expr) : Expr → Bool
   | .app f a => (x == .app f a) || memAppAll x f || memAppAll x a
   | e => x == e
