@@ -794,27 +794,27 @@ def appSubterms : Expr → List Expr
   | e => [e]
 
 /-- `x ∈ appSubterms e` by a walk over the application tree that stops at the first hit, without
-building the list. -/
+building the list. It compares by `==`, the memoised equality with its pointer and hash tests. -/
 def memAppAll (x : Expr) : Expr → Bool
-  | .app f a => decide (x = .app f a) || memAppAll x f || memAppAll x a
-  | e => decide (x = e)
+  | .app f a => (x == .app f a) || memAppAll x f || memAppAll x a
+  | e => x == e
 
 /-- The same walk down to depth `d` only. A matched rule argument sits a few application nodes
 below the term, so this finds it before `memAppAll` would walk a large argument on its left. -/
 def memAppUpTo (x : Expr) : Nat → Expr → Bool
-  | d + 1, .app f a => decide (x = .app f a) || memAppUpTo x d f || memAppUpTo x d a
-  | _, e => decide (x = e)
+  | d + 1, .app f a => (x == .app f a) || memAppUpTo x d f || memAppUpTo x d a
+  | _, e => x == e
 
 theorem memAppAll_iff (x : Expr) : ∀ e, memAppAll x e = true ↔ x ∈ appSubterms e
   | .app f a => by
-    simp only [memAppAll, appSubterms, Bool.or_eq_true, decide_eq_true_eq, List.mem_cons,
+    simp only [memAppAll, appSubterms, Bool.or_eq_true, beq_iff_eq, List.mem_cons,
       List.mem_append, memAppAll_iff x f, memAppAll_iff x a, or_assoc]
   | .bvar _ | .fvar _ _ | .sort _ | .const _ _ | .lam _ _ | .forallE _ _ | .letE _ _ _ | .lit _
   | .proj _ _ _ => by simp [memAppAll, appSubterms]
 
 theorem memAppUpTo_mem (x : Expr) : ∀ d e, memAppUpTo x d e = true → x ∈ appSubterms e
   | d + 1, .app f a, h => by
-    simp only [memAppUpTo, Bool.or_eq_true, decide_eq_true_eq] at h
+    simp only [memAppUpTo, Bool.or_eq_true, beq_iff_eq] at h
     simp only [appSubterms, List.mem_cons, List.mem_append]
     rcases h with (h | h) | h
     · exact .inl h

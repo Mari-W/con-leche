@@ -5659,18 +5659,18 @@
    454      rules.map fun rl => { rl with fire := fire }
    455    | some _ => rules
 
-== ConLeche/Kernel/CoreDefs.lean#L1335-L1345
-  1335  def recFireComparands (rl : RecRule) (cnP : Nat) (lps : List Name)
-  1336      (us : List Level) (cvjLps : List Name) (args : List Expr)
-  1337      (rP : Nat) : List Level × List Expr :=
-  1338    match rl.fire with
-  1339    | .nested lvls pins =>
-  1340      (lvls.map (Level.subst lps us),
-  1341       pins.map fun p => Expr.instSpine (args.take rP) (rP - 1)
-  1342         (p.instantiateLevelParams lps us))
-  1343    | .plain =>
-  1344      (cvjLps.map fun p => Level.subst lps us (.param p),
-  1345       args.take cnP)
+== ConLeche/Kernel/CoreDefs.lean#L1377-L1387
+  1377  def recFireComparands (rl : RecRule) (cnP : Nat) (lps : List Name)
+  1378      (us : List Level) (cvjLps : List Name) (args : List Expr)
+  1379      (rP : Nat) : List Level × List Expr :=
+  1380    match rl.fire with
+  1381    | .nested lvls pins =>
+  1382      (lvls.map (Level.subst lps us),
+  1383       pins.map fun p => Expr.instSpine (args.take rP) (rP - 1)
+  1384         (p.instantiateLevelParams lps us))
+  1385    | .plain =>
+  1386      (cvjLps.map fun p => Level.subst lps us (.param p),
+  1387       args.take cnP)
 
 == ConLeche/Rules/Rel.lean#L250-L261
    250        rules.find? (fun r' => r'.ctor == cj) = some rl →
