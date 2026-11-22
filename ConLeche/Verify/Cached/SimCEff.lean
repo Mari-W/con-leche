@@ -369,6 +369,27 @@ theorem CSOK.constTy_insert {s : CState} {n : Name} {us : List Level} {ci : Cons
         RelC i (ci.toConstantVal.type.instantiateLevelParams ci.toConstantVal.levelParams k.2))
       (i := (n, us)) (fun k v => hs.constTy k.1 k.2 v) ⟨ci, hfind, RelC.refl _⟩ (n', us') }
 
+theorem CSOK.preKeys_hit {s : CState} {c : Name}
+    {v : List (Name × Option (Nat × Name)) × List (Option (Nat × Name))}
+    (hs : CSOK mode eager env s) (hl : s.preKeysC[c]? = some v) :
+    v = preKeysOf env.find? env.rulesFor c :=
+  hs.preKeys c v hl
+
+theorem CSOK.preKeys_insert {s : CState} {c : Name} (hs : CSOK mode eager env s) :
+    CSOK mode eager env
+      { s with preKeysC := s.preKeysC.insert c (preKeysOf env.find? env.rulesFor c) } :=
+  { hs with
+    preKeys := HashMap.insert_backed (P := fun k v => v = preKeysOf env.find? env.rulesFor k)
+      (i := c) (fun k v => hs.preKeys k v) rfl }
+
+/-- `preKeysM` under the index of `env`: the marked rules of the head with their keys. -/
+theorem preKeysM_spec (hs : CSOK mode eager env s₀) (c : Name) :
+    ⦃fun s => s = s₀⦄ preKeysM (mkFEnv env) c
+    ⦃fun v s' => CSOK mode eager env s' ∧ v = preKeysOf env.find? env.rulesFor c; ⊤⦄ := by
+  sym only [conleche_grind, mkFEnv_find_fun, mkFEnv_rulesFor_fun,
+      CSOK.preKeys_hit (mode := mode) (eager := eager), CSOK.preKeys_insert] =>
+    vcgen [preKeysM] <;> finish
+
 /-- The stored type of a constant at levels `us` (a dummy where there is
 no constant). -/
 @[expose] def constTyOf (env : Env) (n : Name) (us : List Level) : Expr :=

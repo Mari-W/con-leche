@@ -605,11 +605,17 @@ theorem keyScanI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁
   | cons k ks ih =>
     funext args; rw [keyScanI.eq_def, keyScanI.eq_def]; simp only [keyTestI_congr hfe h, ih]
 
+/-- `rewriteFireSynI` reads `fe` only through `find?`. -/
+theorem rewriteFireSynI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv) :
+    rewriteFireSynI mode fe₁ eager lv = rewriteFireSynI mode fe₂ eager lv := by
+  funext depth thm cv args us e₁; rw [rewriteFireSynI.eq_def, rewriteFireSynI.eq_def]
+  simp only [constTyAtM_congr hfe, iotaCertsFullI_congr hfe h]
+
 /-- `preAttemptI` reads `fe` only through `find?`. -/
 theorem preAttemptI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv) :
     preAttemptI mode fe₁ eager lv = preAttemptI mode fe₂ eager lv := by
   funext depth e' t; rw [preAttemptI.eq_def, preAttemptI.eq_def]
-  simp only [hfe, rewriteFireI_congr hfe h]
+  simp only [hfe, rewriteFireSynI_congr hfe h]
 
 /-- `preAtI` reads `fe` only through `find?`. -/
 theorem preAtI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv) :
@@ -631,12 +637,18 @@ theorem preRulesI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe�
     rw [preRulesI.eq_def, preRulesI.eq_def]
     simp only [preAtI_congr hfe h, ih]
 
+/-- `preKeysM` reads `fe` through `find?` and the rule map. -/
+theorem preKeysM_congr (hfe : fe₁.find? = fe₂.find?) (hru : fe₁.rulesFor = fe₂.rulesFor) :
+    preKeysM fe₁ = preKeysM fe₂ := by
+  funext c; unfold preKeysM; simp only [hfe, hru]
+
 /-- `preFireI` reads `fe` through `find?` and the rule map. -/
 theorem preFireI_congr (hfe : fe₁.find? = fe₂.find?) (hru : fe₁.rulesFor = fe₂.rulesFor)
     (hbk : fe₁.base.blk = fe₂.base.blk) (h : SlotsEq mode fe₁ fe₂ lv) :
     preFireI mode fe₁ eager lv = preFireI mode fe₂ eager lv := by
   funext depth e; rw [preFireI.eq_def, preFireI.eq_def]
-  simp only [hfe, hru, unfoldableHeadC_congr hfe hbk, keyScanI_congr hfe h, preRulesI_congr hfe h]
+  simp only [unfoldableHeadC_congr hfe hbk, keyScanI_congr hfe h, preRulesI_congr hfe h,
+    preKeysM_congr hfe hru]
 
 /-- A head without rules reads the rule map. -/
 theorem noRulesC_congr (hru : fe₁.rulesFor = fe₂.rulesFor) : noRulesC fe₁ = noRulesC fe₂ := by

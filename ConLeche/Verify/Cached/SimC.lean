@@ -251,6 +251,8 @@ structure CSOK (mode : CheckMode) (eager : Bool) (env : Env) (s : CState) : Prop
     env.find? c = some (.recInfo cv mI rP isK rules) ∧
     rules.find? (fun r' => r'.ctor == j) = some rl ∧
     RelC i ((rl.rhs.lamBody (rP + rl.nfields)).instantiateLevelParams cv.levelParams us)
+  /-- The marked rules of a head with their keys (`preKeysM`). -/
+  preKeys : ∀ c v, s.preKeysC[c]? = some v → v = preKeysOf env.find? env.rulesFor c
   whnfCoreC : ∀ k v, s.whnfCoreC[k]? = some v →
     ∃ F, ∀ d, (Expr.wscopedB d k) = true →
       whnfCore mode eager env F d k = .ok v
@@ -334,7 +336,7 @@ surviving components are the residue and the dropped caches' clauses
 are vacuous. -/
 theorem flushC_csok {env' : Env} {s : CState} (hs : CSOKF s) :
     CSOK mode eager env' s.flushed := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hs.lsimp, hs.lnz, hs.eqv,
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hs.lsimp, hs.lnz, hs.eqv,
     ?_, ModeMemosOK.empty⟩ <;> (intros; simp_all [CState.flushed])
 
 /-- Flushing preserves the residue (it touches none of its
@@ -378,7 +380,7 @@ theorem CSOK.enterEager {s : CState} (hs : CSOK mode eager env s) :
   cases eager with
   | true => exact hs
   | false =>
-    exact ⟨hs.constTy, hs.constVal, hs.ruleBody, hs.eager.whnfCoreC, hs.eager.whnfCoreCheapC,
+    exact ⟨hs.constTy, hs.constVal, hs.ruleBody, hs.preKeys, hs.eager.whnfCoreC, hs.eager.whnfCoreCheapC,
       hs.eager.whnfC, hs.eager.inferC, hs.eager.inferIOC, hs.eager.defeqC, hs.lsimp, hs.lnz,
       hs.eqv, hs.instC, ModeMemosOK.empty⟩
 
@@ -391,7 +393,7 @@ theorem CSOK.leaveEager {s₀ s₂ : CState} (hs₀ : CSOK mode eager env s₀)
   cases eager with
   | true => exact hs₂
   | false =>
-    exact ⟨hs₂.constTy, hs₂.constVal, hs₂.ruleBody, hs₀.whnfCoreC, hs₀.whnfCoreCheapC,
+    exact ⟨hs₂.constTy, hs₂.constVal, hs₂.ruleBody, hs₂.preKeys, hs₀.whnfCoreC, hs₀.whnfCoreCheapC,
       hs₀.whnfC, hs₀.inferC, hs₀.inferIOC, hs₀.defeqC, hs₂.lsimp, hs₂.lnz, hs₂.eqv, hs₂.instC,
       hs₂.modeMemos⟩
 

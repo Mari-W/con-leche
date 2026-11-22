@@ -447,6 +447,245 @@ theorem rewriteFireC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d : 
         vcgen [constTyAtM_spec (mode := mode) (eager := eager) (env := env) hs t t us hfind,
           piResidualM_spec (mode := mode) (eager := eager) (env := env)] <;> finish
 
+/-! ### The syntactic match: arity and subterms
+
+The test before unfolding matches a marked rule syntactically (`ruleArgsSyn`).  The cached twin
+skips a prefix of the spine whose argument count is not the left side's (`ruleArgsSynC`), and the
+gate after the match leaves out the subterm walk (`ruleGateSynB`), because the match binds every
+argument to a subterm of the term's application tree. -/
+
+/-- A syntactic match walks both spines in step: the pattern and the term have as many
+arguments. -/
+theorem ruleMatchSyn_appCount {n : Nat} {lps : List Name} (p : Expr) :
+    ∀ {st : List (Option Expr) × List (Option Level)} {e : Expr}
+      {st' : List (Option Expr) × List (Option Level)},
+      ruleMatchSyn n lps p st e = some st' → appCount p = appCount e := by
+  induction p with
+  | app g q ihg _ =>
+    intro st e st' h
+    cases e with
+    | app g' a =>
+      cases h1 : ruleMatchSyn n lps g st g' with
+      | none => simp only [ruleMatchSyn, h1] at h; exact nomatch h
+      | some st₁ => simp only [appCount, ihg h1]
+    | _ => exact nomatch h
+  | const c ls =>
+    intro st e st' h
+    obtain ⟨sl, lv⟩ := st
+    cases e with
+    | const c' ls' => rfl
+    | _ => exact nomatch h
+  | _ =>
+    intro st e st' h
+    obtain ⟨sl, lv⟩ := st
+    cases e <;> exact nomatch h
+
+/-- A left side whose argument count is not the term's does not match it. -/
+theorem ruleArgsSyn_none_of {cv : ConstantVal} {e : Expr} {eqn : Name} {u : Level}
+    {A l₀ r : Expr} (hT : (ruleTele cv.type).2 = .app (.app (.app (.const eqn [u]) A) l₀) r)
+    (hc : ¬ appCount e = appCount l₀) : ruleArgsSyn cv e = none := by
+  unfold ruleArgsSyn
+  simp only [hT]
+  split
+  · rename_i heq
+    exact absurd (ruleMatchSyn_appCount l₀ heq).symm hc
+  · rfl
+
+/-- The cached syntactic match is the specification's. -/
+theorem ruleArgsSynC_eq (cv : ConstantVal) (e : Expr) : ruleArgsSynC cv e = ruleArgsSyn cv e := by
+  unfold ruleArgsSynC
+  split
+  · split
+    · rfl
+    · exact (ruleArgsSyn_none_of (by assumption) (by assumption)).symm
+  · rename_i hne
+    unfold ruleArgsSyn
+    split
+    · rename_i heq; exact (hne _ _ _ _ _ heq).elim
+    · rfl
+
+private theorem self_mem_appSubtermsC (e : Expr) : e ∈ appSubterms e := by
+  cases e <;> simp [appSubterms]
+
+/-- A subterm of a subterm of the application tree is a subterm. -/
+theorem appSubterms_trans {x y : Expr} (hx : x ∈ appSubterms y) (e : Expr) :
+    y ∈ appSubterms e → x ∈ appSubterms e := by
+  induction e with
+  | app f a ihf iha =>
+    intro hy
+    simp only [appSubterms, List.mem_cons, List.mem_append] at hy ⊢
+    rcases hy with rfl | hy | hy
+    · simpa only [appSubterms, List.mem_cons, List.mem_append] using hx
+    · exact .inr (.inl (ihf hy))
+    · exact .inr (.inr (iha hy))
+  | _ => intro hy; simp [appSubterms] at hy; subst hy; exact hx
+
+/-- A repeated variable binds nothing new; a new one binds the subterm it meets. -/
+theorem ruleBindSyn_slots {n k : Nat} {S : Expr → Prop}
+    {st st' : List (Option Expr) × List (Option Level)} {a : Expr}
+    (h : ruleBindSyn n k st a = some st') (ha : S a) (hst : ∀ x, some x ∈ st.1 → S x) :
+    ∀ x, some x ∈ st'.1 → S x := by
+  unfold ruleBindSyn at h
+  split at h
+  · exact nomatch h
+  · cases h
+    intro x hx
+    rcases List.mem_or_eq_of_mem_set hx with hx | hx
+    · exact hst x hx
+    · cases hx; exact ha
+  · split at h
+    · cases h; exact hst
+    · exact nomatch h
+
+/-- **A syntactic match binds subterms**: where the term is in a set closed under application
+parts, so is every slot the match binds. -/
+theorem ruleMatchSyn_slots {n : Nat} {lps : List Name} {S : Expr → Prop}
+    (hS : ∀ f a, S (.app f a) → S f ∧ S a) (p : Expr) :
+    ∀ {st : List (Option Expr) × List (Option Level)} {e : Expr}
+      {st' : List (Option Expr) × List (Option Level)},
+      ruleMatchSyn n lps p st e = some st' → S e → (∀ x, some x ∈ st.1 → S x) →
+        ∀ x, some x ∈ st'.1 → S x := by
+  induction p with
+  | app g q ihg ihq =>
+    intro st e st' h he hst
+    cases e with
+    | app g' a =>
+      cases h1 : ruleMatchSyn n lps g st g' with
+      | none => simp only [ruleMatchSyn, h1] at h; exact nomatch h
+      | some st₁ =>
+        have hst₁ := ihg h1 (hS g' a he).1 hst
+        simp only [ruleMatchSyn, h1] at h
+        cases hq : q.bvarIdx? with
+        | some j =>
+          rw [hq] at h
+          exact ruleBindSyn_slots h (hS g' a he).2 hst₁
+        | none =>
+          rw [hq] at h
+          exact ihq h (hS g' a he).2 hst₁
+    | _ => exact nomatch h
+  | const c ls =>
+    intro st e st' h he hst
+    obtain ⟨sl, lv⟩ := st
+    cases e with
+    | const c' ls' =>
+      simp only [ruleMatchSyn] at h
+      split at h
+      · cases hm : matchLevels lps lv ls ls' with
+        | none => rw [hm] at h; exact nomatch h
+        | some lv' => rw [hm] at h; cases h; exact hst
+      · exact nomatch h
+    | _ => exact nomatch h
+  | _ =>
+    intro st e st' h
+    obtain ⟨sl, lv⟩ := st
+    cases e <;> exact nomatch h
+
+private theorem mem_of_mapM_id : ∀ {sl : List (Option Expr)} {args : List Expr},
+    sl.mapM id = some args → ∀ x ∈ args, some x ∈ sl
+  | [], args, h => by
+    simp only [List.mapM_nil, pure, Option.some.injEq] at h
+    subst h; simp
+  | o :: os, args, h => by
+    cases o with
+    | none => simp [List.mapM_cons] at h
+    | some y =>
+      cases hm : os.mapM id with
+      | none => simp [List.mapM_cons, hm] at h
+      | some ys =>
+        simp only [List.mapM_cons, id, hm] at h
+        simp only [bind, Option.bind, pure, Option.some.injEq] at h
+        subst h
+        intro x hx
+        rcases List.mem_cons.mp hx with rfl | hx
+        · exact List.mem_cons_self
+        · exact List.mem_cons_of_mem _ (mem_of_mapM_id hm x hx)
+
+/-- **The arguments of a syntactic match are subterms of the term's application tree.** -/
+theorem ruleArgsSyn_sub {cv : ConstantVal} {e : Expr} {args : List Expr} {us : List Level}
+    (h : ruleArgsSyn cv e = some (args, us)) : ∀ x ∈ args, x ∈ appSubterms e := by
+  unfold ruleArgsSyn at h
+  split at h
+  · rename_i _ _ _ l₀ _ _
+    dsimp only at h
+    split at h
+    · rename_i sl lv hm
+      split at h
+      · rename_i args' us' hargs _
+        cases h
+        have hS : ∀ f a, (Expr.app f a) ∈ appSubterms e → f ∈ appSubterms e ∧ a ∈ appSubterms e :=
+          fun f a hfa =>
+            ⟨appSubterms_trans (by simp [appSubterms, self_mem_appSubtermsC]) e hfa,
+              appSubterms_trans (by simp [appSubterms, self_mem_appSubtermsC]) e hfa⟩
+        have hsl := ruleMatchSyn_slots (S := (· ∈ appSubterms e)) hS l₀ hm
+          (self_mem_appSubtermsC e) (fun x hx => by simp at hx)
+        exact fun x hx => hsl x (mem_of_mapM_id hargs x hx)
+      · exact nomatch h
+    · exact nomatch h
+  · exact nomatch h
+
+/-- The gate after a syntactic match decides `RuleGate`. -/
+theorem ruleGateSynB_iff {cv : ConstantVal} {us : List Level} {args : List Expr} {e : Expr}
+    {eqn : Name} {l rhs : Expr} (hsub : ∀ x ∈ args, x ∈ appSubterms e) :
+    ruleGateSynB cv us e eqn l = true ↔ RuleGate cv us args e eqn l rhs := by
+  simp only [ruleGateSynB, RuleGate, Bool.and_eq_true, decide_eq_true_eq]
+  constructor
+  · rintro ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩; exact ⟨h1, h2, h3, hsub, h4⟩
+  · rintro ⟨h1, h2, h3, -, h4⟩; exact ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩
+
+/-- One marked rule's firing after a syntactic match simulates its specification: the gate
+without the subterm walk, whose conjunct the match supplies. -/
+theorem rewriteFireSynC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d : Nat}
+    {t : Name} {cv : ConstantVal} (hft : env.find? t = some (.thmInfo cv)) (args : List Expr)
+    (us : List Level) {e₁ : Expr} {s₀ : CState} (hs : CSOK mode eager env s₀)
+    (hw : Expr.WScoped d e₁) (hsub : ∀ x ∈ args, x ∈ appSubterms e₁) :
+    ⦃fun s => s = s₀⦄ rewriteFireSynI mode (mkFEnv env) eager f d t cv args us e₁
+    ⦃fun o s' => CSOK mode eager env s' ∧
+      Runs (rewriteFire (fueledFns mode eager env) env d cv args us e₁) o ∧ OptWS d o; ⊤⦄ := by
+  unfold rewriteFireSynI rewriteFire
+  have hfind : (env.find? t).isSome = true := by rw [hft]; rfl
+  have hcl : cv.type.hasFvar = false := (henv.consts _ (Env.find?_mem hft)).1
+  have hT : constTyOf env t us = cv.type.instantiateLevelParams cv.levelParams us := by
+    simp [constTyOf, hft, ConstantInfo.toConstantVal]
+  have hwT : Expr.WScoped d (cv.type.instantiateLevelParams cv.levelParams us) :=
+    Expr.WScoped.of_not_hasFvar (by rw [Expr.hasFvar_instantiateLevelParams]; exact hcl)
+  cases hsp : (piResidual (cv.type.instantiateLevelParams cv.levelParams us) args).bind
+      eqSpine? with
+  | none =>
+    sym only [conleche_grind] =>
+      vcgen [constTyAtM_spec (mode := mode) (eager := eager) (env := env) hs t t us hfind,
+        piResidualM_spec (mode := mode) (eager := eager) (env := env)] <;> finish
+  | some q =>
+    obtain ⟨eqn, u, A, l, rhs⟩ := q
+    dsimp only
+    by_cases hg : RuleGate cv us args e₁ eqn l rhs
+    · rw [ite_eq_left hg]
+      have hgB : ruleGateSynB cv us e₁ eqn l = true := (ruleGateSynB_iff hsub).2 hg
+      have hargs : AllWS d args := fun x hx => appSubterms_WScoped e₁ (hsub x hx) hw
+      obtain ⟨R, hres, hR⟩ : ∃ R, piResidual
+          (cv.type.instantiateLevelParams cv.levelParams us) args = some R ∧
+          eqSpine? R = some (eqn, u, A, l, rhs) := by
+        cases h : piResidual (cv.type.instantiateLevelParams cv.levelParams us) args with
+        | none => rw [h] at hsp; exact nomatch hsp
+        | some R => rw [h] at hsp; exact ⟨R, rfl, hsp⟩
+      rw [eqSpine?_eq_some] at hR
+      subst hR
+      have hwR := piResidual_WScoped hres hwT hargs
+      simp only [Expr.WScoped] at hwR
+      have hwA := hwR.1.1.2
+      have hwr := hwR.2
+      sym only [conleche_grind] =>
+        vcgen [constTyAtM_spec (mode := mode) (eager := eager) (env := env) hs t t us hfind,
+          piResidualM_spec (mode := mode) (eager := eager) (env := env),
+          iotaCertsFullC_spec ih, ih.infer_spec] <;> finish
+    · rw [ite_eq_right hg]
+      have hgB : ruleGateSynB cv us e₁ eqn l = false := by
+        cases h : ruleGateSynB cv us e₁ eqn l
+        · rfl
+        · exact absurd ((ruleGateSynB_iff (rhs := rhs) hsub).1 h) hg
+      sym only [conleche_grind] =>
+        vcgen [constTyAtM_spec (mode := mode) (eager := eager) (env := env) hs t t us hfind,
+          piResidualM_spec (mode := mode) (eager := eager) (env := env)] <;> finish
+
 /-- One rule's firing simulates its specification: the match, then the firing. -/
 theorem rewriteAttemptC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d : Nat}
     {e : Expr} (t : Name) {s₀ : CState} (hs : CSOK mode eager env s₀) (hw : Expr.WScoped d e) :
@@ -616,12 +855,13 @@ theorem preAttemptC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d : N
     cases ci
     case thmInfo cv =>
       dsimp only
+      rw [ruleArgsSynC_eq]
       cases hm : ruleArgsSyn cv e' with
       | none => sym only [conleche_grind] => vcgen <;> finish
       | some au =>
         obtain ⟨args, us⟩ := au
         dsimp only
-        exact rewriteFireC_spec ih henv hft args us hs hw
+        exact rewriteFireSynC_spec ih henv hft args us hs hw (ruleArgsSyn_sub hm)
     all_goals sym only [conleche_grind] => vcgen <;> finish
 
 /-- A marked rule against the prefix of its arity simulates its specification. -/
@@ -671,18 +911,26 @@ theorem preFireC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d : Nat}
     ⦃fun o s' => CSOK mode eager env s' ∧
       Runs (preFire (fueledFns mode eager env) env d e) o ∧ RuleWS d o; ⊤⦄ := by
   unfold preFireI preFire
-  rw [mkFEnv_rulesFor_fun, mkFEnv_find_fun, unfoldableHeadC_spec]
+  rw [unfoldableHeadC_spec]
   have hargs : AllWS d e.getAppArgs := allWS_getAppArgs hw
   cases e.getAppFn with
   | const c us =>
     by_cases hu : unfoldableHead env e = true
     · simp only [hu, ↓reduceIte]
-      cases preRulesFor env.rulesFor c with
-      | nil => sym only [conleche_grind] => vcgen <;> finish
+      cases hpr : preRulesFor env.rulesFor c with
+      | nil =>
+        have hk : preKeysOf env.find? env.rulesFor c = ([], []) := by simp [preKeysOf, hpr]
+        sym only [conleche_grind] =>
+          vcgen [preKeysM_spec (mode := mode) (eager := eager) (env := env)] <;> finish
       | cons t ts =>
+        have hk : preKeysOf env.find? env.rulesFor c =
+            ((t :: ts).zip ((t :: ts).map (ruleKey env.find? env.rulesFor c)),
+              ((t :: ts).map (ruleKey env.find? env.rulesFor c)).eraseDups) := by
+          simp only [preKeysOf, hpr]
         dsimp only
-        sym only [conleche_grind, CSOK.tickRule] =>
-          vcgen [keyScanC_spec ih, preRulesC_spec ih henv hw, tickRuleI] <;> finish
+        sym only [conleche_grind, CSOK.tickRule, List.map_cons, List.zip_cons_cons] =>
+          vcgen [preKeysM_spec (mode := mode) (eager := eager) (env := env), keyScanC_spec ih,
+            preRulesC_spec ih henv hw, tickRuleI] <;> finish
     · simp only [hu, Bool.false_eq_true, ↓reduceIte]
       sym only [conleche_grind] => vcgen <;> finish
   | _ => sym only [conleche_grind] => vcgen <;> finish

@@ -354,14 +354,15 @@ ConLeche.ruleTele
 
 # Rules that fire before unfolding (Kernel/Core, Kernel/CoreDefs, Kernel/Env), run by the cached
 # test before unfolding as they are. The marked rules of a head are one lookup under
-# `preHeadName` and a filter (`preRulesFor`). The key of each marked rule (`ruleKey`) is read at
-# each test from the rule's left side (`ruleLhs?`, `constArgPositions`), one pass over the spine
-# of each of the head's few marked rules. The active-table entries under `preHeadName` and
+# `preHeadName` and a filter (`preRulesFor`), and the key of each marked rule (`ruleKey`) is read
+# from the rule's left side (`ruleLhs?`, `constArgPositions`); both are read once per declaration
+# and head and kept in the state (`preKeysM`). The active-table entries under `preHeadName` and
 # `preKeyName` (`preEntries`) are built once per rule set, never per term. The key test reads one
 # argument: `keyLit` turns a literal into a constructor, `headIs`, `ctorForm`, `litB`,
 # `ctorHeadB` and `isCtorConst` are a head read and one lookup. The syntactic match
 # (`ruleMatchSyn`, `ruleArgsSyn`, `ruleBindSyn`) walks the rule's left side once against the term
-# with no reduction, so there is nothing to cache. The lazy step compares two heads
+# with no reduction, so there is nothing to cache; it runs only at the prefix of the spine whose
+# argument count is the left side's (`ruleArgsSynC`). The lazy step compares two heads
 # (`sameHeadName`) and drops an origin by one comparison (`dropOrigin`). The bound on nested
 # rules-last restarts is a constant (`ruleNestBudget`).
 ConLeche.constArgPositions

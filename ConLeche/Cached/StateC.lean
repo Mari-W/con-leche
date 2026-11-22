@@ -287,6 +287,10 @@ structure CState where
   constTyAt : Std.HashMap (Name × List Level) Expr := {}
   constValAt : Std.HashMap (Name × List Level) Expr := {}
   ruleBodyAt : Std.HashMap (Name × Name × List Level) Expr := {}
+  /-- **The marked rules of a head with their keys** (`preKeysM`): for the head `c`, the marked
+  rules in firing order paired with their keys, and the keys without repeats, as the test before
+  unfolding reads them (`preKeysOf`).  The rule set is the environment's, so the flush drops it. -/
+  preKeysC : Std.HashMap Name (List (Name × Option (Nat × Name)) × List (Option (Nat × Name))) := {}
   whnfCoreC : Std.HashMap Expr Expr := {}
   /-- The cheap-projection head normalization's memo (`whnfCore` at
   `cheap_proj`, `whnfCoreBody`): a separate map, since the two modes'
@@ -533,12 +537,35 @@ def ruleBodyAtM (fe : FEnv) (_cI _jI : Name) (c j : Name) (us : List Level) :
       | none => throw (.internal "ruleBodyAtM: no rule for constructor")
     | _ => throw (.internal "ruleBodyAtM: not a stored recursor")
 
+/-- **The marked rules of the head `c` with their keys** (`preFire`'s `preRulesFor` and
+`ruleKey`): each marked rule in firing order with its key, and the keys without repeats. -/
+def preKeysOf (find? : Name → Option ConstantInfo) (rulesFor : Name → List Name) (c : Name) :
+    List (Name × Option (Nat × Name)) × List (Option (Nat × Name)) :=
+  let ts := preRulesFor rulesFor c
+  let ks := ts.map (ruleKey find? rulesFor c)
+  (ts.zip ks, ks.eraseDups)
+
+/-- `preKeysOf` through the per-declaration memo: the marked rules of a head and their keys are
+read off the rule table once per declaration, not at every test before unfolding. -/
+def preKeysM (fe : FEnv) (c : Name) :
+    CheckCM (List (Name × Option (Nat × Name)) × List (Option (Nat × Name))) := do
+  let hit? ← modifyGet fun s => (s.preKeysC[c]?, s)
+  match hit? with
+  | some v => pure v
+  | none =>
+    let v := preKeysOf fe.find? fe.rulesFor c
+    modify fun s =>
+      let mp := s.preKeysC
+      let s := { s with preKeysC := ∅ }
+      { s with preKeysC := mp.insert c v }
+    pure v
+
 /-- Drop the environment-dependent caches (an environment transition).
 The environment-independent components — the level-operation memos —
 survive. -/
 def CState.flushed (s : CState) : CState :=
   { s with
-      constTyAt := {}, constValAt := {}, ruleBodyAt := {},
+      constTyAt := {}, constValAt := {}, ruleBodyAt := {}, preKeysC := {},
       whnfCoreC := {}, whnfCoreCheapC := {}, whnfC := {}, inferC := {}, inferIOC := {},
       defeqC := {}, instC := {}, eagerMemos := {} }
 

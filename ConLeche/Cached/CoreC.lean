@@ -55,6 +55,28 @@ def unfoldDefinitionI (fe : FEnv) (e : Expr) : CheckCM (Option Expr) := do
     | _ => pure none
   | _ => pure none
 
+/-- The number of arguments of a spine. -/
+def appCount : Expr → Nat
+  | .app f _ => appCount f + 1
+  | _ => 0
+
+/-- Twin of `ruleArgsSyn`: a spine whose argument count is not the left side's does not match
+(`ruleMatchSyn` walks both spines in step), so it fails before the walk.  The test before
+unfolding tries a marked rule at every prefix of the spine, and only one prefix has the left
+side's arity. -/
+def ruleArgsSynC (cv : ConstantVal) (e : Expr) : Option (List Expr × List Level) :=
+  match (ruleTele cv.type).2 with
+  | .app (.app (.app (.const _ [_]) _) l₀) _ =>
+    if appCount e = appCount l₀ then ruleArgsSyn cv e else none
+  | _ => none
+
+/-- **The rule gate after a syntactic match** (`RuleGate` without its subterm conjunct): the
+syntactic match binds every argument to a subterm of the term's application tree
+(`ruleArgsSyn_sub`), so the walk that looks for each of them is left out. -/
+def ruleGateSynB (cv : ConstantVal) (us : List Level) (e : Expr) (eqn : Name) (l : Expr) : Bool :=
+  decide (eqn = eqName) && decide (us.length = cv.levelParams.length) && e.levelFormEq l &&
+    e.getAppFn.isConstB
+
 /-- Twin of `litToCtorIfNat`. -/
 def litToCtorIfNatI (fe : FEnv) (e : Expr) : CheckCM Expr := do
   match e with
@@ -548,7 +570,9 @@ def iotaCertsFullIAux (eager : Bool) (lv : Nat) (depth : Nat) :
   | ty, acc, arg :: rest => do
     match ty with
     | .forallE dom body => do
-        let dom' ← instListM dom acc
+        -- a binder's domain is small and its instance rarely repeats: substituted without the
+        -- bulk-instantiation memo
+        let dom' ← pure (Expr.instantiateListC dom acc 0)
         let ta ← inferI eager lv false depth arg
         if ← defeqI eager lv depth ta dom' then
           iotaCertsFullIAux eager lv depth body (arg :: acc) rest
@@ -1325,13 +1349,27 @@ def keyScanI (eager : Bool) (lv : Nat) (depth : Nat) :
     pure (if b then k :: cs else cs, args₂)
 termination_by ks _ => (lv, 28, 1, ks.length)
 
+/-- Twin of `rewriteFire` after a syntactic match (`ruleArgsSynC`): the gate without its
+subterm walk (`ruleGateSynB`), otherwise `rewriteFireI`. -/
+def rewriteFireSynI (eager : Bool) (lv : Nat) (depth : Nat) (thm : Name) (cv : ConstantVal)
+    (args : List Expr) (us : List Level) (e₁ : Expr) : CheckCM (Option Expr) := do
+  let T ← constTyAtM fe thm thm us
+  match (← piResidualM T args).bind eqSpine? with
+  | some (eqn, _, _, l, rhs) =>
+    if ruleGateSynB cv us e₁ eqn l then
+      if ← iotaCertsFullI eager lv depth T args then pure (some rhs)
+      else pure none
+    else pure none
+  | none => pure none
+termination_by (lv, 28, 1, 2)
+
 /-- Twin of `preAttempt`. -/
 def preAttemptI (eager : Bool) (lv : Nat) (depth : Nat) (e' : Expr) (t : Name) :
     CheckCM (Option Expr) :=
   match fe.find? t with
   | some (.thmInfo cv) =>
-    match ruleArgsSyn cv e' with
-    | some (args, us) => rewriteFireI eager lv depth t cv args us e'
+    match ruleArgsSynC cv e' with
+    | some (args, us) => rewriteFireSynI eager lv depth t cv args us e'
     | none => pure none
   | _ => pure none
 termination_by (lv, 28, 2, 0)
@@ -1364,14 +1402,15 @@ site, as the official kernel counts it in `fire_first_rule`. -/
 def preFireI (eager : Bool) (lv : Nat) (depth : Nat) (e : Expr) : CheckCM (Option (Name × Expr)) :=
   match Expr.getAppFn e with
   | .const c us =>
-    if unfoldableHeadC fe e then
-      match preRulesFor fe.rulesFor c with
+    if unfoldableHeadC fe e then do
+      -- the marked rules and their keys, read once per declaration (`preKeysM`)
+      let (tks, ks) ← preKeysM fe c
+      match tks with
       | [] => pure none
-      | ts => do
-        let ks := ts.map (ruleKey fe.find? fe.rulesFor c)
-        let (cs, args') ← keyScanI eager lv depth ks.eraseDups (Expr.getAppArgs e)
+      | _ => do
+        let (cs, args') ← keyScanI eager lv depth ks (Expr.getAppArgs e)
         match ← preRulesI eager lv depth e (Expr.mkAppN (.const c us) args')
-            (ts.zip ks |>.filterMap fun (t, k) => if cs.contains k then some t else none) with
+            (tks.filterMap fun (t, k) => if cs.contains k then some t else none) with
         | some (t, e₂) => do
           tickRuleI t
           pure (some (t, e₂))

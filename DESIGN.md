@@ -116531,3 +116531,57 @@ the model and every proof are unchanged, because they see only the proposition. 
 now takes 618.0 G with the rules against 301.9 G without. The remaining cost of a firing is spread
 over the certificate pass, instantiation and allocation, with no symbol above 2.4% outside the
 allocator.
+
+## The cost of a firing before unfolding (2026-11-22, gate-walk)
+
+**A firing in con-leche certifies every matched argument, and the C++ kernel does not.** On the
+ClusterAlgebras module `TypeE.CertificateData.E8Rel3` with `rules-max.txt` the C++ kernel fires
+8 141 824 rules (3 979 773 `foldr_cons`, 3 592 105 `cond_false`, 375 148 `cond_true`). Its kernel
+needs 277.4 G instructions without the rules and 182.4 G with them. With
+`LEAN_REWRITE_CHECK_ARGS=1` it type-checks the matched arguments against the rule's binder types
+at every firing, as `Red.rewrite`'s `CertsF` premise makes con-leche do, and needs 483.4 G. That is
+301.0 G for the certificates, more than the 95.0 G the rules save. con-leche without these changes
+needs 312.5 G without the rules and 629.8 G with them (`--jobs=1`, the same exports as the gate
+record above). A firing's unfolding is a few memo hits. A firing's certificate infers each
+argument at the full grade and compares its type with the instantiated domain, and the arguments
+of `cond_false` and of the reduct of `foldr_cons` are fresh terms from the β step before.
+
+The cached test before unfolding had overhead of its own on top, removed here without a model
+change.
+
+- The marked rules of a head and their keys (`preRulesFor`, `ruleKey`) were recomputed at every
+  test, with a `Name` built for the active-table lookup, a filter over the head's rules and a pass
+  over each rule's left side. They are now read once per declaration and head into the state
+  (`CState.preKeysC`, `preKeysM`, invariant `CSOK.preKeys`, flushed with the other
+  environment-dependent caches).
+- A marked rule was matched at every prefix of the spine. A syntactic match walks both spines in
+  step (`ruleMatchSyn_appCount`), so the cached twin `ruleArgsSynC` skips a prefix whose argument
+  count is not the left side's (`ruleArgsSynC_eq`).
+- After a syntactic match the gate no longer looks for each argument in the term's application
+  tree (`ruleGateSynB`, `rewriteFireSynI`). The match binds every slot to a subterm reached
+  through `.app` alone (`ruleMatchSyn_slots`, `ruleArgsSyn_sub`), which is the conjunct
+  `ruleGateSynB_iff` supplies. The firings after a match with retries (`rewriteFireI`) keep the
+  walk.
+- The certificate loop (`iotaCertsFullIAux`) substitutes a binder's domain without the
+  bulk-instantiation memo. The memo keyed every domain by the whole argument list and almost never
+  hit.
+
+The spec checker, `Red.rewrite` and the model are unchanged. On `E8Rel3` (`--jobs=1`) the rules now
+take 497.4 G against 303.1 G without them, from 629.8 G against 312.5 G. In a profile of the new
+binary with the rules, 19.9% of the samples are under the certificate loop, 15.6% under the
+syntactic match (`ruleMatchSyn` with its `List.set` slots, `ruleLevels`) and 9.1% under the
+instantiation of the theorem's residual (`piResidualAcc`, whose `Eq` spine instantiates both sides
+although the gate needs the left side only to compare it with the term).
+
+**What would remove the certificates.** The model needs `CertsF` because a stored theorem's type
+alone does not fit arbitrary arguments to its telescope (DESIGN, "User rewrite rules, model
+side"). The model already has the inversion that the C++ kernel relies on implicitly. A graded
+application that is not the point fits its head's telescope (`teleFitPA_of_graded_ne_pt`), and
+`RedSem` assumes exactly a graded term that is not the point. A binder of the rule whose variable
+sits directly at argument position `i` of the left side's head, and whose domain at the matched
+arguments is the head's `i`-th domain at the preceding arguments, then needs no certificate. That
+covers all three arguments of `cond_true` and `cond_false` and four of the six of `foldr_cons`. It
+needs a new premise for `Red.rewrite` in place of `CertsF` (certificates for the other binders and
+the domain equations for these), a `MatchRelSem` that hands on the gradedness of the matched view,
+and every proof that builds or transports `Red.rewrite` (the spec's `rewriteFire`, `Deep`, the
+environment extension, the bridges, the cached twins). Not started.
