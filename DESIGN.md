@@ -116573,6 +116573,17 @@ syntactic match (`ruleMatchSyn` with its `List.set` slots, `ruleLevels`) and 9.1
 instantiation of the theorem's residual (`piResidualAcc`, whose `Eq` spine instantiates both sides
 although the gate needs the left side only to compare it with the term).
 
+A second round substitutes stored types without the bulk-instantiation memo
+(`Expr.instantiateListS`, `instantiateListS_spec`): the residual of a theorem or constructor type
+at a spine (`piResidualAcc`) and the binder domains of the certificate loop. Their nodes are
+stored in the environment and rarely repeat, so the memo cost a probe and an insertion at every
+node, as the official `instantiate_rewrite_rhs` notes for right sides. A type with heavy sharing
+is now walked as a tree. On `E8Rel3` (`--jobs=1`, measured on ahumoa) the rules take 481.0 G
+(54.0 s CPU) against 497.5 G (57.5 s), and the run without rules stays at 303.1 G (39.6 s against
+38.9 s). The certificates stay the larger part of the gap. The C++ kernel with
+`LEAN_REWRITE_CHECK_ARGS=1` pays 301.0 G for them on this module, more than the rules save, so
+con-leche with `CertsF` cannot reach its run without rules by caching alone.
+
 **What would remove the certificates.** The model needs `CertsF` because a stored theorem's type
 alone does not fit arbitrary arguments to its telescope (DESIGN, "User rewrite rules, model
 side"). The model already has the inversion that the C++ kernel relies on implicitly. A graded

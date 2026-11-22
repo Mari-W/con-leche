@@ -636,6 +636,51 @@ def instantiateListC (e : @& Expr) (vs : List Expr) (d : Nat := 0) : Expr :=
     if hcut : e.bvarB ≤ d then e
     else resTerm (instantiateListXP a a.size none e d (by simp [a]) hcut)
 
+/-- The walk of `instantiateListS`: `instantiateListXP` without the pointer-keyed memo at the
+compound nodes.  A replacement whose value has loose bound variables below the lift re-enters
+under a fresh memo, as in `instantiateListXP` (`reentListP`). -/
+def instantiateListSX (vs : @& Array Expr) (k : Nat) (hk : ¬ k = 0) (e : @& Expr) (d : Nat) :
+    { r : Expr // r = instantiateListP vs e k d } :=
+  if hcut : e.bvarB ≤ d then ⟨e, (instantiateListP_cut hcut).symm⟩
+  else match e, hcut with
+  | .app f a .., hcut =>
+    match instantiateListSX vs k hk f d, instantiateListSX vs k hk a d with
+    | ⟨f', hf⟩, ⟨a', ha⟩ =>
+      ⟨mkApp f' a', by rw [instantiateListP.eq_def]; simp [hk, hcut, hf, ha, mkApp]⟩
+  | .lam ty body .., hcut =>
+    match instantiateListSX vs k hk ty d, instantiateListSX vs k hk body (d + 1) with
+    | ⟨ty', ht⟩, ⟨b', hb⟩ =>
+      ⟨mkLam ty' b', by rw [instantiateListP.eq_def]; simp [hk, hcut, ht, hb, mkLam]⟩
+  | .forallE ty body .., hcut =>
+    match instantiateListSX vs k hk ty d, instantiateListSX vs k hk body (d + 1) with
+    | ⟨ty', ht⟩, ⟨b', hb⟩ =>
+      ⟨mkForallE ty' b', by rw [instantiateListP.eq_def]; simp [hk, hcut, ht, hb, mkForallE]⟩
+  | .letE ty val body .., hcut =>
+    match instantiateListSX vs k hk ty d, instantiateListSX vs k hk val d,
+      instantiateListSX vs k hk body (d + 1) with
+    | ⟨ty', ht⟩, ⟨v', hv⟩, ⟨b', hb⟩ =>
+      ⟨mkLetE ty' v' b', by rw [instantiateListP.eq_def]; simp [hk, hcut, ht, hv, hb, mkLetE]⟩
+  | .proj sn i sub .., hcut =>
+    match instantiateListSX vs k hk sub d with
+    | ⟨s', hs⟩ => ⟨mkProj sn i s', by rw [instantiateListP.eq_def]; simp [hk, hcut, hs, mkProj]⟩
+  | .bvar i, hcut => leafListP vs k (.bvar i) d hk (reentListP vs k d) hcut rfl
+  | .fvar idx ty, hcut => leafListP vs k (.fvar idx ty) d hk (reentListP vs k d) hcut rfl
+  | .sort u, hcut => leafListP vs k (.sort u) d hk (reentListP vs k d) hcut rfl
+  | .const n us, hcut => leafListP vs k (.const n us) d hk (reentListP vs k d) hcut rfl
+  | .lit l, hcut => leafListP vs k (.lit l) d hk (reentListP vs k d) hcut rfl
+termination_by sizeOf e
+
+/-- **The bulk instantiation of a small term** (official `instantiate_rewrite_rhs`, which runs
+without the cache of `replace`): `Expr.instantiateList` by `instantiateListSX`, for a rule
+theorem's type at a firing.  Its nodes are stored in the environment and so all shared, and they
+rarely repeat, so `instantiateListC`'s memo cost a probe and an insertion at every node. -/
+def instantiateListS (e : @& Expr) (vs : List Expr) (d : Nat := 0) : Expr :=
+  match vs with
+  | [] => e
+  | v :: vs' =>
+    let a := (v :: vs').toArray
+    (instantiateListSX a a.size (by simp [a]) e d).1
+
 /-- The plain descent of `instantiateRevRange` (as `instantiateListP`
 on the reversed prefix `vs[:n]`): the reference of `instantiateRevXP`. -/
 def instantiateRevP (vs : Array Expr) (n : Nat) (e : Expr) (k : Nat) (d : Nat) : Expr :=
@@ -2143,16 +2188,18 @@ def instSpineC (args : List Expr) (t : Nat) (e : Expr) : Expr :=
 Not structural: the `bvar` arm re-enters on the same argument list with
 the accumulator flushed.  Measure `(as.length, acc.length)` — the
 `forallE` arm consumes an argument, the `bvar` arm keeps the arguments
-and empties a nonempty accumulator. -/
+and empties a nonempty accumulator.  The residual is a stored type (a
+constructor's, a rule theorem's) at a spine, so it is substituted without
+the memo (`instantiateListS`). -/
 def piResidualAcc : List Expr → Expr → List Expr → Option Expr
-  | acc, e, [] => some (instantiateListC e acc 0)
+  | acc, e, [] => some (instantiateListS e acc 0)
   | acc, e, a :: as =>
     match e with
     | .forallE _ b .. => piResidualAcc (a :: acc) b as
     | .bvar .. =>
       match acc with
       | [] => none
-      | _ :: _ => piResidualAcc [] (instantiateListC e acc 0) (a :: as)
+      | _ :: _ => piResidualAcc [] (instantiateListS e acc 0) (a :: as)
     | _ => none
 termination_by acc _ as => (as.length, acc.length)
 decreasing_by

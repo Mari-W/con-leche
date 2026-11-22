@@ -572,7 +572,7 @@ def iotaCertsFullIAux (eager : Bool) (lv : Nat) (depth : Nat) :
     | .forallE dom body => do
         -- a binder's domain is small and its instance rarely repeats: substituted without the
         -- bulk-instantiation memo
-        let dom' ← pure (Expr.instantiateListC dom acc 0)
+        let dom' ← pure (Expr.instantiateListS dom acc 0)
         let ta ← inferI eager lv false depth arg
         if ← defeqI eager lv depth ta dom' then
           iotaCertsFullIAux eager lv depth body (arg :: acc) rest

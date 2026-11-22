@@ -277,12 +277,12 @@ theorem iotaCertsFullCAux_spec (ih : SSimC mode eager env f) {d : Nat} :
     sym only [conleche_grind, iotaCertsFull.eq_1] =>
       vcgen [iotaCertsFullIAux.eq_1] <;> finish
   | _ :: as, _, [], _, _, _, _ => by
-    sym only [conleche_grind, iotaCertsFull_instList_cons, Expr.instantiateListC_spec] =>
+    sym only [conleche_grind, iotaCertsFull_instList_cons, Expr.instantiateListS_spec] =>
       vcgen [iotaCertsFullIAux.eq_def, ih.infer_spec, ih.defeq_spec,
         iotaCertsFullCAux_spec ih (args := as)] <;> finish
   | a :: as, _, _ :: _, _, hs, _, _ => by
     sym only [conleche_grind, iotaCertsFull_instList_cons, Expr.instantiateList_nil,
-        Expr.instantiateListC_spec] =>
+        Expr.instantiateListS_spec] =>
       vcgen [iotaCertsFullIAux.eq_def, instListM_spec hs, ih.infer_spec, ih.defeq_spec,
         iotaCertsFullCAux_spec ih (args := as),
         iotaCertsFullCAux_spec ih (args := a :: as) (acc := [])] <;> finish

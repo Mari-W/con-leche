@@ -447,6 +447,16 @@ theorem instantiateListC_spec {e : Expr} {vs : List Expr} {d : Nat} :
       exact htail _ (instantiateListP_spec (vs := (v :: vs').toArray)
         (v :: vs').toArray.size e (d := d) (Nat.le_refl _))
 
+theorem instantiateListS_spec {e : Expr} {vs : List Expr} {d : Nat} :
+    (Expr.instantiateListS e vs d) = (Expr.instantiateList e vs d) := by
+  cases vs with
+  | nil => rw [Expr.instantiateListS]; simp [Expr.instantiateList_nil]
+  | cons v vs' =>
+    rw [Expr.instantiateListS]
+    rw [(Expr.instantiateListSX _ _ _ e d).2, instantiateListP_spec _ e (Nat.le_refl _)]
+    congr 1
+    rw [show (v :: vs').toArray.size = ((v :: vs')).length from by simp, List.take_length]
+
 /-! ## Telescope-context spine instantiation -/
 
 theorem instSpineChainC_spec : ∀ (args : List Expr) (t : Nat) (e : Expr),
@@ -1056,7 +1066,7 @@ theorem piResidualAcc_spec :
           ((Expr.instantiateList e acc)) as)
   | [], acc, e => by
     rw [piResidualAcc.eq_def]
-    exact instantiateListC_spec (d := 0)
+    exact instantiateListS_spec (d := 0)
   | a :: as, acc, e => by
     cases e with
     | forallE ty b =>
@@ -1081,10 +1091,10 @@ theorem piResidualAcc_spec :
         exact trivial
       | cons a' acc' =>
         have h2 :=
-          instantiateListC_spec (e := Expr.bvar i)
+          instantiateListS_spec (e := Expr.bvar i)
             (vs := a' :: acc') (d := 0)
         have hrec := piResidualAcc_spec (a :: as) []
-          (Expr.instantiateListC (Expr.bvar i) (a' :: acc') 0)
+          (Expr.instantiateListS (Expr.bvar i) (a' :: acc') 0)
         rw [Expr.instantiateList_nil] at hrec
         rw [← h2]
         exact hrec
