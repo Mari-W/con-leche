@@ -555,11 +555,16 @@ theorem ruleArgsI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe�
   funext depth cv e; rw [ruleArgsI.eq_def, ruleArgsI.eq_def]
   simp only [ruleMatchI_congr hfe h]
 
+/-- `headTypeOfM` reads `fe` only through `find?`. -/
+theorem headTypeOfM_congr (hfe : fe₁.find? = fe₂.find?) : headTypeOfM fe₁ = headTypeOfM fe₂ := by
+  funext e; rw [headTypeOfM.eq_def, headTypeOfM.eq_def]
+  simp only [hfe, constTyAtM_congr hfe]
+
 /-- `rewriteFireI` reads `fe` only through `find?`. -/
 theorem rewriteFireI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv) :
     rewriteFireI mode fe₁ eager lv = rewriteFireI mode fe₂ eager lv := by
   funext depth e t cv args us e₁; rw [rewriteFireI.eq_def, rewriteFireI.eq_def]
-  simp only [constTyAtM_congr hfe, ruleCertsI_congr hfe h, hfe]
+  simp only [constTyAtM_congr hfe, ruleCertsI_congr hfe h, headTypeOfM_congr hfe]
 
 /-- `rewriteAttemptI` reads `fe` only through `find?`. -/
 theorem rewriteAttemptI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv) :
@@ -634,7 +639,7 @@ theorem keyScanI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁
 theorem rewriteFireSynI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv) :
     rewriteFireSynI mode fe₁ eager lv = rewriteFireSynI mode fe₂ eager lv := by
   funext depth e thm cv args us e₁; rw [rewriteFireSynI.eq_def, rewriteFireSynI.eq_def]
-  simp only [constTyAtM_congr hfe, ruleCertsI_congr hfe h, hfe]
+  simp only [constTyAtM_congr hfe, ruleCertsI_congr hfe h, headTypeOfM_congr hfe]
 
 /-- `preAttemptI` reads `fe` only through `find?`. -/
 theorem preAttemptI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv) :

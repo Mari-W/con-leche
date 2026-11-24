@@ -408,7 +408,6 @@ theorem rewriteFireC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d : 
     ⦃fun o s' => CSOK mode eager env s' ∧
       Runs (rewriteFire (fueledFns mode eager env) env d e cv args us e₁) o ∧ OptWS d o; ⊤⦄ := by
   unfold rewriteFireI rewriteFire
-  rw [headTypeOfC_eq, mkFEnv_find_fun]
   have hfind : (env.find? t).isSome = true := by rw [hft]; rfl
   have hcl : cv.type.hasFvar = false := (henv.consts _ (Env.find?_mem hft)).1
   have hT : constTyOf env t us = cv.type.instantiateLevelParams cv.levelParams us := by
@@ -442,7 +441,8 @@ theorem rewriteFireC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d : 
       sym only [conleche_grind] =>
         vcgen [constTyAtM_spec (mode := mode) (eager := eager) (env := env) hs t t us hfind,
           piResidualM_spec (mode := mode) (eager := eager) (env := env),
-          ruleCertsC_spec ih, ih.infer_spec] <;> finish
+          ruleCertsC_spec ih, ih.infer_spec,
+          headTypeOfM_spec (mode := mode) (eager := eager) (env := env)] <;> finish
     · rw [ite_eq_right hg]
       sym only [conleche_grind] =>
         vcgen [constTyAtM_spec (mode := mode) (eager := eager) (env := env) hs t t us hfind,
@@ -643,7 +643,6 @@ theorem rewriteFireSynC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d
     ⦃fun o s' => CSOK mode eager env s' ∧
       Runs (rewriteFire (fueledFns mode eager env) env d e cv args us e₁) o ∧ OptWS d o; ⊤⦄ := by
   unfold rewriteFireSynI rewriteFire
-  rw [headTypeOfC_eq, mkFEnv_find_fun]
   have hfind : (env.find? t).isSome = true := by rw [hft]; rfl
   have hcl : cv.type.hasFvar = false := (henv.consts _ (Env.find?_mem hft)).1
   have hT : constTyOf env t us = cv.type.instantiateLevelParams cv.levelParams us := by
@@ -678,7 +677,8 @@ theorem rewriteFireSynC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d
       sym only [conleche_grind] =>
         vcgen [constTyAtM_spec (mode := mode) (eager := eager) (env := env) hs t t us hfind,
           piResidualM_spec (mode := mode) (eager := eager) (env := env),
-          ruleCertsC_spec ih, ih.infer_spec] <;> finish
+          ruleCertsC_spec ih, ih.infer_spec,
+          headTypeOfM_spec (mode := mode) (eager := eager) (env := env)] <;> finish
     · rw [ite_eq_right hg]
       have hgB : ruleGateSynB cv us e₁ eqn l = false := by
         cases h : ruleGateSynB cv us e₁ eqn l

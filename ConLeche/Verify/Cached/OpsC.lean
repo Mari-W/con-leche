@@ -1147,6 +1147,76 @@ decreasing_by
   · apply Prod.Lex.right' <;> simp_all
   · apply Prod.Lex.left; simp
 
+/-- `teleDomAcc` is the domain of the spec's residual (`piResidualAcc_spec`'s induction). -/
+theorem teleDomAcc_spec :
+    ∀ (as acc : List Expr) (e : Expr),
+      Expr.teleDomAcc acc e as =
+        (match _root_.ConLeche.piResidual (Expr.instantiateList e acc) as with
+          | some (.forallE dom _) => some dom
+          | _ => none)
+  | [], acc, e => by
+    cases e with
+    | forallE ty b =>
+      rw [teleDomAcc.eq_def]; dsimp only
+      rw [instList_forallE, instantiateListS_spec]; rfl
+    | bvar i =>
+      rw [teleDomAcc.eq_def]; dsimp only
+      cases acc with
+      | nil => rw [Expr.instantiateList_nil]; rfl
+      | cons a' acc' =>
+        rw [teleDomAcc_spec [] [] _, Expr.instantiateList_nil, instantiateListS_spec]
+    | fvar idx ty =>
+      rw [teleDomAcc.eq_def, ← instList_leaf (e := Expr.fvar idx ty) (ws := acc) (d := 0) rfl]; rfl
+    | sort u =>
+      rw [teleDomAcc.eq_def, ← instList_leaf (e := Expr.sort u) (ws := acc) (d := 0) rfl]; rfl
+    | const n us =>
+      rw [teleDomAcc.eq_def, ← instList_leaf (e := Expr.const n us) (ws := acc) (d := 0) rfl]; rfl
+    | lit l =>
+      rw [teleDomAcc.eq_def, ← instList_leaf (e := Expr.lit l) (ws := acc) (d := 0) rfl]; rfl
+    | app f a' => rw [teleDomAcc.eq_def, instList_app]; rfl
+    | lam ty b => rw [teleDomAcc.eq_def, instList_lam]; rfl
+    | letE ty v b => rw [teleDomAcc.eq_def, instList_letE]; rfl
+    | proj s i e' => rw [teleDomAcc.eq_def, instList_proj]; rfl
+  | a :: as, acc, e => by
+    cases e with
+    | forallE ty b =>
+      rw [teleDomAcc.eq_def]
+      dsimp only
+      rw [instList_forallE,
+        show _root_.ConLeche.piResidual
+            (Expr.forallE ((Expr.instantiateList ty acc 0))
+              ((Expr.instantiateList b acc 1)))
+            (a :: as)
+          = _root_.ConLeche.piResidual
+              (((Expr.instantiateList b acc 1)).instantiate1
+                a) as from rfl,
+        ← Expr.instantiateList_cons]
+      exact teleDomAcc_spec as (a :: acc) b
+    | bvar i =>
+      rw [teleDomAcc.eq_def]
+      dsimp only
+      cases acc with
+      | nil => rw [Expr.instantiateList_nil]; rfl
+      | cons a' acc' =>
+        rw [teleDomAcc_spec (a :: as) [] _, Expr.instantiateList_nil, instantiateListS_spec]
+    | fvar idx ty =>
+      rw [teleDomAcc.eq_def, ← instList_leaf (e := Expr.fvar idx ty) (ws := acc) (d := 0) rfl]; rfl
+    | sort u =>
+      rw [teleDomAcc.eq_def, ← instList_leaf (e := Expr.sort u) (ws := acc) (d := 0) rfl]; rfl
+    | const n us =>
+      rw [teleDomAcc.eq_def, ← instList_leaf (e := Expr.const n us) (ws := acc) (d := 0) rfl]; rfl
+    | lit l =>
+      rw [teleDomAcc.eq_def, ← instList_leaf (e := Expr.lit l) (ws := acc) (d := 0) rfl]; rfl
+    | app f a' => rw [teleDomAcc.eq_def, instList_app]; rfl
+    | lam ty b => rw [teleDomAcc.eq_def, instList_lam]; rfl
+    | letE ty v b => rw [teleDomAcc.eq_def, instList_letE]; rfl
+    | proj s i e' => rw [teleDomAcc.eq_def, instList_proj]; rfl
+termination_by as acc => (as.length, acc.length)
+decreasing_by
+  all_goals first
+    | (apply Prod.Lex.left; simp; done)
+    | (apply Prod.Lex.right' <;> simp)
+
 theorem piResidual_spec {e : Expr} {args : List Expr} :
     OptEr (Expr.piResidual e args)
       (_root_.ConLeche.piResidual e args) := by

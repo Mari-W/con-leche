@@ -312,7 +312,7 @@ theorem OptEr.eq : ∀ {a b : Option Expr}, OptEr a b → a = b
 theorem teleDomAtC_eq (T : Expr) (args : List Expr) (j : Nat) :
     teleDomAtC T args j = teleDomAt T args j := by
   unfold teleDomAtC teleDomAt
-  rw [OptEr.eq piResidual_spec]
+  rw [teleDomAcc_spec, Expr.instantiateList_nil]
   cases piResidual T (List.take j args) with
   | none => rfl
   | some R => cases R <;> rfl
@@ -322,12 +322,32 @@ theorem headSlotOptC_eq : headSlotOptC = headSlotOpt := by
   funext hT args arg ty
   cases hT <;> simp only [headSlotOptC, headSlotOpt, headSlot, teleDomAtC_eq]
 
-/-- The cached head type is the spec's (`instLevelParams_spec`). -/
-theorem headTypeOfC_eq : headTypeOfC = headTypeOf := by
-  funext find? e
-  unfold headTypeOfC headTypeOf
-  simp only [instLevelParams_spec]
-  cases e.getAppFn <;> rfl
+/-- `headTypeOfM` simulates `headTypeOf` (`constTyAtM_spec` at the head). -/
+theorem headTypeOfM_spec :
+    ∀ (e : Expr) {s₀ : CState}, CSOK mode eager env s₀ →
+      ⦃fun s => s = s₀⦄ headTypeOfM (mkFEnv env) e
+      ⦃fun r s' => CSOK mode eager env s' ∧ r = headTypeOf env.find? e; ⊤⦄ := by
+  intro e s₀ hs
+  unfold headTypeOfM headTypeOf
+  rw [mkFEnv_find_fun]
+  split
+  · next c ls _ =>
+    cases hf : env.find? c with
+    | none => sym only [conleche_grind] => vcgen <;> finish
+    | some ci =>
+      dsimp only
+      by_cases hl : ls.length = ci.toConstantVal.levelParams.length
+      · have hfind : (env.find? c).isSome = true := by rw [hf]; rfl
+        have hT : constTyOf env c ls =
+            ci.toConstantVal.type.instantiateLevelParams ci.toConstantVal.levelParams ls := by
+          simp [constTyOf, hf]
+        simp only [hl, ↓reduceIte]
+        sym only [conleche_grind] =>
+          vcgen [constTyAtM_spec (mode := mode) (eager := eager) (env := env) hs c c ls hfind] <;>
+            finish
+      · simp only [hl, ↓reduceIte]
+        sym only [conleche_grind] => vcgen <;> finish
+  · sym only [conleche_grind] => vcgen <;> finish
 
 /-- The pure rule certificate at a bulk-instantiated telescope, stepped in the cached loop's
 shape (`iotaCertsFull_instList_cons`). -/

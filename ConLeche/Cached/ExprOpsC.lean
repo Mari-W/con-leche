@@ -2211,6 +2211,27 @@ decreasing_by
 def piResidual (e : Expr) (args : List Expr) : Option Expr :=
   piResidualAcc [] e args
 
+/-- **The domain of a telescope after a spine**, in `piResidualAcc`'s accumulator form: the
+binders are walked with the arguments kept in the accumulator, and only the domain reached is
+substituted (a rule firing's head-slot test, which needs the domain and never the residual). -/
+def teleDomAcc : List Expr → Expr → List Expr → Option Expr
+  | acc, e, as =>
+    match e with
+    | .forallE dom b .. =>
+      match as with
+      | [] => some (instantiateListS dom acc 0)
+      | a :: as' => teleDomAcc (a :: acc) b as'
+    | .bvar .. =>
+      match acc with
+      | [] => none
+      | _ :: _ => teleDomAcc [] (instantiateListS e acc 0) as
+    | _ => none
+termination_by acc _ as => (as.length, acc.length)
+decreasing_by
+  all_goals first
+    | (apply Prod.Lex.right; simp +arith +decide)
+    | (apply Prod.Lex.left; simp +arith +decide)
+
 /-- The cached tier's one-pass opening loop, the residual left raw:
 `acc` holds the already-created free variables, innermost binder first,
 and each domain is instantiated by them in one `instantiateListC` pass,

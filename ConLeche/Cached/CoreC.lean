@@ -486,23 +486,22 @@ mode-parametric simulation tower (`ConLeche/Verify/Cached/*`) is
 general in the mode where it holds at both, and stated at `.verified`
 where it needs the certificate families. -/
 
-/-- Twin of `headTypeOf`: the level instantiation by the cached walk (`Expr.instLevelParams`). -/
-def headTypeOfC (find? : Name → Option ConstantInfo) (e : Expr) : Option Expr :=
+/-- Twin of `headTypeOf`, the type at the levels through the per-declaration memo (`constTyAtM`). -/
+def headTypeOfM (fe : FEnv) (e : Expr) : CheckCM (Option Expr) :=
   match e.getAppFn with
   | .const c ls =>
-    match find? c with
+    match fe.find? c with
     | some ci =>
-      if ls.length = ci.toConstantVal.levelParams.length then
-        some (Expr.instLevelParams ci.toConstantVal.levelParams ls ci.toConstantVal.type)
-      else none
-    | none => none
-  | _ => none
+      if ls.length = ci.toConstantVal.levelParams.length then do
+        let T ← constTyAtM fe c c ls
+        pure (some T)
+      else pure none
+    | none => pure none
+  | _ => pure none
 
-/-- Twin of `teleDomAt`: the residual by the cached walk (`Expr.piResidual`). -/
+/-- Twin of `teleDomAt`: only the domain substituted (`Expr.teleDomAcc`). -/
 def teleDomAtC (T : Expr) (args : List Expr) (j : Nat) : Option Expr :=
-  match Expr.piResidual T (args.take j) with
-  | some (.forallE dom _) => some dom
-  | _ => none
+  Expr.teleDomAcc [] T (args.take j)
 
 /-- Twin of `headSlotOpt`.  The argument test compares pointers first (`Expr.decEqPtr`), and a
 head slot's argument is the term's own, so the domain is computed at one position only. -/
@@ -1297,7 +1296,8 @@ def rewriteFireI (eager : Bool) (lv : Nat) (depth : Nat) (e : Expr) (thm : Name)
   match (← piResidualM T args).bind eqSpine? with
   | some (eqn, _, _, l, rhs) =>
     if RuleGate cv us args e₁ eqn l rhs then
-      if ← ruleCertsI eager lv depth e.getAppArgs (headTypeOfC fe.find? e) T args then
+      let hT ← headTypeOfM fe e
+      if ← ruleCertsI eager lv depth e.getAppArgs hT T args then
         pure (some rhs)
       else pure none
     else pure none
@@ -1415,7 +1415,8 @@ def rewriteFireSynI (eager : Bool) (lv : Nat) (depth : Nat) (e : Expr) (thm : Na
   match (← piResidualM T args).bind eqSpine? with
   | some (eqn, _, _, l, rhs) =>
     if ruleGateSynB cv us e₁ eqn l then
-      if ← ruleCertsI eager lv depth e.getAppArgs (headTypeOfC fe.find? e) T args then
+      let hT ← headTypeOfM fe e
+      if ← ruleCertsI eager lv depth e.getAppArgs hT T args then
         pure (some rhs)
       else pure none
     else pure none
