@@ -180,6 +180,86 @@ theorem iotaCertsFull_snd (d : Nat) :
   | .const _ _, _ :: _ | .app _ _, _ :: _ | .lam _ _, _ :: _
   | .letE _ _ _, _ :: _ | .lit _, _ :: _ | .proj _ _ _, _ :: _ => rfl
 
+theorem ruleCerts_fst (d : Nat) (eargs : List Expr) (hT : Option Expr) :
+    ∀ (ty : Expr) (args : List Expr),
+      (ruleCerts (pairFns r₁ r₂ h) env d eargs hT ty args).val.1 =
+        ruleCerts r₁ env d eargs hT ty args
+  | _, [] => rfl
+  | .forallE ty body, arg :: rest => by
+    show ((do
+        if headSlotOpt hT eargs arg ty then
+          ruleCerts (pairFns r₁ r₂ h) env d eargs hT (body.instantiate1 arg) rest
+        else
+          let ta ← (pairFns r₁ r₂ h).infer d arg
+          if ← (pairFns r₁ r₂ h).defeq d ta ty then
+            ruleCerts (pairFns r₁ r₂ h) env d eargs hT (body.instantiate1 arg) rest
+          else pure false : PairM rel Bool)).val.1 = (do
+        if headSlotOpt hT eargs arg ty then
+          ruleCerts r₁ env d eargs hT (body.instantiate1 arg) rest
+        else
+          let ta ← r₁.infer d arg
+          if ← r₁.defeq d ta ty then
+            ruleCerts r₁ env d eargs hT (body.instantiate1 arg) rest
+          else pure false)
+    by_cases hs : headSlotOpt hT eargs arg ty = true
+    · simp only [hs, ↓reduceIte]
+      exact ruleCerts_fst d eargs hT (body.instantiate1 arg) rest
+    simp only [hs, Bool.false_eq_true, ↓reduceIte]
+    rw [PairM.fst_bind]
+    congr 1
+    funext ta
+    rw [PairM.fst_bind]
+    congr 1
+    funext b
+    cases b with
+    | true =>
+      simp only [↓reduceIte]
+      exact ruleCerts_fst d eargs hT (body.instantiate1 arg) rest
+    | false => rfl
+  | .bvar _, _ :: _ | .fvar _ _, _ :: _ | .sort _, _ :: _
+  | .const _ _, _ :: _ | .app _ _, _ :: _ | .lam _ _, _ :: _
+  | .letE _ _ _, _ :: _ | .lit _, _ :: _ | .proj _ _ _, _ :: _ => rfl
+
+theorem ruleCerts_snd (d : Nat) (eargs : List Expr) (hT : Option Expr) :
+    ∀ (ty : Expr) (args : List Expr),
+      (ruleCerts (pairFns r₁ r₂ h) env d eargs hT ty args).val.2 =
+        ruleCerts r₂ env d eargs hT ty args
+  | _, [] => rfl
+  | .forallE ty body, arg :: rest => by
+    show ((do
+        if headSlotOpt hT eargs arg ty then
+          ruleCerts (pairFns r₁ r₂ h) env d eargs hT (body.instantiate1 arg) rest
+        else
+          let ta ← (pairFns r₁ r₂ h).infer d arg
+          if ← (pairFns r₁ r₂ h).defeq d ta ty then
+            ruleCerts (pairFns r₁ r₂ h) env d eargs hT (body.instantiate1 arg) rest
+          else pure false : PairM rel Bool)).val.2 = (do
+        if headSlotOpt hT eargs arg ty then
+          ruleCerts r₂ env d eargs hT (body.instantiate1 arg) rest
+        else
+          let ta ← r₂.infer d arg
+          if ← r₂.defeq d ta ty then
+            ruleCerts r₂ env d eargs hT (body.instantiate1 arg) rest
+          else pure false)
+    by_cases hs : headSlotOpt hT eargs arg ty = true
+    · simp only [hs, ↓reduceIte]
+      exact ruleCerts_snd d eargs hT (body.instantiate1 arg) rest
+    simp only [hs, Bool.false_eq_true, ↓reduceIte]
+    rw [PairM.snd_bind]
+    congr 1
+    funext ta
+    rw [PairM.snd_bind]
+    congr 1
+    funext b
+    cases b with
+    | true =>
+      simp only [↓reduceIte]
+      exact ruleCerts_snd d eargs hT (body.instantiate1 arg) rest
+    | false => rfl
+  | .bvar _, _ :: _ | .fvar _ _, _ :: _ | .sort _, _ :: _
+  | .const _ _, _ :: _ | .app _ _, _ :: _ | .lam _ _, _ :: _
+  | .letE _ _ _, _ :: _ | .lit _, _ :: _ | .proj _ _ _, _ :: _ => rfl
+
 theorem defEqList_fst (d : Nat) :
     ∀ (as bs : List Expr),
       (defEqList (pairFns r₁ r₂ h) env d as bs).val.1 =
@@ -477,6 +557,7 @@ macro "fst_step" : tactic =>
     | (rw [familyNeverZeroAt_fst_proj])
     | (rw [formerNeverZeroAt_fst_proj])
     | (rw [iotaCertsFull_fst])
+    | (rw [ruleCerts_fst])
     | (rw [defeqBinders_fst])
     | (rw [iotaIndexOk_fst])
     | (rw [defEqList_fst])
@@ -499,6 +580,7 @@ macro "snd_step" : tactic =>
     | (rw [familyNeverZeroAt_snd_proj])
     | (rw [formerNeverZeroAt_snd_proj])
     | (rw [iotaCertsFull_snd])
+    | (rw [ruleCerts_snd])
     | (rw [defeqBinders_snd])
     | (rw [iotaIndexOk_snd])
     | (rw [defEqList_snd])
@@ -587,6 +669,7 @@ theorem rewriteAttempt_fst_proj (d : Nat) (e : Expr) (t : Name) :
     | rfl
     | (rw [ruleMatchM_fst_proj])
     | (rw [iotaCertsFull_fst])
+    | (rw [ruleCerts_fst])
     | ((rw [PairM.fst_bind]; congr 1 <;> try rfl) <;> try funext _)
     | (dsimp only [])
     | split)
@@ -598,6 +681,7 @@ theorem rewriteAttempt_snd_proj (d : Nat) (e : Expr) (t : Name) :
     | rfl
     | (rw [ruleMatchM_snd_proj])
     | (rw [iotaCertsFull_snd])
+    | (rw [ruleCerts_snd])
     | ((rw [PairM.snd_bind]; congr 1 <;> try rfl) <;> try funext _)
     | (dsimp only [])
     | split)
@@ -767,12 +851,13 @@ theorem keyScan_fst_proj (d : Nat) :
     rw [PairM.fst_bind, keyScan_fst_proj d ks]
     rfl
 
-theorem preAttempt_fst_proj (d : Nat) (e' : Expr) (t : Name) :
-    (preAttempt (pairFns r₁ r₂ h) env d e' t).val.1 = preAttempt r₁ env d e' t := by
+theorem preAttempt_fst_proj (d : Nat) (e e' : Expr) (t : Name) :
+    (preAttempt (pairFns r₁ r₂ h) env d e e' t).val.1 = preAttempt r₁ env d e e' t := by
   unfold preAttempt rewriteFire
   repeat (first
     | rfl
     | (rw [iotaCertsFull_fst])
+    | (rw [ruleCerts_fst])
     | ((rw [PairM.fst_bind]; congr 1 <;> try rfl) <;> try funext _)
     | (dsimp only [])
     | split)
@@ -782,7 +867,7 @@ theorem preAt_fst_proj (d : Nat) (t : Name) (e : Expr) :
   have hn : ∀ {x y : Expr}, (∀ f a f' a', ¬(x = .app f a ∧ y = .app f' a')) →
       (preAt (pairFns r₁ r₂ h) env d t x y).val.1 = preAt r₁ env d t x y := fun hxy => by
     rw [preAt_nonApp _ _ _ _ hxy, preAt_nonApp _ _ _ _ hxy]
-    exact preAttempt_fst_proj d _ t
+    exact preAttempt_fst_proj d _ _ t
   induction e with
   | app f a ihf _ =>
     intro e'
@@ -880,12 +965,13 @@ theorem keyScan_snd_proj (d : Nat) :
     rw [PairM.snd_bind, keyScan_snd_proj d ks]
     rfl
 
-theorem preAttempt_snd_proj (d : Nat) (e' : Expr) (t : Name) :
-    (preAttempt (pairFns r₁ r₂ h) env d e' t).val.2 = preAttempt r₂ env d e' t := by
+theorem preAttempt_snd_proj (d : Nat) (e e' : Expr) (t : Name) :
+    (preAttempt (pairFns r₁ r₂ h) env d e e' t).val.2 = preAttempt r₂ env d e e' t := by
   unfold preAttempt rewriteFire
   repeat (first
     | rfl
     | (rw [iotaCertsFull_snd])
+    | (rw [ruleCerts_snd])
     | ((rw [PairM.snd_bind]; congr 1 <;> try rfl) <;> try funext _)
     | (dsimp only [])
     | split)
@@ -895,7 +981,7 @@ theorem preAt_snd_proj (d : Nat) (t : Name) (e : Expr) :
   have hn : ∀ {x y : Expr}, (∀ f a f' a', ¬(x = .app f a ∧ y = .app f' a')) →
       (preAt (pairFns r₁ r₂ h) env d t x y).val.2 = preAt r₂ env d t x y := fun hxy => by
     rw [preAt_nonApp _ _ _ _ hxy, preAt_nonApp _ _ _ _ hxy]
-    exact preAttempt_snd_proj d _ t
+    exact preAttempt_snd_proj d _ _ t
   induction e with
   | app f a ihf _ =>
     intro e'
@@ -1159,6 +1245,7 @@ macro "fst_step2" : tactic =>
     | (rw [familyNeverZeroAt_fst_proj])
     | (rw [formerNeverZeroAt_fst_proj])
     | (rw [iotaCertsFull_fst])
+    | (rw [ruleCerts_fst])
     | (rw [defeqBinders_fst])
     | (rw [iotaIndexOk_fst])
     | (rw [defEqList_fst])
@@ -1191,6 +1278,7 @@ macro "snd_step2" : tactic =>
     | (rw [familyNeverZeroAt_snd_proj])
     | (rw [formerNeverZeroAt_snd_proj])
     | (rw [iotaCertsFull_snd])
+    | (rw [ruleCerts_snd])
     | (rw [defeqBinders_snd])
     | (rw [iotaIndexOk_snd])
     | (rw [defEqList_snd])
@@ -1540,6 +1628,7 @@ macro "fst_core3" x:tactic : tactic =>
     | (rw [familyNeverZeroAt_fst_proj])
     | (rw [formerNeverZeroAt_fst_proj])
     | (rw [iotaCertsFull_fst])
+    | (rw [ruleCerts_fst])
     | (rw [defeqBinders_fst])
     | (rw [iotaIndexOk_fst])
     | (rw [defEqList_fst])
@@ -1579,6 +1668,7 @@ macro "snd_core3" x:tactic : tactic =>
     | (rw [familyNeverZeroAt_snd_proj])
     | (rw [formerNeverZeroAt_snd_proj])
     | (rw [iotaCertsFull_snd])
+    | (rw [ruleCerts_snd])
     | (rw [defeqBinders_snd])
     | (rw [iotaIndexOk_snd])
     | (rw [defEqList_snd])
@@ -1855,6 +1945,7 @@ macro "fst_core4" x:tactic : tactic =>
     | (rw [familyNeverZeroAt_fst_proj])
     | (rw [formerNeverZeroAt_fst_proj])
     | (rw [iotaCertsFull_fst])
+    | (rw [ruleCerts_fst])
     | (rw [defeqBinders_fst])
     | (rw [iotaIndexOk_fst])
     | (rw [defEqList_fst])
@@ -1922,6 +2013,7 @@ macro "snd_core4" x:tactic : tactic =>
     | (rw [familyNeverZeroAt_snd_proj])
     | (rw [formerNeverZeroAt_snd_proj])
     | (rw [iotaCertsFull_snd])
+    | (rw [ruleCerts_snd])
     | (rw [defeqBinders_snd])
     | (rw [iotaIndexOk_snd])
     | (rw [defEqList_snd])

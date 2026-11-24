@@ -657,6 +657,16 @@ theorem ruleArgsM_rel (cv : ConstantVal) {e : Expr} (he : Res env₁ e) :
       · exact Rel.ok fun _ _ _ h => nomatch h
   · exact Rel.ok fun _ _ _ h => nomatch h
 
+omit K in
+/-- The head's type at an extension is the prefix's: the head resolves in the prefix. -/
+theorem headTypeOf_ext {e : Expr} (he : Res env₁ e) :
+    headTypeOf env₂.find? e = headTypeOf env₁.find? e := by
+  unfold headTypeOf
+  split
+  · rename_i c ls hfn
+    rw [hx.find_of_isSome (res_head he hfn)]
+  · rfl
+
 /-- **A rule's firing at an extension is its firing at the prefix**: the theorem is the
 prefix's, every run of the firing is on resolved terms, and the right side resolves. -/
 theorem rewriteAttempt_rel {e : Expr} (he : Res env₁ e) {t : Name}
@@ -688,7 +698,8 @@ theorem rewriteAttempt_rel {e : Expr} (he : Res env₁ e) {t : Name}
             have hR := res_piResidual hT hargs hres
             have hA : Res env₁ A := (res_app.mp (res_app.mp (res_app.mp hR).1).1).2
             have hr : Res env₁ rhs := (res_app.mp hR).2
-            refine Rel.bind (iotaCertsFull_rel K d _ args hT hargs) fun b _ => ?_
+            rw [headTypeOf_ext hx he]
+            refine Rel.bind (ruleCerts_rel K d _ _ _ args hT hargs) fun b _ => ?_
             refine Rel.iteB b (fun _ => Rel.ok fun x hxe => ?_) fun _ => Rel.ok resO_none
             obtain rfl := Option.some.inj hxe
             exact hr
@@ -923,9 +934,9 @@ theorem keyScan_rel :
     exact Rel.ok hy
 
 /-- A marked rule's firing at the replaced term, at an extension, is the prefix's. -/
-theorem preAttempt_rel {e' : Expr} (he : Res env₁ e') {t : Name}
+theorem preAttempt_rel {e e' : Expr} (he₀ : Res env₁ e) (he : Res env₁ e') {t : Name}
     (ht : (env₁.find? t).isSome = true) :
-    Rel (ResO env₁) (preAttempt r₂ env₂ d e' t) (preAttempt r₁ env₁ d e' t) := by
+    Rel (ResO env₁) (preAttempt r₂ env₂ d e e' t) (preAttempt r₁ env₁ d e e' t) := by
   unfold preAttempt rewriteFire
   rw [hx.find_of_isSome ht]
   cases hft : env₁.find? t with
@@ -949,7 +960,8 @@ theorem preAttempt_rel {e' : Expr} (he : Res env₁ e') {t : Name}
             have hargs : ∀ a ∈ args, Res env₁ a := fun a ha => res_appSubterms e' (hsub a ha) he
             have hR := res_piResidual hT hargs hres
             have hr : Res env₁ rhs := (res_app.mp hR).2
-            refine Rel.bind (iotaCertsFull_rel K d _ args hT hargs) fun b _ => ?_
+            rw [headTypeOf_ext hx he₀]
+            refine Rel.bind (ruleCerts_rel K d _ _ _ args hT hargs) fun b _ => ?_
             refine Rel.iteB b (fun _ => Rel.ok fun x hxe => ?_) fun _ => Rel.ok resO_none
             obtain rfl := Option.some.inj hxe
             exact hr
@@ -967,7 +979,7 @@ theorem preAt_rel {t : Name} (ht : (env₁.find? t).isSome = true) :
     cases e' with
     | app f' a' =>
       rw [preAt, preAt]
-      refine Rel.bind (preAttempt_rel K d hx he' ht) fun o ho => ?_
+      refine Rel.bind (preAttempt_rel K d hx he he' ht) fun o ho => ?_
       cases o with
       | some e₂ => exact Rel.ok ho
       | none =>
@@ -980,12 +992,12 @@ theorem preAt_rel {t : Name} (ht : (env₁.find? t).isSome = true) :
     | _ =>
       rw [preAt_nonApp _ _ _ _ (by intro _ _ _ _ hh; cases hh.2),
         preAt_nonApp _ _ _ _ (by intro _ _ _ _ hh; cases hh.2)]
-      exact preAttempt_rel K d hx he' ht
+      exact preAttempt_rel K d hx he he' ht
   | _ =>
     intro e' he he'
     rw [preAt_nonApp _ _ _ _ (by intro _ _ _ _ hh; cases hh.1),
       preAt_nonApp _ _ _ _ (by intro _ _ _ _ hh; cases hh.1)]
-    exact preAttempt_rel K d hx he' ht
+    exact preAttempt_rel K d hx he he' ht
 
 theorem preRules_rel {e e' : Expr} (he : Res env₁ e) (he' : Res env₁ e') :
     ∀ ts : List Name, (∀ t ∈ ts, (env₁.find? t).isSome = true) →

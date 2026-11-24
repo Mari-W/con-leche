@@ -11,6 +11,7 @@ import ConLeche.Model.Rules.InferSound
 import ConLeche.Model.Rules.GuardSound
 import ConLeche.Model.Rules.FormerSound
 import ConLeche.Model.Rules.CertsSound
+import ConLeche.Model.Rules.CertsRSound
 import ConLeche.Model.Rules.DefEqSoundKit
 import ConLeche.Model.CtxOkKit
 
@@ -95,7 +96,7 @@ theorem red_sound (hin : RulesInputs V m φ) :
   | _, _, _, .natOp hc hwa hn₁ hwb hn₂ hr =>
     Red.natOp_sound hin hc (red_sound hin hwa) hn₁ (red_sound hin hwb) hn₂ hr
   | _, _, _, .rewrite hthm hus hcerts hres hhead hmatch hlf hsub hmem =>
-    Red.rewrite_sound hin hthm hus (certsF_sound hin hcerts) hres hhead
+    Red.rewrite_sound hin hthm hus (certsR_sound hin hcerts) hres hhead
       (matchRel_sound hin hmatch) hlf hsub hmem
   -- ι and the K/`And` rescues (task #342 L10): one lemma each, from the
   -- conditional claims of their premises
@@ -297,6 +298,16 @@ theorem certsF_sound (hin : RulesInputs V m φ) :
   | _, _, _, .cert hta hd hrest =>
     CertsF.cert_sound (infer_sound hin hta) (defeq_sound hin hd)
       (certsF_sound hin hrest)
+
+theorem certsR_sound (hin : RulesInputs V m φ) :
+    ∀ {d : Nat} {e ty : Expr} {args : List Expr},
+      CertsR env d e ty args → CertsRSem m φ d e ty args
+  | _, _, _, _, .nil => CertsR.nil_sound
+  | _, _, _, _, .cert hta hd hrest =>
+    CertsR.cert_sound (infer_sound hin hta) (defeq_sound hin hd)
+      (certsR_sound hin hrest)
+  | _, _, _, _, .head hT harg hdom hrest =>
+    CertsR.head_sound hin hT harg hdom (certsR_sound hin hrest)
 
 theorem matchRel_sound (hin : RulesInputs V m φ) :
     ∀ {d : Nat} {P : List Expr} {e e' : Expr}, MatchRel env d P e e' → MatchRelSem m φ d P e e'

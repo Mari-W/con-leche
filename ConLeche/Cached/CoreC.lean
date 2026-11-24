@@ -486,6 +486,32 @@ mode-parametric simulation tower (`ConLeche/Verify/Cached/*`) is
 general in the mode where it holds at both, and stated at `.verified`
 where it needs the certificate families. -/
 
+/-- Twin of `headTypeOf`: the level instantiation by the cached walk (`Expr.instLevelParams`). -/
+def headTypeOfC (find? : Name → Option ConstantInfo) (e : Expr) : Option Expr :=
+  match e.getAppFn with
+  | .const c ls =>
+    match find? c with
+    | some ci =>
+      if ls.length = ci.toConstantVal.levelParams.length then
+        some (Expr.instLevelParams ci.toConstantVal.levelParams ls ci.toConstantVal.type)
+      else none
+    | none => none
+  | _ => none
+
+/-- Twin of `teleDomAt`: the residual by the cached walk (`Expr.piResidual`). -/
+def teleDomAtC (T : Expr) (args : List Expr) (j : Nat) : Option Expr :=
+  match Expr.piResidual T (args.take j) with
+  | some (.forallE dom _) => some dom
+  | _ => none
+
+/-- Twin of `headSlotOpt`.  The argument test compares pointers first (`Expr.decEqPtr`), and a
+head slot's argument is the term's own, so the domain is computed at one position only. -/
+def headSlotOptC (hT : Option Expr) (args : List Expr) (arg ty : Expr) : Bool :=
+  match hT with
+  | some T =>
+    (List.range args.length).any fun j => decide (args[j]? = some arg ∧ teleDomAtC T args j = some ty)
+  | none => false
+
 /- Every read of the mode below is one of the `CheckMode` functions of
 `ConLeche/Kernel/Env.lean`, each a `match` on the enum.  The ι cone
 (`majorToCtorI` → `prepareMajorI` → `iotaRecI`) reads the mode through
@@ -494,10 +520,10 @@ section Knot
 
 variable (mode : CheckMode) (fe : FEnv)
 
--- Both limits count per command, and the block is one command of 68
+-- Both limits count per command, and the block is one command of 70
 -- definitions (each alone is far below the defaults): the heartbeats for
 -- their elaboration, the recursion depth for the termination proofs over
--- the 68-way packed argument of the well-founded fixpoint.
+-- the 70-way packed argument of the well-founded fixpoint.
 set_option maxHeartbeats 4000000 in
 set_option maxRecDepth 8000 in
 mutual
@@ -590,6 +616,37 @@ termination_by _ acc args => (lv, 2, 2 * args.length + acc.length, 0)
 def iotaCertsFullI (eager : Bool) (lv : Nat) (depth : Nat)
     (ty : Expr) (args : List Expr) : CheckCM Bool :=
   iotaCertsFullIAux eager lv depth ty [] args
+termination_by (lv, 3, 0, 0)
+
+/-- Twin of `ruleCerts`, in the bulk form of `iotaCertsFullIAux`: a head slot (`headSlotOptC`)
+skips the inference, every other slot is certified at the FULL grade. -/
+def ruleCertsIAux (eager : Bool) (lv : Nat) (depth : Nat) (eargs : List Expr) (hT : Option Expr) :
+    Expr → List Expr → List Expr → CheckCM Bool
+  | _, _, [] => pure true
+  | ty, acc, arg :: rest => do
+    match ty with
+    | .forallE dom body => do
+        let dom' ← pure (Expr.instantiateListS dom acc 0)
+        if headSlotOptC hT eargs arg dom' then
+          ruleCertsIAux eager lv depth eargs hT body (arg :: acc) rest
+        else
+          let ta ← inferI eager lv false depth arg
+          if ← defeqI eager lv depth ta dom' then
+            ruleCertsIAux eager lv depth eargs hT body (arg :: acc) rest
+          else pure false
+    | .bvar _ =>
+      match acc with
+      | [] => pure false
+      | _ :: _ => do
+        let ty' ← instListM ty acc
+        ruleCertsIAux eager lv depth eargs hT ty' [] (arg :: rest)
+    | _ => pure false
+termination_by _ acc args => (lv, 2, 2 * args.length + acc.length, 0)
+
+/-- Twin of `ruleCerts`, at the empty accumulator. -/
+def ruleCertsI (eager : Bool) (lv : Nat) (depth : Nat) (eargs : List Expr) (hT : Option Expr)
+    (ty : Expr) (args : List Expr) : CheckCM Bool :=
+  ruleCertsIAux eager lv depth eargs hT ty [] args
 termination_by (lv, 3, 0, 0)
 
 /-- Twin of `defEqList`. -/
@@ -1234,13 +1291,14 @@ termination_by (lv, 28, 1, 0)
 
 /-- Twin of `rewriteFire`: the theorem's type at the levels through the per-declaration memo
 (`constTyAtM`), its residual by `piResidualM`, every check the specification's. -/
-def rewriteFireI (eager : Bool) (lv : Nat) (depth : Nat) (thm : Name) (cv : ConstantVal)
+def rewriteFireI (eager : Bool) (lv : Nat) (depth : Nat) (e : Expr) (thm : Name) (cv : ConstantVal)
     (args : List Expr) (us : List Level) (e₁ : Expr) : CheckCM (Option Expr) := do
   let T ← constTyAtM fe thm thm us
   match (← piResidualM T args).bind eqSpine? with
   | some (eqn, _, _, l, rhs) =>
     if RuleGate cv us args e₁ eqn l rhs then
-      if ← iotaCertsFullI eager lv depth T args then pure (some rhs)
+      if ← ruleCertsI eager lv depth e.getAppArgs (headTypeOfC fe.find? e) T args then
+        pure (some rhs)
       else pure none
     else pure none
   | none => pure none
@@ -1252,7 +1310,7 @@ def rewriteAttemptI (eager : Bool) (lv : Nat) (depth : Nat) (e : Expr) (thm : Na
   match fe.find? thm with
   | some (.thmInfo cv) =>
     match ← ruleArgsI eager lv depth cv e with
-    | some (args, us, e₁) => rewriteFireI eager lv depth thm cv args us e₁
+    | some (args, us, e₁) => rewriteFireI eager lv depth e thm cv args us e₁
     | none => pure none
   | _ => pure none
 termination_by (lv, 28, 2, 0)
@@ -1351,25 +1409,26 @@ termination_by ks _ => (lv, 28, 1, ks.length)
 
 /-- Twin of `rewriteFire` after a syntactic match (`ruleArgsSynC`): the gate without its
 subterm walk (`ruleGateSynB`), otherwise `rewriteFireI`. -/
-def rewriteFireSynI (eager : Bool) (lv : Nat) (depth : Nat) (thm : Name) (cv : ConstantVal)
-    (args : List Expr) (us : List Level) (e₁ : Expr) : CheckCM (Option Expr) := do
+def rewriteFireSynI (eager : Bool) (lv : Nat) (depth : Nat) (e : Expr) (thm : Name)
+    (cv : ConstantVal) (args : List Expr) (us : List Level) (e₁ : Expr) : CheckCM (Option Expr) := do
   let T ← constTyAtM fe thm thm us
   match (← piResidualM T args).bind eqSpine? with
   | some (eqn, _, _, l, rhs) =>
     if ruleGateSynB cv us e₁ eqn l then
-      if ← iotaCertsFullI eager lv depth T args then pure (some rhs)
+      if ← ruleCertsI eager lv depth e.getAppArgs (headTypeOfC fe.find? e) T args then
+        pure (some rhs)
       else pure none
     else pure none
   | none => pure none
 termination_by (lv, 28, 1, 2)
 
 /-- Twin of `preAttempt`. -/
-def preAttemptI (eager : Bool) (lv : Nat) (depth : Nat) (e' : Expr) (t : Name) :
+def preAttemptI (eager : Bool) (lv : Nat) (depth : Nat) (e e' : Expr) (t : Name) :
     CheckCM (Option Expr) :=
   match fe.find? t with
   | some (.thmInfo cv) =>
     match ruleArgsSynC cv e' with
-    | some (args, us) => rewriteFireSynI eager lv depth t cv args us e'
+    | some (args, us) => rewriteFireSynI eager lv depth e t cv args us e'
     | none => pure none
   | _ => pure none
 termination_by (lv, 28, 2, 0)
@@ -1378,13 +1437,13 @@ termination_by (lv, 28, 2, 0)
 def preAtI (eager : Bool) (lv : Nat) (depth : Nat) (t : Name) :
     Expr → Expr → CheckCM (Option Expr)
   | .app f a, .app f' a' => do
-    match ← preAttemptI eager lv depth (.app f' a') t with
+    match ← preAttemptI eager lv depth (.app f a) (.app f' a') t with
     | some e₂ => pure (some e₂)
     | none =>
       match ← preAtI eager lv depth t f f' with
       | some f₂ => pure (some (.app f₂ a))
       | none => pure none
-  | _, e' => preAttemptI eager lv depth e' t
+  | e, e' => preAttemptI eager lv depth e e' t
 termination_by e _ => (lv, 28, 2, 1 + sizeOf e)
 
 /-- Twin of `preRules`. -/

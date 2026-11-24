@@ -301,6 +301,101 @@ theorem iotaCertsFullC_spec (ih : SSimC mode eager env f) {d : Nat} {args : List
   sym only [conleche_grind, Expr.instantiateList_nil] =>
     vcgen [iotaCertsFullI.eq_def, iotaCertsFullCAux_spec ih] <;> finish
 
+/-- A matched `OptEr` pair is one value. -/
+theorem OptEr.eq : ∀ {a b : Option Expr}, OptEr a b → a = b
+  | none, none, _ => rfl
+  | some _, some _, h => congrArg some h
+  | none, some _, h => h.elim
+  | some _, none, h => h.elim
+
+/-- The cached domain at a position is the spec's (`piResidual_spec`). -/
+theorem teleDomAtC_eq (T : Expr) (args : List Expr) (j : Nat) :
+    teleDomAtC T args j = teleDomAt T args j := by
+  unfold teleDomAtC teleDomAt
+  rw [OptEr.eq piResidual_spec]
+  cases piResidual T (List.take j args) with
+  | none => rfl
+  | some R => cases R <;> rfl
+
+/-- The cached head-slot test is the spec's. -/
+theorem headSlotOptC_eq : headSlotOptC = headSlotOpt := by
+  funext hT args arg ty
+  cases hT <;> simp only [headSlotOptC, headSlotOpt, headSlot, teleDomAtC_eq]
+
+/-- The cached head type is the spec's (`instLevelParams_spec`). -/
+theorem headTypeOfC_eq : headTypeOfC = headTypeOf := by
+  funext find? e
+  unfold headTypeOfC headTypeOf
+  simp only [instLevelParams_spec]
+  cases e.getAppFn <;> rfl
+
+/-- The pure rule certificate at a bulk-instantiated telescope, stepped in the cached loop's
+shape (`iotaCertsFull_instList_cons`). -/
+theorem ruleCerts_instList_cons {m : Type → Type} [Monad m] (r : CoreFns m) (env : Env)
+    (d : Nat) (eargs : List Expr) (hT : Option Expr) (ty : Expr) (acc : List Expr) (a : Expr)
+    (rest : List Expr) :
+    ruleCerts r env d eargs hT (ty.instantiateList acc) (a :: rest) =
+      match ty, acc with
+      | .forallE dom body, acc =>
+          if headSlotOpt hT eargs a (dom.instantiateList acc) then
+            ruleCerts r env d eargs hT (body.instantiateList (a :: acc)) rest
+          else
+            r.infer d a >>= fun ta => r.defeq d ta (dom.instantiateList acc) >>= fun c =>
+            if c then ruleCerts r env d eargs hT (body.instantiateList (a :: acc)) rest
+            else pure false
+      | .bvar _, [] => pure false
+      | .bvar k, acc@(_ :: _) =>
+          ruleCerts r env d eargs hT ((Expr.bvar k).instantiateList acc) (a :: rest)
+      | _, _ => pure false := by
+  cases ty with
+  | forallE dom body =>
+    rw [Expr.instantiateList, ruleCerts.eq_2]; dsimp only; rw [Expr.instantiateList_cons]
+  | bvar k => cases acc with
+    | nil => rw [Expr.instantiateList_nil]; rfl
+    | cons => rfl
+  | _ => rw [Expr.instantiateList]; cases acc <;> rfl
+
+/-- The bulk-accumulating rule certificate simulates its fueled original
+(`iotaCertsFullCAux_spec`, with the head slot through `headSlotOptC_eq`). -/
+theorem ruleCertsCAux_spec (ih : SSimC mode eager env f) {d : Nat} {eargs : List Expr}
+    {hT : Option Expr} :
+    ∀ {args : List Expr} {ty : Expr} {acc : List Expr} {s₀ : CState},
+      CSOK mode eager env s₀ → Expr.WScoped d (ty.instantiateList acc) → AllWS d args →
+      ⦃fun s => s = s₀⦄
+        ruleCertsIAux mode (mkFEnv env) eager f d eargs hT ty acc args
+      ⦃fun v s' => CSOK mode eager env s' ∧
+          Runs (ruleCerts (fueledFns mode eager env) env d eargs hT (ty.instantiateList acc) args)
+            v; ⊤⦄
+  | [], _, _, _, _, _, _ => by
+    sym only [conleche_grind, ruleCerts.eq_1] =>
+      vcgen [ruleCertsIAux.eq_1] <;> finish
+  | _ :: as, _, [], _, _, _, _ => by
+    sym only [conleche_grind, ruleCerts_instList_cons, Expr.instantiateListS_spec,
+        headSlotOptC_eq] =>
+      vcgen [ruleCertsIAux.eq_def, ih.infer_spec, ih.defeq_spec,
+        ruleCertsCAux_spec ih (args := as)] <;> finish
+  | a :: as, _, _ :: _, _, hs, _, _ => by
+    sym only [conleche_grind, ruleCerts_instList_cons, Expr.instantiateList_nil,
+        Expr.instantiateListS_spec, headSlotOptC_eq] =>
+      vcgen [ruleCertsIAux.eq_def, instListM_spec hs, ih.infer_spec, ih.defeq_spec,
+        ruleCertsCAux_spec ih (args := as),
+        ruleCertsCAux_spec ih (args := a :: as) (acc := [])] <;> finish
+termination_by args _ acc => (args.length, acc.length)
+decreasing_by
+  all_goals first
+    | (apply Prod.Lex.left; simp; done)
+    | (apply Prod.Lex.right' <;> simp)
+
+/-- `ruleCertsI` simulates its fueled original. -/
+theorem ruleCertsC_spec (ih : SSimC mode eager env f) {d : Nat} {eargs : List Expr}
+    {hT : Option Expr} {args : List Expr} {ty : Expr}
+    {s₀ : CState} (hs : CSOK mode eager env s₀) (hw : Expr.WScoped d ty) (hargs : AllWS d args) :
+    ⦃fun s => s = s₀⦄ ruleCertsI mode (mkFEnv env) eager f d eargs hT ty args
+    ⦃fun v s' => CSOK mode eager env s' ∧
+        Runs (ruleCerts (fueledFns mode eager env) env d eargs hT ty args) v; ⊤⦄ := by
+  sym only [conleche_grind, Expr.instantiateList_nil] =>
+    vcgen [ruleCertsI.eq_def, ruleCertsCAux_spec ih] <;> finish
+
 end Walks
 
 section Walks2

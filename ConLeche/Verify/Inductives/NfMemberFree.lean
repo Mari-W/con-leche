@@ -607,8 +607,8 @@ theorem rewriteStep_occDeep {env : Env} {names : List Name} (hN : WhnfNamesFree 
 
 /-- A marked rule's firing at the replaced term is member free. -/
 theorem preAttempt_occDeep {env : Env} {names : List Name} (hN : WhnfNamesFree env names)
-    {r : CoreFns CheckM} {d : Nat} {e' e₂ : Expr} {t : Name}
-    (hrw : preAttempt r env d e' t = .ok (some e₂)) (h0 : e'.occDeep names = false) :
+    {r : CoreFns CheckM} {d : Nat} {e e' e₂ : Expr} {t : Name}
+    (hrw : preAttempt r env d e e' t = .ok (some e₂)) (h0 : e'.occDeep names = false) :
     e₂.occDeep names = false := by
   obtain ⟨cv, args, us, hf, -, hfire⟩ := preAttempt_inv hrw
   obtain ⟨_, _, _, _, _, hres, -, -, hsub, -, -⟩ := rewriteFire_inv hfire

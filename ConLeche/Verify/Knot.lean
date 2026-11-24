@@ -197,6 +197,9 @@ abbrev iotaRecFueled (mode : CheckMode) (eager : Bool) (env : Env) (fuel : Nat) 
 abbrev iotaCertsFullFueled (mode : CheckMode) (eager : Bool) (env : Env) (fuel : Nat) : Nat → Expr →
     List Expr → CheckM Bool := iotaCertsFull (pureFns mode eager env fuel) env
 
+abbrev ruleCertsFueled (mode : CheckMode) (eager : Bool) (env : Env) (fuel : Nat) : Nat →
+    List Expr → Option Expr → Expr → List Expr → CheckM Bool := ruleCerts (pureFns mode eager env fuel) env
+
 abbrev iotaIndexOkFueled (mode : CheckMode) (eager : Bool) (env : Env) (fuel : Nat) : Nat → Nat →
     Nat → Nat →
     Expr → List Expr → List Expr → CheckM Bool := iotaIndexOk (pureFns mode eager env fuel) env
@@ -332,6 +335,8 @@ theorem iotaRec_fold (env : Env) (fuel : Nat) :
     iotaRec mode (pureFns mode eager env fuel) env = iotaRecFueled mode eager env fuel := rfl
 theorem iotaCertsFull_fold (env : Env) (fuel : Nat) :
     iotaCertsFull (pureFns mode eager env fuel) env = iotaCertsFullFueled mode eager env fuel := rfl
+theorem ruleCerts_fold (env : Env) (fuel : Nat) :
+    ruleCerts (pureFns mode eager env fuel) env = ruleCertsFueled mode eager env fuel := rfl
 theorem iotaIndexOk_fold (env : Env) (fuel : Nat) :
     iotaIndexOk (pureFns mode eager env fuel) env = iotaIndexOkFueled mode eager env fuel := rfl
 theorem defEqList_fold (env : Env) (fuel : Nat) :
@@ -423,7 +428,7 @@ second. -/
 theorem preAt_nonApp {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
     (r : CoreFns m) (env : Env) (d : Nat) (t : Name) {e e' : Expr}
     (he : ∀ f a f' a', ¬(e = .app f a ∧ e' = .app f' a')) :
-    preAt r env d t e e' = preAttempt r env d e' t := by
+    preAt r env d t e e' = preAttempt r env d e e' t := by
   unfold preAt
   split
   · rename_i f a f' a'

@@ -45,6 +45,8 @@ checker does):
   hereditary `IORel`, keyed on the type's syntax, not membership.
 * `CertsF env d T args` — `iotaCertsFull`: the full-grade telescope
   certificate of ι's case 3.
+* `CertsR env d e T args` — `ruleCerts`: a rule firing's certificate, which
+  skips the head slots of the fired term `e`.
 * `DefEqList env d as bs` — `defEqList`, pairwise.
 * `MatchRel env d P e l`, `MatchArg env d P a a'` — a rewrite rule's match
   of the term `e` against the instance `l` of its left side (`ruleMatchM`).
@@ -177,7 +179,9 @@ inductive Red (env : Env) : Nat → Expr → Expr → Prop where
   `.app` clause after ι, `iotaThenRule`): a stored theorem `h : ∀ xs, @Eq A l r` at levels `us`,
   its telescope applied to `args` under the full-grade certificate,
   rewrites a term `e` that matches the left side to the right side, both
-  instantiated at `args`.  The match (`MatchRel`, `ruleMatchM`) relates `e`
+  instantiated at `args`.  The certificate skips a slot whose argument is
+  the term's own argument at a position where the head's telescope has the
+  binder's domain (`CertsR.head`).  The match (`MatchRel`, `ruleMatchM`) relates `e`
   to its matched view `e₁` position by position: equal,
   reduced first (the retry on `whnf`), or, at a repeated variable,
   definitionally equal.  The view is the instance `l` of the left side up to
@@ -194,7 +198,7 @@ inductive Red (env : Env) : Nat → Expr → Expr → Prop where
       {args : List Expr} {u : Level} {A l r e e₁ : Expr} {c : Name} {ls : List Level} :
       env.find? h = some (.thmInfo cv) →
       us.length = cv.levelParams.length →
-      CertsF env d (cv.type.instantiateLevelParams cv.levelParams us) args →
+      CertsR env d e (cv.type.instantiateLevelParams cv.levelParams us) args →
       piResidual (cv.type.instantiateLevelParams cv.levelParams us) args
         = some (.app (.app (.app (.const eqName [u]) A) l) r) →
       e.getAppFn = .const c ls →
@@ -793,6 +797,24 @@ inductive CertsF (env : Env) : Nat → Expr → List Expr → Prop where
       Infer env .full d arg ta → DefEq env d ta ty →
       CertsF env d (body.instantiate1 arg) rest →
       CertsF env d (.forallE ty body) (arg :: rest)
+
+/-- **A rule firing's telescope certificate** (`ruleCerts`, `Kernel/Core.lean`): `CertsF`, except
+that a slot whose argument is the fired term's own argument at a position `j` where the head's
+telescope, along the term's first `j` arguments, has the binder's domain is not certified
+(`head`).  The term's grading off the point puts such an argument in that domain
+(`Model/Rules/CertsRSound.lean`), as the official kernel assumes when it skips the check
+(`LEAN_REWRITE_CHECK_ARGS`). -/
+inductive CertsR (env : Env) : Nat → Expr → Expr → List Expr → Prop where
+  | nil {d : Nat} {e T : Expr} : CertsR env d e T []
+  | cert {d : Nat} {e ty body arg ta : Expr} {rest : List Expr} :
+      Infer env .full d arg ta → DefEq env d ta ty →
+      CertsR env d e (body.instantiate1 arg) rest →
+      CertsR env d e (.forallE ty body) (arg :: rest)
+  | head {d : Nat} {e T ty body arg : Expr} {rest : List Expr} {j : Nat} :
+      headTypeOf env.find? e = some T → e.getAppArgs[j]? = some arg →
+      teleDomAt T e.getAppArgs j = some ty →
+      CertsR env d e (body.instantiate1 arg) rest →
+      CertsR env d e (.forallE ty body) (arg :: rest)
 
 /-- **A rule's match, the spine** (`ruleMatchM`, `Kernel/Core.lean`): the
 term and the instance of the left side share their head and spine, and each

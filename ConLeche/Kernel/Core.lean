@@ -226,6 +226,23 @@ def iotaCertsFull (r : CoreFns m) (env : Env) (depth : Nat) :
     else pure false
   | _, _ :: _ => pure false
 
+/-- **A rule firing's telescope certificate** (`CertsR`): `iotaCertsFull`, except that a slot
+whose argument is the fired term's own argument (in `eargs`) at a position where the head's telescope `hT`
+has the binder's domain (`headSlot`) is not certified.  The term's grading puts such an argument
+in its domain, as the official kernel assumes (it certifies no slot, `LEAN_REWRITE_CHECK_ARGS`). -/
+def ruleCerts (r : CoreFns m) (env : Env) (depth : Nat) (eargs : List Expr) (hT : Option Expr) :
+    Expr → List Expr → m Bool
+  | _, [] => pure true
+  | .forallE ty body, arg :: rest => do
+    if headSlotOpt hT eargs arg ty then
+      ruleCerts r env depth eargs hT (body.instantiate1 arg) rest
+    else
+      let ta ← r.infer depth arg
+      if ← r.defeq depth ta ty then
+        ruleCerts r env depth eargs hT (body.instantiate1 arg) rest
+      else pure false
+  | _, _ :: _ => pure false
+
 /-- Pairwise definitional equality of two spines (used to check a
 major's constructor parameters against the recursor's). -/
 def defEqList (r : CoreFns m) (env : Env) (depth : Nat) :
@@ -1107,19 +1124,19 @@ def ruleArgsM (r : CoreFns m) (env : Env) (depth : Nat) (cv : ConstantVal) (e : 
     | none => pure none
   | _ => pure none
 
-/-- **A user rewrite rule's firing after its match** (`Red.rewrite`): at the arguments `args`, the
-levels `us` and the matched view `e₁`, the level count, the residual `Eq` spine whose left side is
-the matched view, its head a constant, every argument a subterm of its application tree, every
-free-variable leaf of the right side one of its, and the theorem's telescope certified at the full
-grade (`iotaCertsFull`).  The sides' typing is the registration's (`checkRuleLaw`), checked once.
-Any failed check is no firing. -/
-def rewriteFire (r : CoreFns m) (env : Env) (depth : Nat) (cv : ConstantVal) (args : List Expr)
-    (us : List Level) (e₁ : Expr) : m (Option Expr) := do
+/-- **A user rewrite rule's firing after its match** (`Red.rewrite`): at the fired term `e`, the
+arguments `args`, the levels `us` and the matched view `e₁`, the level count, the residual `Eq`
+spine whose left side is the matched view, its head a constant, every argument a subterm of its
+application tree, every free-variable leaf of the right side one of its, and the theorem's
+telescope certified at the full grade except at `e`'s head slots (`ruleCerts`).  The sides'
+typing is the registration's (`checkRuleLaw`), checked once.  Any failed check is no firing. -/
+def rewriteFire (r : CoreFns m) (env : Env) (depth : Nat) (e : Expr) (cv : ConstantVal)
+    (args : List Expr) (us : List Level) (e₁ : Expr) : m (Option Expr) := do
   match (piResidual (cv.type.instantiateLevelParams cv.levelParams us) args).bind eqSpine? with
   | some (eqn, _, _, l, rhs) =>
     if RuleGate cv us args e₁ eqn l rhs then
-      if ← iotaCertsFull r env depth (cv.type.instantiateLevelParams cv.levelParams us)
-          args then pure (some rhs)
+      if ← ruleCerts r env depth e.getAppArgs (headTypeOf env.find? e)
+          (cv.type.instantiateLevelParams cv.levelParams us) args then pure (some rhs)
       else pure none
     else pure none
   | none => pure none
@@ -1132,7 +1149,7 @@ def rewriteAttempt (r : CoreFns m) (env : Env) (depth : Nat) (e : Expr) (thm : N
   match env.find? thm with
   | some (.thmInfo cv) =>
     match ← ruleArgsM r env depth cv e with
-    | some (args, us, e₁) => rewriteFire r env depth cv args us e₁
+    | some (args, us, e₁) => rewriteFire r env depth e cv args us e₁
     | none => pure none
   | _ => pure none
 
@@ -1263,13 +1280,13 @@ def keyScan (r : CoreFns m) (env : Env) (depth : Nat) :
 
 /-- **A marked rule at the term with its key arguments reduced**: the syntactic match of the
 left side (`ruleArgsSyn`) against `e'`, the matched view, and the firing's checks
-(`rewriteFire`). -/
-def preAttempt (r : CoreFns m) (env : Env) (depth : Nat) (e' : Expr) (t : Name) :
+(`rewriteFire`) at the term `e`. -/
+def preAttempt (r : CoreFns m) (env : Env) (depth : Nat) (e e' : Expr) (t : Name) :
     m (Option Expr) :=
   match env.find? t with
   | some (.thmInfo cv) =>
     match ruleArgsSyn cv e' with
-    | some (args, us) => rewriteFire r env depth cv args us e'
+    | some (args, us) => rewriteFire r env depth e cv args us e'
     | none => pure none
   | _ => pure none
 
@@ -1278,13 +1295,13 @@ unfolding): `e` is the term and `e'` the same spine with its key arguments reduc
 matches the prefix of `e'`, and the reduct is applied to the remaining arguments of `e`. -/
 def preAt (r : CoreFns m) (env : Env) (depth : Nat) (t : Name) : Expr → Expr → m (Option Expr)
   | .app f a, .app f' a' => do
-    match ← preAttempt r env depth (.app f' a') t with
+    match ← preAttempt r env depth (.app f a) (.app f' a') t with
     | some e₂ => pure (some e₂)
     | none =>
       match ← preAt r env depth t f f' with
       | some f₂ => pure (some (.app f₂ a))
       | none => pure none
-  | _, e' => preAttempt r env depth e' t
+  | e, e' => preAttempt r env depth e e' t
 
 /-- The marked rules in order: the first that fires, with its theorem. -/
 def preRules (r : CoreFns m) (env : Env) (depth : Nat) (e e' : Expr) :

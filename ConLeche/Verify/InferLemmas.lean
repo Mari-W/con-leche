@@ -511,7 +511,8 @@ theorem rewriteAttempt_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {e e₂ : 
         = some (.app (.app (.app (.const eqName [u]) A) l) e₂) ∧
       e₁.getAppFn = .const c ls ∧ us.length = cv.levelParams.length ∧
       (∀ x ∈ args, x ∈ appSubterms e₁) ∧
-      iotaCertsFull r env d (cv.type.instantiateLevelParams cv.levelParams us) args = .ok true ∧
+      ruleCerts r env d e.getAppArgs (headTypeOf env.find? e)
+        (cv.type.instantiateLevelParams cv.levelParams us) args = .ok true ∧
       e₁.levelFormEq l = true := by
   unfold rewriteAttempt rewriteFire at h
   split at h
@@ -877,7 +878,7 @@ at the replaced term establishes, and which applying the terms to an argument ke
 takes the original argument). -/
 theorem preAt_ind {r : CoreFns CheckM} {env : Env} {d : Nat} {t : Name}
     (P : Expr → Expr → Expr → Prop)
-    (hat : ∀ {x x' y : Expr}, preAttempt r env d x' t = .ok (some y) → P x x' y)
+    (hat : ∀ {x x' y : Expr}, preAttempt r env d x x' t = .ok (some y) → P x x' y)
     (happ : ∀ {f a f' a' f₂ : Expr}, P f f' f₂ → P (.app f a) (.app f' a') (.app f₂ a)) :
     ∀ (e e' : Expr) {e₂ : Expr}, preAt r env d t e e' = .ok (some e₂) → P e e' e₂ := by
   intro e
@@ -915,15 +916,16 @@ theorem preAt_ind {r : CoreFns CheckM} {env : Env} {d : Nat} {t : Name}
     exact hat h
 
 /-- **Inversion for a rule's firing checks** (`rewriteFire`): read back at the view `e₁`. -/
-theorem rewriteFire_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {cv : ConstantVal}
+theorem rewriteFire_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {e : Expr} {cv : ConstantVal}
     {args : List Expr} {us : List Level} {e₁ e₂ : Expr}
-    (h : rewriteFire r env d cv args us e₁ = .ok (some e₂)) :
+    (h : rewriteFire r env d e cv args us e₁ = .ok (some e₂)) :
     ∃ (u : Level) (A : Expr) (c : Name) (ls : List Level) (l : Expr),
       piResidual (cv.type.instantiateLevelParams cv.levelParams us) args
         = some (.app (.app (.app (.const eqName [u]) A) l) e₂) ∧
       e₁.getAppFn = .const c ls ∧ us.length = cv.levelParams.length ∧
       (∀ x ∈ args, x ∈ appSubterms e₁) ∧
-      iotaCertsFull r env d (cv.type.instantiateLevelParams cv.levelParams us) args = .ok true ∧
+      ruleCerts r env d e.getAppArgs (headTypeOf env.find? e)
+        (cv.type.instantiateLevelParams cv.levelParams us) args = .ok true ∧
       e₁.levelFormEq l = true := by
   unfold rewriteFire at h
   split at h
@@ -945,11 +947,11 @@ theorem rewriteFire_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {cv : Constan
   · simp [pure, Except.pure] at h
 
 /-- **Inversion for a marked rule's firing at the replaced term**. -/
-theorem preAttempt_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {e' e₂ : Expr} {t : Name}
-    (h : preAttempt r env d e' t = .ok (some e₂)) :
+theorem preAttempt_inv {r : CoreFns CheckM} {env : Env} {d : Nat} {e e' e₂ : Expr} {t : Name}
+    (h : preAttempt r env d e e' t = .ok (some e₂)) :
     ∃ (cv : ConstantVal) (args : List Expr) (us : List Level),
       env.find? t = some (.thmInfo cv) ∧ ruleArgsSyn cv e' = some (args, us) ∧
-      rewriteFire r env d cv args us e' = .ok (some e₂) := by
+      rewriteFire r env d e cv args us e' = .ok (some e₂) := by
   unfold preAttempt at h
   split at h
   · rename_i cv hf
@@ -1520,7 +1522,7 @@ theorem preFire_pres {r : CoreFns CheckM} {env : Env} {d : Nat} {P : Expr → Pr
     (hP : AppClosed P)
     (hwh : ∀ {a w : Expr}, r.whnf d a = .ok w → P a → P w)
     (hlit : ∀ (kc : Name) {a : Expr}, P a → P (keyLit (natLitStored env) kc a))
-    (hat : ∀ {x y : Expr} {t : Name}, preAttempt r env d x t = .ok (some y) → P x → P y)
+    (hat : ∀ {x x' y : Expr} {t : Name}, preAttempt r env d x x' t = .ok (some y) → P x' → P y)
     {e e₂ : Expr} {t : Name} (h : preFire r env d e = .ok (some (t, e₂))) (he : P e) : P e₂ := by
   obtain ⟨c, us, args', hc, -, hka, hat'⟩ := preFire_inv h
   have hargs' : ∀ x ∈ args', P x := by
@@ -2505,6 +2507,41 @@ theorem iotaCertsFull_step_inv {env : Env} {fuel d : Nat}
   dsimp only [iotaCertsFullFueled] at h
   simp only [iotaCertsFull, Bind.bind, Except.bind] at h
   simp only [infer_def, defeq_def, iotaCertsFull_fold] at h
+  cases hta : inferTypeCore mode eager env fuel d arg with
+  | error err => rw [hta] at h; exact nomatch h
+  | ok ta =>
+  rw [hta] at h
+  dsimp only at h
+  cases hde : isDefEqCore mode eager env fuel d ta ty with
+  | error err => rw [hde] at h; exact nomatch h
+  | ok r =>
+  rw [hde] at h
+  dsimp only at h
+  cases r with
+  | false => simp [pure, Except.pure] at h
+  | true =>
+  simp only [↓reduceIte] at h
+  exact ⟨ta, rfl, hde, h⟩
+
+/-- Inversion for a rule firing's certificate step (`ruleCerts`): a head slot, or a certified
+slot. -/
+theorem ruleCerts_step_inv {env : Env} {fuel d : Nat} {eargs : List Expr} {hT : Option Expr}
+    {ty body : Expr} {arg : Expr} {rest : List Expr}
+    (h : ruleCertsFueled mode eager env fuel d eargs hT (.forallE ty body) (arg :: rest) =
+      .ok true) :
+    (headSlotOpt hT eargs arg ty = true ∧
+      ruleCertsFueled mode eager env fuel d eargs hT (body.instantiate1 arg) rest = .ok true) ∨
+    ∃ ta, inferTypeCore mode eager env fuel d arg = .ok ta ∧
+      isDefEqCore mode eager env fuel d ta ty = .ok true ∧
+      ruleCertsFueled mode eager env fuel d eargs hT (body.instantiate1 arg) rest = .ok true := by
+  dsimp only [ruleCertsFueled] at h
+  simp only [ruleCerts, Bind.bind, Except.bind] at h
+  simp only [infer_def, defeq_def, ruleCerts_fold] at h
+  by_cases hs : headSlotOpt hT eargs arg ty = true
+  · simp only [hs, ↓reduceIte] at h
+    exact .inl ⟨hs, h⟩
+  simp only [hs, Bool.false_eq_true, ↓reduceIte] at h
+  refine .inr ?_
   cases hta : inferTypeCore mode eager env fuel d arg with
   | error err => rw [hta] at h; exact nomatch h
   | ok ta =>
@@ -3787,7 +3824,7 @@ theorem appClosed_WScoped (d : Nat) : AppClosed (WScoped d) := fun _ _ => by sim
 
 /-- A marked rule's firing at the replaced term keeps well-scopedness. -/
 theorem preAttempt_WScoped {env : Env} (henv : EnvWF env) {r : CoreFns CheckM} {d : Nat}
-    {e' e₂ : Expr} {t : Name} (h : preAttempt r env d e' t = .ok (some e₂))
+    {e e' e₂ : Expr} {t : Name} (h : preAttempt r env d e e' t = .ok (some e₂))
     (hw : WScoped d e') : WScoped d e₂ := by
   obtain ⟨cv, args, us, hf, -, hfire⟩ := preAttempt_inv h
   obtain ⟨u, A, c, ls, l, hres, -, -, hsub, -, -⟩ := rewriteFire_inv hfire

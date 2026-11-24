@@ -299,6 +299,25 @@ with the fit and the residual's grading. -/
         (∀ x ∈ vs, WellDenoted V ρ x) ∧ TeleFitPA V ρ Ta vs resta ∧
           WellDenoted V ρ resta
 
+/-- **`CertsR`' motive**: `CertsFSem`, at a valuation where the fired term `e` is graded and not
+the point.  A head slot takes its argument's grading and membership from `e`'s, a certified slot
+from its inference. -/
+@[expose] def CertsRSem {env : Env} (m : EnvModel V env) (φ : Name → Nat)
+    (d : Nat) (e ty : Expr) (args : List Expr) : Prop :=
+  Frame d ty → Frame d e →
+  ∀ {Δa : List Term} {Ta ea : Term} {vs : List Term},
+    CtxOkS m φ d Δa ty → CtxOkS m φ d Δa e →
+    denote m.acval env φ d ty = some Ta →
+    denote m.acval env φ d e = some ea →
+    (∀ x ∈ args, Frame d x ∧ CtxOkS m φ d Δa x) →
+    DenoteSpine m.acval env φ d args vs →
+    ∃ resta : Term,
+      ∀ ρ : Nat → V, Sat V Δa ρ → LeavesGr m φ d ty ρ → LeavesGr m φ d e ρ →
+        (∀ x ∈ args, LeavesGr m φ d x ρ) →
+        WellDenoted V ρ Ta → WellDenoted V ρ ea → interp V ρ ea ≠ pt →
+        (∀ x ∈ vs, WellDenoted V ρ x) ∧ TeleFitPA V ρ Ta vs resta ∧
+          WellDenoted V ρ resta
+
 /-- **`DefEqList`'s motive**: the walk's LENGTH, and pointwise `interp`
 equality where neither side is the point.  The length is a conclusion
 of its own because the pointwise equality is only available once both

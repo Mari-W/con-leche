@@ -481,7 +481,7 @@ theorem appClosed_looseBVars : AppClosed (fun x => x.looseBVarsBounded 0 = true)
 
 /-- A marked rule's right side has no leaf the replaced term lacks. -/
 theorem preAttempt_fvarLeaves {env : Env} (henv : EnvWF env) {r : CoreFns CheckM} {d : Nat}
-    {e' e₂ : Expr} {t : Name} (h : preAttempt r env d e' t = .ok (some e₂)) :
+    {e e' e₂ : Expr} {t : Name} (h : preAttempt r env d e e' t = .ok (some e₂)) :
     ∀ l ∈ e₂.fvarLeaves, l ∈ e'.fvarLeaves := by
   obtain ⟨cv, args, us, hf, -, hfire⟩ := preAttempt_inv h
   obtain ⟨_, _, _, _, _, hres, -, -, hsub, -, -⟩ := rewriteFire_inv hfire
@@ -506,7 +506,7 @@ theorem preFire_fvarLeaves {env : Env} (henv : EnvWF env) {r : CoreFns CheckM} {
 
 /-- A marked rule's firing at the replaced term keeps the bvar bound. -/
 theorem preAttempt_looseBVars {env : Env} (henv : EnvWF env) {r : CoreFns CheckM} {d : Nat}
-    {e' e₂ : Expr} {t : Name} (h : preAttempt r env d e' t = .ok (some e₂))
+    {e e' e₂ : Expr} {t : Name} (h : preAttempt r env d e e' t = .ok (some e₂))
     (hb : e'.looseBVarsBounded 0 = true) : e₂.looseBVarsBounded 0 = true := by
   obtain ⟨cv, args, us, hf, -, hfire⟩ := preAttempt_inv h
   obtain ⟨_, _, _, _, _, hres, -, -, hsub, -, -⟩ := rewriteFire_inv hfire

@@ -51,6 +51,42 @@ theorem iotaCertsFull_bridge (hd : DefEqBridge μ eager env fuel) (hi : InferBri
       intro h
       simp [iotaCertsFullFueled, iotaCertsFull, pure, Except.pure] at h
 
+/-- A head slot names the head's type, the position of the argument and its domain there. -/
+theorem headSlotOpt_spec {hT : Option Expr} {args : List Expr} {arg ty : Expr}
+    (h : headSlotOpt hT args arg ty = true) :
+    ∃ T j, hT = some T ∧ args[j]? = some arg ∧ teleDomAt T args j = some ty := by
+  unfold headSlotOpt at h
+  split at h
+  · rename_i T
+    unfold headSlot at h
+    obtain ⟨j, -, hj⟩ := List.any_eq_true.mp h
+    obtain ⟨h1, h2⟩ := of_decide_eq_true hj
+    exact ⟨T, j, rfl, h1, h2⟩
+  · exact nomatch h
+
+/-- `ruleCerts` ⇒ `CertsR` (`ruleCerts_step_inv`; a head slot through `headSlotOpt_spec`, every
+other slot through `hi` and `hd`). -/
+theorem ruleCerts_bridge (hd : DefEqBridge μ eager env fuel) (hi : InferBridge μ eager env
+    fuel) {e : Expr} :
+    ∀ {d : Nat} {ty : Expr} {args : List Expr},
+      ruleCertsFueled μ eager env fuel d e.getAppArgs (headTypeOf env.find? e) ty args = .ok true →
+      CertsR env d e ty args := by
+  intro d ty args
+  induction args generalizing ty with
+  | nil => intro _; exact .nil
+  | cons arg rest ih =>
+    match ty with
+    | .forallE ty₀ body =>
+      intro h
+      rcases ruleCerts_step_inv h with ⟨hs, hrest⟩ | ⟨ta, hta, hde, hrest⟩
+      · obtain ⟨T, j, hT, hj, hdom⟩ := headSlotOpt_spec hs
+        exact .head hT hj hdom (ih hrest)
+      · exact .cert (hi hta) (hd hde) (ih hrest)
+    | .bvar _ | .fvar _ _ | .sort _ | .const _ _ | .app _ _ | .lam _ _
+    | .letE _ _ _ | .lit _ | .proj _ _ _ =>
+      intro h
+      simp [ruleCertsFueled, ruleCerts, pure, Except.pure] at h
+
 /-- `defEqList` ⇒ `DefEqList` (`defEqList_step_inv`). -/
 theorem defEqList_bridge (hd : DefEqBridge μ eager env fuel) :
     ∀ {d : Nat} {as bs : List Expr},

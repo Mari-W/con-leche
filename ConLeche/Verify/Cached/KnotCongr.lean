@@ -281,6 +281,31 @@ theorem iotaCertsFullI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode
   funext depth ty args; rw [iotaCertsFullI.eq_def, iotaCertsFullI.eq_def]
   exact iotaCertsFullIAux_congr hfe h depth args ty []
 
+/-- `ruleCertsIAux` only threads `fe` (`iotaCertsFullIAux_congr`). -/
+theorem ruleCertsIAux_congr (_hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv)
+    (depth : Nat) (eargs : List Expr) (hT : Option Expr) :
+    ∀ (args : List Expr) (ty : Expr) (acc : List Expr),
+    ruleCertsIAux mode fe₁ eager lv depth eargs hT ty acc args =
+      ruleCertsIAux mode fe₂ eager lv depth eargs hT ty acc args := by
+  intro args
+  induction args with
+  | nil => intro ty acc; rw [ruleCertsIAux.eq_def, ruleCertsIAux.eq_def]
+  | cons arg rest ih =>
+    have h₀ : ∀ ty, ruleCertsIAux mode fe₁ eager lv depth eargs hT ty [] (arg :: rest) =
+        ruleCertsIAux mode fe₂ eager lv depth eargs hT ty [] (arg :: rest) := by
+      intro ty
+      rw [ruleCertsIAux.eq_def, ruleCertsIAux.eq_def]
+      cases ty <;> simp only [h, ih]
+    intro ty acc
+    rw [ruleCertsIAux.eq_def, ruleCertsIAux.eq_def]
+    cases ty <;> cases acc <;> simp only [h, ih, h₀]
+
+/-- `ruleCertsI` only threads `fe`. -/
+theorem ruleCertsI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv) :
+    ruleCertsI mode fe₁ eager lv = ruleCertsI mode fe₂ eager lv := by
+  funext depth eargs hT ty args; rw [ruleCertsI.eq_def, ruleCertsI.eq_def]
+  exact ruleCertsIAux_congr hfe h depth eargs hT args ty []
+
 /-- `defEqListI` only threads `fe`. -/
 theorem defEqListI_congr (_hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv) :
     defEqListI mode fe₁ eager lv = defEqListI mode fe₂ eager lv := by
@@ -533,8 +558,8 @@ theorem ruleArgsI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe�
 /-- `rewriteFireI` reads `fe` only through `find?`. -/
 theorem rewriteFireI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv) :
     rewriteFireI mode fe₁ eager lv = rewriteFireI mode fe₂ eager lv := by
-  funext depth t cv args us e₁; rw [rewriteFireI.eq_def, rewriteFireI.eq_def]
-  simp only [constTyAtM_congr hfe, iotaCertsFullI_congr hfe h]
+  funext depth e t cv args us e₁; rw [rewriteFireI.eq_def, rewriteFireI.eq_def]
+  simp only [constTyAtM_congr hfe, ruleCertsI_congr hfe h, hfe]
 
 /-- `rewriteAttemptI` reads `fe` only through `find?`. -/
 theorem rewriteAttemptI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv) :
@@ -608,13 +633,13 @@ theorem keyScanI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁
 /-- `rewriteFireSynI` reads `fe` only through `find?`. -/
 theorem rewriteFireSynI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv) :
     rewriteFireSynI mode fe₁ eager lv = rewriteFireSynI mode fe₂ eager lv := by
-  funext depth thm cv args us e₁; rw [rewriteFireSynI.eq_def, rewriteFireSynI.eq_def]
-  simp only [constTyAtM_congr hfe, iotaCertsFullI_congr hfe h]
+  funext depth e thm cv args us e₁; rw [rewriteFireSynI.eq_def, rewriteFireSynI.eq_def]
+  simp only [constTyAtM_congr hfe, ruleCertsI_congr hfe h, hfe]
 
 /-- `preAttemptI` reads `fe` only through `find?`. -/
 theorem preAttemptI_congr (hfe : fe₁.find? = fe₂.find?) (h : SlotsEq mode fe₁ fe₂ lv) :
     preAttemptI mode fe₁ eager lv = preAttemptI mode fe₂ eager lv := by
-  funext depth e' t; rw [preAttemptI.eq_def, preAttemptI.eq_def]
+  funext depth e e' t; rw [preAttemptI.eq_def, preAttemptI.eq_def]
   simp only [hfe, rewriteFireSynI_congr hfe h]
 
 /-- `preAtI` reads `fe` only through `find?`. -/

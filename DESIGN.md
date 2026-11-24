@@ -116596,3 +116596,40 @@ needs a new premise for `Red.rewrite` in place of `CertsF` (certificates for the
 the domain equations for these), a `MatchRelSem` that hands on the gradedness of the matched view,
 and every proof that builds or transports `Red.rewrite` (the spec's `rewriteFire`, `Deep`, the
 environment extension, the bridges, the cached twins). Not started.
+
+## Head slots without a certificate (2026-11-24, head-certs)
+
+**A rule firing no longer certifies an argument that is the fired term's own argument at a head
+position whose domain is the binder's.** `Red.rewrite` takes `CertsR env d e T args` in place of
+`CertsF env d T args` (`Rules/Rel.lean`). `CertsR` has the two steps of `CertsF` and a third,
+`head`. A slot needs no inference when the head of `e` is a stored constant (`headTypeOf`), its
+argument is `e`'s argument at some position `j`, and the head's telescope, peeled along `e`'s first
+`j` arguments, has the binder's domain at `j` (`teleDomAt`). Both tests are syntactic. The checker
+decides them by `headSlot` (`Kernel/CoreDefs.lean`), and `ruleCerts` (`Kernel/Core.lean`) runs the
+inference and the domain comparison only where `headSlot` fails. `rewriteFire` and `preAttempt`
+take the fired term, because the matched view is not graded where the term is. For a firing
+before unfolding that term is the original prefix, not the spine with its key arguments reduced.
+
+Soundness (`Model/Rules/CertsRSound.lean`). `RedSem` claims nothing of a term that is the point,
+so `CertsRSem` may assume `e` graded and not the point at the valuation. Then every prefix of `e`'s
+spine is a graph, the head's reading lies in its type (`ConstType`), and the application clause of
+the prefix that ends at `j` puts the argument in the head's domain there (`headSlot_mem`, the step
+of `teleFitPA_of_peel_ne_pt` along a syntactic `piResidual`). That domain is the binder's
+syntactically, so the slot fits the rule's telescope with the argument graded, as a certified slot
+does. `Red.rewrite_sound` reads the fit as before. The argument of the 2026-11-22 record is the
+same, with one change. It asked for a binder whose variable sits at a head position of the left
+side, a static property of the rule. The premise checks the firing instead, the term's own argument
+at a position with the binder's domain. A variable at a head position of the left side binds the
+term's argument there (the syntactic match and the first occurrence of `ruleMatchM` take it as
+is), so the static case is a special case. A variable in a nested position (`a` and `l` in
+`foldr_cons`'s `a :: l`), a key position's reduced argument and the second occurrence of a
+non-linear variable get the certificate as before.
+
+The cached twin `ruleCertsIAux` (`Cached/CoreC.lean`) is `iotaCertsFullIAux` with the head test
+first (`headSlotOptC`, through `Expr.piResidual` and `Expr.instLevelParams`, equal to the spec's by
+`headSlotOptC_eq` and `headTypeOfC_eq`). Its simulation is `ruleCertsCAux_spec` (`DiscC1`). The
+bridge is `ruleCerts_bridge` (`Verify/Rules/Certs.lean`). The fuel, pairing, shift and extension
+lemmas follow `iotaCertsFull`'s (`ruleCerts_atF`, `ruleCerts_fst`/`_snd`, `ruleCerts_shift` with
+`headSlotOpt_shift`, `ruleCerts_rel` with `headTypeOf_ext`). The fixtures `rewrite_rule_pre_*` and
+`rewrite_rule_*` keep their verdicts. Their rules have head slots (`cond`, the list folds) and
+nested binders, so both kinds of slot run in them.

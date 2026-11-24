@@ -468,7 +468,7 @@ theorem rewriteAttempt_bridge (hw : WhnfBridge μ eager env fuel)
   obtain ⟨cv, args, us, u, A, c, ls, e₁, l, hf, hm, hres, -, hlen, hsub, hcert, hlf⟩ :=
     rewriteAttempt_inv h
   obtain ⟨l₀, st', hm'⟩ := ruleArgsM_inv hm
-  exact .rewrite hf hlen (iotaCertsFull_bridge hd hi hcert) hres hfn'
+  exact .rewrite hf hlen (ruleCerts_bridge hd hi hcert) hres hfn'
     (ruleMatchM_bridge hw hd l₀ [] (SlotsIn.replicate _ _ _) hm').1
     hlf hsub hmem
 
@@ -603,7 +603,7 @@ theorem preFire_bridge (hw : WhnfBridge μ eager env fuel) (hd : DefEqBridge μ 
     (fun ha hm' hfn => ?_) (fun ih hm' hfn => .appFn (ih hm'.app_inv hfn)) e _ hat hm hc
   obtain ⟨cv, args, us', hf, -, hfire⟩ := preAttempt_inv ha
   obtain ⟨u, A, c', ls, l, hres, -, hlen, hsub, hcert, hlf⟩ := rewriteFire_inv hfire
-  exact .rewrite hf hlen (iotaCertsFull_bridge hd hi hcert) hres hfn hm' hlf hsub hmem
+  exact .rewrite hf hlen (ruleCerts_bridge hd hi hcert) hres hfn hm' hlf hsub hmem
 
 /-- The rules at an origin the chain from `e₀` passed through reduce `e₀` (`Red.rewrite` at the
 origin). -/

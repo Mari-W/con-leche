@@ -21,7 +21,8 @@ found in `l`'s application tree.  The match equates `e` with `l` off the
 point (`MatchRel.app_sound`), so the rule's equation of `l` and `r` is one
 of `e` and `r`.  The theorem's leaf inhabits
 its type's reading (`const_ty`), the certificate fits the arguments to
-its telescope, so the residual `Eq` spine's reading is inhabited.  The
+its telescope (`CertsRSem`, which may use that the term is graded and not
+the point), so the residual `Eq` spine's reading is inhabited.  The
 rule's law, installed at its registration (`RuleLaw`) and read along the
 fit (`sidesT_fit`), puts `A` in its universe and both sides in `A`, so
 `eq_law` reads the spine as `eqv ⟦l⟧ ⟦r⟧`, and an inhabitant of it
@@ -150,7 +151,7 @@ theorem Red.rewrite_sound (hin : RulesInputs V m φ) {d : Nat} {h : Name}
     {A l r e e₁ : Expr} {c : Name} {ls : List Level}
     (hthm : env.find? h = some (.thmInfo cv))
     (hus : us.length = cv.levelParams.length)
-    (hcerts : CertsFSem m φ d (cv.type.instantiateLevelParams cv.levelParams us) args)
+    (hcerts : CertsRSem m φ d e (cv.type.instantiateLevelParams cv.levelParams us) args)
     (hres : ConLeche.piResidual (cv.type.instantiateLevelParams cv.levelParams us) args
       = some (.app (.app (.app (.const eqName [u]) A) l) r))
     (_hhead : e.getAppFn = .const c ls)
@@ -240,8 +241,8 @@ theorem Red.rewrite_sound (hin : RulesInputs V m φ) {d : Nat} {h : Name}
   have hLT : LeavesGr m φ d (cv.type.instantiateLevelParams cv.levelParams us) ρ :=
     LeavesGr.of_fvarLeaves_nil (ConLeche.Expr.fvarLeaves_eq_nil_of_not_hasFvar hnfT)
   -- the certificate's fit, at the residual's reading
-  obtain ⟨resta, hcs⟩ := hcerts hfT hCT (hTd d) hfargs hsp
-  obtain ⟨-, hfit, hwres⟩ := hcs ρ hρ hLT hLargs (hTok ρ)
+  obtain ⟨resta, hcs⟩ := hcerts hfT hfe hCT hCe (hTd d) hee hfargs hsp
+  obtain ⟨-, hfit, hwres⟩ := hcs ρ hρ hLT hLe hLargs (hTok ρ) hge hne
   have hresta := teleFitPA_residualK m.acval_closed (acval_inst_self m) args hres hfT.1
     (fun x hx => ⟨(hfargs x hx).1.1, (hfargs x hx).1.2.1⟩) (hTd d) hsp hfit
   rw [hRA] at hresta

@@ -123,6 +123,46 @@ theorem iotaCertsFull_atF (d : Nat) (F : Nat) :
   | .const _ _, _ :: _ | .app _ _, _ :: _ | .lam _ _, _ :: _
   | .letE _ _ _, _ :: _ | .lit _, _ :: _ | .proj _ _ _, _ :: _ => rfl
 
+theorem ruleCerts_atF (d : Nat) (F : Nat) (eargs : List Expr) (hT : Option Expr) :
+    ∀ (ty : Expr) (args : List Expr),
+      (ruleCerts (fueledFns mode eager env) env d eargs hT ty args).val F =
+        ruleCerts (pureFns mode eager env F) env d eargs hT ty args
+  | _, [] => rfl
+  | .forallE ty body, arg :: rest => by
+    show ((do
+        if headSlotOpt hT eargs arg ty then
+          ruleCerts (fueledFns mode eager env) env d eargs hT (body.instantiate1 arg) rest
+        else
+          let ta ← (fueledFns mode eager env).infer d arg
+          if ← (fueledFns mode eager env).defeq d ta ty then
+            ruleCerts (fueledFns mode eager env) env d eargs hT (body.instantiate1 arg) rest
+          else pure false : FueledM Bool)).val F = (do
+        if headSlotOpt hT eargs arg ty then
+          ruleCerts (pureFns mode eager env F) env d eargs hT (body.instantiate1 arg) rest
+        else
+          let ta ← (pureFns mode eager env F).infer d arg
+          if ← (pureFns mode eager env F).defeq d ta ty then
+            ruleCerts (pureFns mode eager env F) env d eargs hT (body.instantiate1 arg) rest
+          else pure false)
+    by_cases hs : headSlotOpt hT eargs arg ty = true
+    · simp only [hs, ↓reduceIte]
+      exact ruleCerts_atF d F eargs hT (body.instantiate1 arg) rest
+    simp only [hs, Bool.false_eq_true, ↓reduceIte]
+    rw [FueledM.atF_bind]
+    congr 1
+    funext ta
+    rw [FueledM.atF_bind]
+    congr 1
+    funext b
+    cases b with
+    | true =>
+      simp only [↓reduceIte]
+      exact ruleCerts_atF d F eargs hT (body.instantiate1 arg) rest
+    | false => rfl
+  | .bvar _, _ :: _ | .fvar _ _, _ :: _ | .sort _, _ :: _
+  | .const _ _, _ :: _ | .app _ _, _ :: _ | .lam _ _, _ :: _
+  | .letE _ _ _, _ :: _ | .lit _, _ :: _ | .proj _ _ _, _ :: _ => rfl
+
 theorem defEqList_atF (d : Nat) (F : Nat) :
     ∀ (as bs : List Expr),
       (defEqList (fueledFns mode eager env) env d as bs).val F =
@@ -179,6 +219,7 @@ macro "atF_step" : tactic =>
     | rfl
     | (rw [liftFueled_atF])
     | (rw [iotaCertsFull_atF])
+    | (rw [ruleCerts_atF])
     | (rw [iotaIndexOk_atF])
     | (rw [defEqList_atF])
     | ((rw [FueledM.atF_bind]; congr 1 <;> try rfl) <;> try funext _)
@@ -330,6 +371,7 @@ macro "atF_step2" : tactic =>
     | rfl
     | (rw [liftFueled_atF])
     | (rw [iotaCertsFull_atF])
+    | (rw [ruleCerts_atF])
     | (rw [iotaIndexOk_atF])
     | (rw [defEqList_atF])
     | (rw [reduceNat_atF])
@@ -519,6 +561,7 @@ macro "atF_core3" x:tactic : tactic =>
     | $x:tactic
     | (rw [liftFueled_atF])
     | (rw [iotaCertsFull_atF])
+    | (rw [ruleCerts_atF])
     | (rw [iotaIndexOk_atF])
     | (rw [defEqList_atF])
     | (rw [reduceNat_atF])
@@ -635,9 +678,9 @@ theorem keyScan_atF (d : Nat) (F : Nat) :
     rw [FueledM.atF_bind, keyScan_atF d F ks args₁]
     congr 1
 
-theorem preAttempt_atF (d : Nat) (e' : Expr) (t : Name) (F : Nat) :
-    (preAttempt (fueledFns mode eager env) env d e' t).val F =
-      preAttempt (pureFns mode eager env F) env d e' t := by
+theorem preAttempt_atF (d : Nat) (e e' : Expr) (t : Name) (F : Nat) :
+    (preAttempt (fueledFns mode eager env) env d e e' t).val F =
+      preAttempt (pureFns mode eager env F) env d e e' t := by
   unfold preAttempt rewriteFire
   atF_step3
 
@@ -661,8 +704,8 @@ theorem preAt_atF (d : Nat) (t : Name) (F : Nat) :
         congr 1
         funext o'
         cases o' <;> rfl
-    | _ => rw [preAt.eq_def, preAt.eq_def]; exact preAttempt_atF d _ t F
-  | _ => intro e'; rw [preAt.eq_def, preAt.eq_def]; exact preAttempt_atF d _ t F
+    | _ => rw [preAt.eq_def, preAt.eq_def]; exact preAttempt_atF d _ _ t F
+  | _ => intro e'; rw [preAt.eq_def, preAt.eq_def]; exact preAttempt_atF d _ _ t F
 
 theorem preRules_atF (d : Nat) (e e' : Expr) (F : Nat) :
     ∀ ts : List Name, (preRules (fueledFns mode eager env) env d e e' ts).val F =
@@ -910,6 +953,7 @@ macro "atF_core4" x:tactic : tactic =>
     | $x:tactic
     | (rw [liftFueled_atF])
     | (rw [iotaCertsFull_atF])
+    | (rw [ruleCerts_atF])
     | (rw [iotaIndexOk_atF])
     | (rw [defEqList_atF])
     | (rw [reduceNat_atF])

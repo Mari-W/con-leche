@@ -787,6 +787,36 @@ def piResidual : Expr → List Expr → Option Expr
   | .forallE _ b, a :: as => piResidual (b.instantiate1 a) as
   | _, _ :: _ => none
 
+/-- **The type of a term's head** at the head's levels: the stored type of the constant at the head
+of `e`'s spine with its level parameters instantiated, when the level count matches. -/
+def headTypeOf (find? : Name → Option ConstantInfo) (e : Expr) : Option Expr :=
+  match e.getAppFn with
+  | .const c ls =>
+    match find? c with
+    | some ci =>
+      if ls.length = ci.toConstantVal.levelParams.length then
+        some (ci.toConstantVal.type.instantiateLevelParams ci.toConstantVal.levelParams ls)
+      else none
+    | none => none
+  | _ => none
+
+/-- **The domain at position `j`** of a telescope `T` along the first `j` arguments of a spine. -/
+def teleDomAt (T : Expr) (args : List Expr) (j : Nat) : Option Expr :=
+  match piResidual T (args.take j) with
+  | some (.forallE dom _) => some dom
+  | _ => none
+
+/-- **A head slot** of a rule firing: `arg` is the spine's argument at a position whose domain in
+the head's telescope `T` is `ty`.  Such a slot needs no certificate (`CertsR.head`). -/
+def headSlot (T : Expr) (args : List Expr) (arg ty : Expr) : Bool :=
+  (List.range args.length).any fun j => decide (args[j]? = some arg ∧ teleDomAt T args j = some ty)
+
+/-- `headSlot` at the head's type, when the term has one (`headTypeOf`). -/
+def headSlotOpt (hT : Option Expr) (args : List Expr) (arg ty : Expr) : Bool :=
+  match hT with
+  | some T => headSlot T args arg ty
+  | none => false
+
 /-- The subterms of `e` reachable through `.app` nodes alone, `e`
 first: where a first-order rewrite rule's matcher finds its arguments. -/
 def appSubterms : Expr → List Expr

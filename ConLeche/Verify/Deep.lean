@@ -1943,6 +1943,132 @@ private theorem eqSpine?_shiftFrom {p : Nat} (R : Expr) :
     obtain ⟨A₀, l₀, r₀, rfl, rfl, rfl, rfl⟩ := shiftFrom_eq_spine hs
     rfl
 
+/-- The head's type does not see the shift: the head is a constant. -/
+private theorem headTypeOf_shiftFrom {p : Nat} (e : Expr) :
+    headTypeOf env.find? (shiftFrom p e) = headTypeOf env.find? e := by
+  unfold headTypeOf
+  rw [getAppFn_shiftFrom]
+  cases e.getAppFn with
+  | fvar idx ty => by_cases h : idx ≥ p <;> simp only [shiftFrom, h, ↓reduceIte] <;> rfl
+  | _ => rfl
+
+/-- The head's type is a stored type at levels, so it has no free variable. -/
+private theorem headTypeOf_closed (henv : EnvWF env) {e : Expr} :
+    ∀ T, headTypeOf env.find? e = some T → T.hasFvar = false := by
+  intro T h
+  unfold headTypeOf at h
+  split at h
+  · split at h
+    · rename_i ci hf
+      split at h
+      · obtain rfl := Option.some.inj h
+        rw [hasFvar_instantiateLevelParams]
+        exact (henv.consts _ (Env.find?_mem hf)).1
+      · exact nomatch h
+    · exact nomatch h
+  · exact nomatch h
+
+/-- A head slot at a closed head type commutes with the shift. -/
+private theorem headSlotOpt_shift {p : Nat} {hT : Option Expr}
+    (hcl : ∀ T, hT = some T → T.hasFvar = false) (args : List Expr) (arg ty : Expr) :
+    headSlotOpt hT (args.map (shiftFrom p)) (shiftFrom p arg) (shiftFrom p ty) =
+      headSlotOpt hT args arg ty := by
+  cases hT with
+  | none => rfl
+  | some T =>
+    have hTf := hcl T rfl
+    have key : ∀ (o : Option Expr) (x : Expr),
+        o.map (shiftFrom p) = some (shiftFrom p x) ↔ o = some x := by
+      intro o x
+      cases o with
+      | none => simp
+      | some y =>
+        simp only [Option.map_some, Option.some.injEq]
+        exact ⟨fun h => shiftFrom_injective h, fun h => h ▸ rfl⟩
+    have hdom : ∀ j, teleDomAt T (args.map (shiftFrom p)) j =
+        (teleDomAt T args j).map (shiftFrom p) := by
+      intro j
+      unfold teleDomAt
+      have hpr := piResidual_shiftFrom (p := p) (args.take j) T
+      rw [shiftFrom_eq_self_of_not_hasFvar hTf] at hpr
+      rw [← List.map_take, hpr]
+      cases piResidual T (args.take j) with
+      | none => rfl
+      | some R =>
+        cases R <;> try rfl
+        case fvar idx ty' =>
+          by_cases h : idx ≥ p <;> simp only [Option.map_some, shiftFrom, h, ↓reduceIte] <;> rfl
+    simp only [headSlotOpt, headSlot, List.length_map]
+    congr 1
+    funext j
+    rw [hdom, List.getElem?_map, decide_eq_decide, key, key]
+
+/-- A rule firing's certificate commutes with the shift (`iotaCertsFull_shift`, and the head
+slot through `headSlotOpt_shift`). -/
+private theorem ruleCerts_shift (henv : EnvWF env)
+    (ih : ShiftClaims mode eager env fuel) {p d : Nat} (hpd : p ≤ d) {eargs : List Expr}
+    {hT : Option Expr} (hcl : ∀ T, hT = some T → T.hasFvar = false) :
+    ∀ {args : List Expr} {ty : Expr}, WScoped d ty →
+      (∀ x ∈ args, WScoped d x) →
+      ruleCerts (pureFns mode eager env fuel) env (d + 1) (eargs.map (shiftFrom p)) hT
+          (shiftFrom p ty) (args.map (shiftFrom p)) =
+        ruleCerts (pureFns mode eager env fuel) env d eargs hT ty args := by
+  intro args
+  induction args with
+  | nil => intro ty _ _; rfl
+  | cons arg rest ihrest =>
+    intro ty hwty hwargs
+    have hwarg : WScoped d arg := hwargs arg (List.mem_cons_self ..)
+    have hwrest : ∀ x ∈ rest, WScoped d x :=
+      fun x hx => hwargs x (List.mem_cons_of_mem _ hx)
+    match ty with
+    | .forallE ty' body =>
+      have hwty' : WScoped d ty' ∧ WScoped d body := by
+        simpa only [WScoped] using hwty
+      show (do
+          if headSlotOpt hT (eargs.map (shiftFrom p)) (shiftFrom p arg) (shiftFrom p ty') then
+            ruleCerts (pureFns mode eager env fuel) env (d + 1) (eargs.map (shiftFrom p)) hT
+              ((shiftFrom p body).instantiate1 (shiftFrom p arg)) (rest.map (shiftFrom p))
+          else
+            let ta ← (pureFns mode eager env fuel).infer (d + 1) (shiftFrom p arg)
+            if ← (pureFns mode eager env fuel).defeq (d + 1) ta (shiftFrom p ty') then
+              ruleCerts (pureFns mode eager env fuel) env (d + 1) (eargs.map (shiftFrom p)) hT
+                ((shiftFrom p body).instantiate1 (shiftFrom p arg))
+                (rest.map (shiftFrom p))
+            else pure false : CheckM Bool) =
+        (do
+          if headSlotOpt hT eargs arg ty' then
+            ruleCerts (pureFns mode eager env fuel) env d eargs hT (body.instantiate1 arg) rest
+          else
+            let ta ← (pureFns mode eager env fuel).infer d arg
+            if ← (pureFns mode eager env fuel).defeq d ta ty' then
+              ruleCerts (pureFns mode eager env fuel) env d eargs hT (body.instantiate1 arg) rest
+            else pure false : CheckM Bool)
+      have hrest := ihrest (WScoped.instantiate1_gen hwarg 0 hwty'.2) hwrest
+      rw [shiftFrom_instantiate1_gen] at hrest
+      rw [headSlotOpt_shift hcl]
+      by_cases hs : headSlotOpt hT eargs arg ty' = true
+      · simp only [hs, ↓reduceIte]
+        exact hrest
+      simp only [hs, Bool.false_eq_true, ↓reduceIte]
+      refine bind_congr _ (ih.infer hpd hwarg) ?_
+      intro ta hta
+      refine bind_congr_eq
+        (ih.defeq hpd (inferTypeCore_WScoped henv fuel hta hwarg)
+          hwty'.1) ?_
+      intro bb _
+      refine ite_congr' (fun _ => ?_) (fun _ => rfl)
+      exact hrest
+    | .bvar i => rfl
+    | .fvar idx ty'' => rw [shiftFrom_fvar]; rfl
+    | .sort u => rfl
+    | .const n' us => rfl
+    | .app f a => rfl
+    | .lam ty'' body' => rfl
+    | .letE ty'' v' b' => rfl
+    | .lit l => rfl
+    | .proj sp i' e' => rfl
+
 /-- One rule's firing commutes with the shift: the matcher binds shifted arguments, the
 residual is shifted, and every check reads the same verdict. -/
 private theorem rewriteAttempt_shift (henv : EnvWF env)
@@ -2012,8 +2138,10 @@ private theorem rewriteAttempt_shift (henv : EnvWF env)
               simp only [WScoped] at hR
               have hwargs : ∀ x ∈ args, WScoped d x :=
                 fun x hx => appSubterms_WScoped e₁ (hc.2.2.2.1 x hx) hw₁
-              have hio := iotaCertsFull_shift henv ih hpd hwT hwargs
+              have hio := ruleCerts_shift henv ih hpd (eargs := e.getAppArgs) (hT := headTypeOf env.find? e)
+                (headTypeOf_closed henv) hwT hwargs
               rw [shiftFrom_eq_self_of_not_hasFvar hTf] at hio
+              rw [getAppArgs_shiftFrom, headTypeOf_shiftFrom]
               refine bind_rel_eq _ hio fun b _ => ?_
               refine ite_rel _ (fun _ => rfl) fun _ => rfl
             · rw [ite_eq_right (mt hiff.mp hc), ite_eq_right hc]; rfl
@@ -2230,12 +2358,12 @@ private theorem ruleArgsSyn_shift {p : Nat} (cv : ConstantVal) (e : Expr) :
 
 /-- A rule's firing checks commute with the shift, at a view without loose binder trouble. -/
 private theorem rewriteFire_shift (henv : EnvWF env)
-    (ih : ShiftClaims mode eager env fuel) {p d : Nat} (hpd : p ≤ d) {cv : ConstantVal}
+    (ih : ShiftClaims mode eager env fuel) {p d : Nat} (hpd : p ≤ d) (e : Expr) {cv : ConstantVal}
     (hcl : cv.type.hasFvar = false) {args : List Expr} {us : List Level} {e₁ : Expr}
     (hw₁ : WScoped d e₁) :
-    rewriteFire (pureFns mode eager env fuel) env (d + 1) cv (args.map (shiftFrom p)) us
-        (shiftFrom p e₁) =
-      (rewriteFire (pureFns mode eager env fuel) env d cv args us e₁).map
+    rewriteFire (pureFns mode eager env fuel) env (d + 1) (shiftFrom p e) cv
+        (args.map (shiftFrom p)) us (shiftFrom p e₁) =
+      (rewriteFire (pureFns mode eager env fuel) env d e cv args us e₁).map
         (Option.map (shiftFrom p)) := by
   unfold rewriteFire
   have hTf : (cv.type.instantiateLevelParams cv.levelParams us).hasFvar = false := by
@@ -2281,17 +2409,20 @@ private theorem rewriteFire_shift (henv : EnvWF env)
         simp only [WScoped] at hR
         have hwargs : ∀ x ∈ args, WScoped d x :=
           fun x hx => appSubterms_WScoped e₁ (hc.2.2.2.1 x hx) hw₁
-        have hio := iotaCertsFull_shift henv ih hpd hwT hwargs
+        have hio := ruleCerts_shift henv ih hpd (eargs := e.getAppArgs) (hT := headTypeOf env.find? e)
+          (headTypeOf_closed henv) hwT hwargs
         rw [shiftFrom_eq_self_of_not_hasFvar hTf] at hio
+        rw [getAppArgs_shiftFrom, headTypeOf_shiftFrom]
         refine bind_rel_eq _ hio fun b _ => ?_
         refine ite_rel _ (fun _ => rfl) fun _ => rfl
       · rw [ite_eq_right (mt hiff.mp hc), ite_eq_right hc]; rfl
 
 private theorem preAttempt_shift (henv : EnvWF env)
-    (ih : ShiftClaims mode eager env fuel) {p d : Nat} (hpd : p ≤ d) {e' : Expr}
+    (ih : ShiftClaims mode eager env fuel) {p d : Nat} (hpd : p ≤ d) (e : Expr) {e' : Expr}
     (hw : WScoped d e') (t : Name) :
-    preAttempt (pureFns mode eager env fuel) env (d + 1) (shiftFrom p e') t =
-      (preAttempt (pureFns mode eager env fuel) env d e' t).map (Option.map (shiftFrom p)) := by
+    preAttempt (pureFns mode eager env fuel) env (d + 1) (shiftFrom p e) (shiftFrom p e') t =
+      (preAttempt (pureFns mode eager env fuel) env d e e' t).map
+        (Option.map (shiftFrom p)) := by
   unfold preAttempt
   cases hft : env.find? t with
   | none => rfl
@@ -2305,7 +2436,7 @@ private theorem preAttempt_shift (henv : EnvWF env)
       | none => rfl
       | some au =>
         obtain ⟨args, us⟩ := au
-        exact rewriteFire_shift henv ih hpd hcl hw
+        exact rewriteFire_shift henv ih hpd e hcl hw
     all_goals rfl
 
 private theorem preAt_shift (henv : EnvWF env)
@@ -2319,8 +2450,8 @@ private theorem preAt_shift (henv : EnvWF env)
     intro e' hw'
     cases e' with
     | app f' a' =>
-      rw [shiftFrom_app, shiftFrom_app, preAt, preAt, ← shiftFrom_app]
-      refine bind_rel (Option.map (shiftFrom p)) _ (preAttempt_shift henv ih hpd hw' t)
+      rw [shiftFrom_app, shiftFrom_app, preAt, preAt, ← shiftFrom_app, ← shiftFrom_app]
+      refine bind_rel (Option.map (shiftFrom p)) _ (preAttempt_shift henv ih hpd _ hw' t)
         fun o _ => ?_
       cases o with
       | some e₂ => rfl
@@ -2331,21 +2462,21 @@ private theorem preAt_shift (henv : EnvWF env)
     | fvar i ty =>
       rw [preAt_nonApp _ _ _ _ (by intro _ _ _ _ hh; rw [shiftFrom_fvar] at hh; cases hh.2),
         preAt_nonApp _ _ _ _ (by intro _ _ _ _ hh; cases hh.2)]
-      exact preAttempt_shift henv ih hpd hw' t
+      exact preAttempt_shift henv ih hpd _ hw' t
     | _ =>
       rw [preAt_nonApp _ _ _ _ (by intro _ _ _ _ hh; cases hh.2),
         preAt_nonApp _ _ _ _ (by intro _ _ _ _ hh; cases hh.2)]
-      exact preAttempt_shift henv ih hpd hw' t
+      exact preAttempt_shift henv ih hpd _ hw' t
   | fvar i ty =>
     intro e' hw'
     rw [preAt_nonApp _ _ _ _ (by intro _ _ _ _ hh; rw [shiftFrom_fvar] at hh; cases hh.1),
       preAt_nonApp _ _ _ _ (by intro _ _ _ _ hh; cases hh.1)]
-    exact preAttempt_shift henv ih hpd hw' t
+    exact preAttempt_shift henv ih hpd _ hw' t
   | _ =>
     intro e' hw'
     rw [preAt_nonApp _ _ _ _ (by intro _ _ _ _ hh; cases hh.1),
       preAt_nonApp _ _ _ _ (by intro _ _ _ _ hh; cases hh.1)]
-    exact preAttempt_shift henv ih hpd hw' t
+    exact preAttempt_shift henv ih hpd _ hw' t
 
 private theorem preRules_shift (henv : EnvWF env)
     (ih : ShiftClaims mode eager env fuel) {p d : Nat} (hpd : p ≤ d) {e e' : Expr}

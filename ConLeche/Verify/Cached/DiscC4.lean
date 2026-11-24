@@ -402,12 +402,13 @@ theorem ruleArgsC_spec (ih : SSimC mode eager env f) {d : Nat} (cv : ConstantVal
 the memo, then every check the specification's. -/
 theorem rewriteFireC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d : Nat}
     {t : Name} {cv : ConstantVal} (hft : env.find? t = some (.thmInfo cv)) (args : List Expr)
-    (us : List Level) {e₁ : Expr} {s₀ : CState} (hs : CSOK mode eager env s₀)
+    (us : List Level) {e e₁ : Expr} {s₀ : CState} (hs : CSOK mode eager env s₀)
     (hw : Expr.WScoped d e₁) :
-    ⦃fun s => s = s₀⦄ rewriteFireI mode (mkFEnv env) eager f d t cv args us e₁
+    ⦃fun s => s = s₀⦄ rewriteFireI mode (mkFEnv env) eager f d e t cv args us e₁
     ⦃fun o s' => CSOK mode eager env s' ∧
-      Runs (rewriteFire (fueledFns mode eager env) env d cv args us e₁) o ∧ OptWS d o; ⊤⦄ := by
+      Runs (rewriteFire (fueledFns mode eager env) env d e cv args us e₁) o ∧ OptWS d o; ⊤⦄ := by
   unfold rewriteFireI rewriteFire
+  rw [headTypeOfC_eq, mkFEnv_find_fun]
   have hfind : (env.find? t).isSome = true := by rw [hft]; rfl
   have hcl : cv.type.hasFvar = false := (henv.consts _ (Env.find?_mem hft)).1
   have hT : constTyOf env t us = cv.type.instantiateLevelParams cv.levelParams us := by
@@ -441,7 +442,7 @@ theorem rewriteFireC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d : 
       sym only [conleche_grind] =>
         vcgen [constTyAtM_spec (mode := mode) (eager := eager) (env := env) hs t t us hfind,
           piResidualM_spec (mode := mode) (eager := eager) (env := env),
-          iotaCertsFullC_spec ih, ih.infer_spec] <;> finish
+          ruleCertsC_spec ih, ih.infer_spec] <;> finish
     · rw [ite_eq_right hg]
       sym only [conleche_grind] =>
         vcgen [constTyAtM_spec (mode := mode) (eager := eager) (env := env) hs t t us hfind,
@@ -636,12 +637,13 @@ theorem ruleGateSynB_iff {cv : ConstantVal} {us : List Level} {args : List Expr}
 without the subterm walk, whose conjunct the match supplies. -/
 theorem rewriteFireSynC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d : Nat}
     {t : Name} {cv : ConstantVal} (hft : env.find? t = some (.thmInfo cv)) (args : List Expr)
-    (us : List Level) {e₁ : Expr} {s₀ : CState} (hs : CSOK mode eager env s₀)
+    (us : List Level) {e e₁ : Expr} {s₀ : CState} (hs : CSOK mode eager env s₀)
     (hw : Expr.WScoped d e₁) (hsub : ∀ x ∈ args, x ∈ appSubterms e₁) :
-    ⦃fun s => s = s₀⦄ rewriteFireSynI mode (mkFEnv env) eager f d t cv args us e₁
+    ⦃fun s => s = s₀⦄ rewriteFireSynI mode (mkFEnv env) eager f d e t cv args us e₁
     ⦃fun o s' => CSOK mode eager env s' ∧
-      Runs (rewriteFire (fueledFns mode eager env) env d cv args us e₁) o ∧ OptWS d o; ⊤⦄ := by
+      Runs (rewriteFire (fueledFns mode eager env) env d e cv args us e₁) o ∧ OptWS d o; ⊤⦄ := by
   unfold rewriteFireSynI rewriteFire
+  rw [headTypeOfC_eq, mkFEnv_find_fun]
   have hfind : (env.find? t).isSome = true := by rw [hft]; rfl
   have hcl : cv.type.hasFvar = false := (henv.consts _ (Env.find?_mem hft)).1
   have hT : constTyOf env t us = cv.type.instantiateLevelParams cv.levelParams us := by
@@ -676,7 +678,7 @@ theorem rewriteFireSynC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d
       sym only [conleche_grind] =>
         vcgen [constTyAtM_spec (mode := mode) (eager := eager) (env := env) hs t t us hfind,
           piResidualM_spec (mode := mode) (eager := eager) (env := env),
-          iotaCertsFullC_spec ih, ih.infer_spec] <;> finish
+          ruleCertsC_spec ih, ih.infer_spec] <;> finish
     · rw [ite_eq_right hg]
       have hgB : ruleGateSynB cv us e₁ eqn l = false := by
         cases h : ruleGateSynB cv us e₁ eqn l
@@ -843,10 +845,10 @@ theorem keyScanC_spec (ih : SSimC mode eager env f) {d : Nat} :
 
 /-- A marked rule at the term with its key arguments reduced simulates its specification. -/
 theorem preAttemptC_spec (ih : SSimC mode eager env f) (henv : EnvWF env) {d : Nat}
-    {e' : Expr} (t : Name) {s₀ : CState} (hs : CSOK mode eager env s₀) (hw : Expr.WScoped d e') :
-    ⦃fun s => s = s₀⦄ preAttemptI mode (mkFEnv env) eager f d e' t
+    {e e' : Expr} (t : Name) {s₀ : CState} (hs : CSOK mode eager env s₀) (hw : Expr.WScoped d e') :
+    ⦃fun s => s = s₀⦄ preAttemptI mode (mkFEnv env) eager f d e e' t
     ⦃fun o s' => CSOK mode eager env s' ∧
-      Runs (preAttempt (fueledFns mode eager env) env d e' t) o ∧ OptWS d o; ⊤⦄ := by
+      Runs (preAttempt (fueledFns mode eager env) env d e e' t) o ∧ OptWS d o; ⊤⦄ := by
   unfold preAttemptI preAttempt
   rw [mkFEnv_find_fun]
   cases hft : env.find? t with

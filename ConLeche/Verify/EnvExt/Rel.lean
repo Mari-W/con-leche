@@ -134,6 +134,29 @@ theorem iotaCertsFull_rel : ∀ (ty : Expr) (args : List Expr), Res env₁ ty �
       simp only [iotaCertsFull]
       exact Rel.ok trivial
 
+/-- A rule firing's certificate at an extension is its run at the prefix, at the same spine and
+head type. -/
+theorem ruleCerts_rel (eargs : List Expr) (hT : Option Expr) :
+    ∀ (ty : Expr) (args : List Expr), Res env₁ ty → (∀ a ∈ args, Res env₁ a) →
+    Rel TT (ruleCerts r₂ env₂ d eargs hT ty args) (ruleCerts r₁ env₁ d eargs hT ty args)
+  | _, [], _, _ => by
+    simp only [ruleCerts]
+    exact Rel.ok trivial
+  | ty, arg :: rest, hty, ha => by
+    cases ty with
+    | forallE t b =>
+      obtain ⟨ht, hb⟩ := res_forall.mp hty
+      have harg := ha arg List.mem_cons_self
+      have hrest := ruleCerts_rel eargs hT _ rest (res_instantiate1 harg b 0 hb)
+        (fun x hx => ha x (List.mem_cons_of_mem _ hx))
+      simp only [ruleCerts]
+      refine Rel.iteB _ (fun _ => hrest) fun _ => ?_
+      refine Rel.bind (K.infer d harg) fun ta hta => Rel.bind (K.defeq d hta ht) fun v _ => ?_
+      exact Rel.iteB v (fun _ => hrest) fun _ => Rel.ok trivial
+    | _ =>
+      simp only [ruleCerts]
+      exact Rel.ok trivial
+
 omit K in
 theorem res_piResidual : ∀ {t : Expr} {args : List Expr} {r : Expr}, Res env₁ t →
     (∀ a ∈ args, Res env₁ a) → piResidual t args = some r → Res env₁ r
