@@ -116626,10 +116626,21 @@ is), so the static case is a special case. A variable in a nested position (`a` 
 non-linear variable get the certificate as before.
 
 The cached twin `ruleCertsIAux` (`Cached/CoreC.lean`) is `iotaCertsFullIAux` with the head test
-first (`headSlotOptC`, through `Expr.piResidual` and `Expr.instLevelParams`, equal to the spec's by
-`headSlotOptC_eq` and `headTypeOfC_eq`). Its simulation is `ruleCertsCAux_spec` (`DiscC1`). The
+first (`headSlotOptC`, equal to the spec's by `headSlotOptC_eq`). The head's type comes through the
+per-declaration memo (`headTypeOfM`, `constTyAtM`), and the domain at a position is substituted
+alone (`Expr.teleDomAcc`, `teleDomAcc_spec`), without the residual. Its simulation is
+`ruleCertsCAux_spec` (`DiscC1`). The
 bridge is `ruleCerts_bridge` (`Verify/Rules/Certs.lean`). The fuel, pairing, shift and extension
 lemmas follow `iotaCertsFull`'s (`ruleCerts_atF`, `ruleCerts_fst`/`_snd`, `ruleCerts_shift` with
 `headSlotOpt_shift`, `ruleCerts_rel` with `headTypeOf_ext`). The fixtures `rewrite_rule_pre_*` and
 `rewrite_rule_*` keep their verdicts. Their rules have head slots (`cond`, the list folds) and
 nested binders, so both kinds of slot run in them.
+
+Cost. On the 94 ClusterAlgebras certificate modules with `rules-max.txt` (instructions of the whole
+process, 3 workers, ahumoa) gate-walk `873558b5e` takes 15894.4 G. The first version of the head test
+(`c34ffcb3c`) took 17030.6 G: it instantiated the head's type at its levels and the whole residual
+along the spine at every slot, which cost more than the memoized inference and comparison it
+replaced (profile: `instLevelParamsXP`, `instantiateListSX`, `forallE` allocation). With the memo and
+the domain-only substitution (`c7cdf44f5`) it takes 15691.2 G (−1.3% against gate-walk). The run
+without rules is unchanged. The certificates were a smaller part of con-leche's cost than of the C++
+kernel's, because con-leche's inference and comparison hit their memos.
